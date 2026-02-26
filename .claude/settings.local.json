@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "mcp__context7__resolve-library-id",
+      "WebSearch",
+      "Bash(dotnet run:*)",
+      "mcp__aspire__list_resources"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "iaw",
+    "aspire",
+    "context7"
+  ]
+}

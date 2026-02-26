@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/IAW.AppHost/IAW.AppHost.csproj" />
+  <Project Path="src/IAW.ServiceDefaults/IAW.ServiceDefaults.csproj" />
+</Solution>
