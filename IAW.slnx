@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="samples/Sample.Silo/Sample.Silo.csproj" />
   <Project Path="src/IAW.AppHost/IAW.AppHost.csproj" />
   <Project Path="src/IAW.ServiceDefaults/IAW.ServiceDefaults.csproj" />
 </Solution>

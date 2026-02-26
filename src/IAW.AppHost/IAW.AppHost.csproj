@@ -8,4 +8,12 @@
     <UserSecretsId>e9789e79-129d-4802-82cf-71931d9466fe</UserSecretsId>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ollama" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Sample.Silo\Sample.Silo.csproj" />
+  </ItemGroup>
+
 </Project>
