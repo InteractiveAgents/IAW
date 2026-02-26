@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Sample.Silo\Sample.Silo.csproj" />
+    <ProjectReference Include="..\DevUI\DevUI.csproj" />
   </ItemGroup>
 
 </Project>

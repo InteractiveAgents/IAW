@@ -1,9 +1,9 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var ollama = builder.AddOllama("ollama").WithOpenWebUI().WithGPUSupport();
-
-ollama.AddModel("phi4");
+var ollama = builder.AddOllama("ollama").WithOpenWebUI().WithGPUSupport().WithDataVolume();
+var qwen = ollama.AddModel("qwen2.5");
 
 builder.AddProject<Projects.Sample_Silo>("sample-silo");
+builder.AddProject<Projects.DevUI>("devui").WithReference(qwen).WaitFor(qwen);
 
 builder.Build().Run();
