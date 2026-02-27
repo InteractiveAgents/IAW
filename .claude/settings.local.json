@@ -10,7 +10,9 @@
       "mcp__context7__query-docs",
       "mcp__aspire__list_console_logs",
       "Bash(aspire run:*)",
-      "mcp__aspire__execute_resource_command"
+      "mcp__aspire__execute_resource_command",
+      "Bash(ls:*)",
+      "Bash(xargs grep:*)"
     ]
   },
   "enabledMcpjsonServers": [
