@@ -1,4 +1,10 @@
+using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Text;
+using Core.AI;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Orleans;
 using Orleans.Journaling;
 using Orleans.Runtime;
@@ -6,19 +12,17 @@ using Orleans.Streams;
 
 namespace Core;
 
-public class OrleansAgentGrain(
+public class Agent(
     [Memory("agent-values")] IDurableDictionary<string, string> values,
-    [Memory("agent-history")] IDurableList<OrleansAgentHistoryEntry> history,
-    [Memory("agent-events")] IDurableList<OrleansAgentEventRecord> events,
+    [Memory("agent-history")] IDurableList<AgentHistoryEntry> history,
+    [Memory("agent-events")] IDurableList<AgentEventRecord> events,
     [Memory("agent-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("agent-notifications")] IDurableList<OrleansAgentNotificationRecord> notifications,
-    [Memory("agent-config")] IDurableDictionary<string, OrleansAgentConfig> configurations,
-    [Memory("agent-tracking")] IDurableDictionary<string, OrleansAgentTrackingStatus> tracking)
-    : DurableGrain, IOrleansAgentGrain, IRemindable
+    [Memory("agent-notifications")] IDurableList<NotificationRecord> notifications,
+    [Memory("agent-tracking")] IDurableDictionary<string, AgentTrackingStatus> tracking)
+    : DurableGrain, IAgent, IRemindable
 {
     private const string TrackingReminderName = "agent-tracking";
     private const string TrackingKey = "status";
-    private const string ConfigKey = "default";
     private static readonly TimeSpan MinimumReminderPeriod = TimeSpan.FromMinutes(1);
 
     private static readonly string[] DefaultCapabilities =
@@ -29,22 +33,28 @@ public class OrleansAgentGrain(
         "notifications",
         "tracking",
         "streams",
-        "dynamic-config",
         "tools"
     ];
 
     private IGrainTimer? _trackingTimer;
 
+    public string Id => this.GetPrimaryKeyString();
+    public virtual string DisplayName => Id;
+    public virtual string SystemPrompt => string.Empty;
+    public virtual IReadOnlyList<AITool> DefineTools() => [];
+
+    protected AIAgent? Llm { get; private set; }
+
+    public virtual void Activate(IChatClient chatClient)
+    {
+        ArgumentNullException.ThrowIfNull(chatClient);
+        var tools = DefineTools();
+        Llm = chatClient.AsAIAgent(SystemPrompt, Id, DisplayName, [.. tools], null, null);
+    }
+
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         await base.OnActivateAsync(cancellationToken);
-
-        var mutated = false;
-        if (!configurations.TryGetValue(ConfigKey, out _))
-        {
-            configurations[ConfigKey] = OrleansAgentConfig.CreateDefault();
-            mutated = true;
-        }
 
         var trackingStatus = GetTrackingStatusSnapshot();
         if (trackingStatus.IsTracking &&
@@ -62,35 +72,30 @@ public class OrleansAgentGrain(
             {
                 trackingStatus.IsTracking = false;
                 tracking[TrackingKey] = CloneTrackingStatus(trackingStatus);
-                mutated = true;
+                await WriteStateAsync(cancellationToken);
             }
-        }
-
-        if (mutated)
-        {
-            await WriteStateAsync(cancellationToken);
         }
     }
 
-    public Task<OrleansAgentMetadata> GetMetadataAsync(CancellationToken ct = default)
+    public virtual Task<AgentMetadata> GetMetadataAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var metadata = new OrleansAgentMetadata
+        var metadata = new AgentMetadata
         {
-            AgentId = this.GetPrimaryKeyString(),
-            DisplayName = "Orleans Agent Grain",
+            Id = this.GetPrimaryKeyString(),
+            DisplayName = DisplayName,
             Capabilities = [.. DefaultCapabilities]
         };
 
         return Task.FromResult(metadata);
     }
 
+    // -- State behavior --
+
     public async Task SetStateAsync(string key, string value, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(key))
-        {
             throw new ArgumentException("State key cannot be empty.", nameof(key));
-        }
 
         ct.ThrowIfCancellationRequested();
         values[key] = value;
@@ -100,9 +105,7 @@ public class OrleansAgentGrain(
     public Task<string?> GetStateValueAsync(string key, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(key))
-        {
             throw new ArgumentException("State key cannot be empty.", nameof(key));
-        }
 
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(values.TryGetValue(key, out var value) ? value : null);
@@ -113,9 +116,7 @@ public class OrleansAgentGrain(
         ct.ThrowIfCancellationRequested();
         var snapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kvp in values)
-        {
             snapshot[kvp.Key] = kvp.Value;
-        }
 
         return Task.FromResult(snapshot);
     }
@@ -123,9 +124,7 @@ public class OrleansAgentGrain(
     public async Task<int> IncrementAsync(string counterKey, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(counterKey))
-        {
             throw new ArgumentException("Counter key cannot be empty.", nameof(counterKey));
-        }
 
         ct.ThrowIfCancellationRequested();
         var current = values.TryGetValue(counterKey, out var raw) &&
@@ -139,15 +138,15 @@ public class OrleansAgentGrain(
         return next;
     }
 
+    // -- History behavior --
+
     public async Task AddHistoryAsync(string role, string content, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(role))
-        {
             throw new ArgumentException("Role cannot be empty.", nameof(role));
-        }
 
         ct.ThrowIfCancellationRequested();
-        var entry = new OrleansAgentHistoryEntry
+        var entry = new AgentHistoryEntry
         {
             Role = role,
             Content = content ?? string.Empty,
@@ -160,11 +159,11 @@ public class OrleansAgentGrain(
         await PublishBehaviorStreamAsync("agent-history", entry);
     }
 
-    public Task<List<OrleansAgentHistoryEntry>> GetHistoryAsync(CancellationToken ct = default)
+    public Task<List<AgentHistoryEntry>> GetHistoryAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         var snapshot = history
-            .Select(entry => new OrleansAgentHistoryEntry
+            .Select(entry => new AgentHistoryEntry
             {
                 Role = entry.Role,
                 Content = entry.Content,
@@ -175,45 +174,15 @@ public class OrleansAgentGrain(
         return Task.FromResult(snapshot);
     }
 
-    public async Task<IReadOnlyList<string>> SendDeterministicAsync(string message, CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        await AddHistoryAsync("user", message, ct);
-
-        var config = GetConfigSnapshot();
-        if (!config.ResponsesEnabled)
-        {
-            return [];
-        }
-
-        var baseResponse = $"echo:{message}";
-        if (!string.IsNullOrWhiteSpace(config.PromptPrefix))
-        {
-            baseResponse = $"{config.PromptPrefix}{baseResponse}";
-        }
-
-        var chunks = baseResponse
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .ToList();
-
-        if (config.MaxResponseChunks is { } maxChunks)
-        {
-            chunks = chunks.Take(maxChunks).ToList();
-        }
-
-        await AddHistoryAsync("assistant", string.Join(' ', chunks), ct);
-        return chunks;
-    }
+    // -- Events behavior --
 
     public async Task PublishEventAsync(string name, string? payload = null, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
-        {
             throw new ArgumentException("Event name cannot be empty.", nameof(name));
-        }
 
         ct.ThrowIfCancellationRequested();
-        var entry = new OrleansAgentEventRecord
+        var entry = new AgentEventRecord
         {
             Name = name,
             Payload = payload,
@@ -226,11 +195,11 @@ public class OrleansAgentGrain(
         await PublishBehaviorStreamAsync("agent-events", entry);
     }
 
-    public Task<List<OrleansAgentEventRecord>> GetEventsAsync(CancellationToken ct = default)
+    public Task<List<AgentEventRecord>> GetEventsAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         var snapshot = events
-            .Select(entry => new OrleansAgentEventRecord
+            .Select(entry => new AgentEventRecord
             {
                 Name = entry.Name,
                 Payload = entry.Payload,
@@ -241,17 +210,15 @@ public class OrleansAgentGrain(
         return Task.FromResult(snapshot);
     }
 
+    // -- Notifications behavior --
+
     public async Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(topic))
-        {
             throw new ArgumentException("Topic cannot be empty.", nameof(topic));
-        }
 
         if (string.IsNullOrWhiteSpace(subscriberAgentId))
-        {
             throw new ArgumentException("Subscriber id cannot be empty.", nameof(subscriberAgentId));
-        }
 
         ct.ThrowIfCancellationRequested();
 
@@ -269,41 +236,63 @@ public class OrleansAgentGrain(
 
     public async Task NotifyAsync(string topic, string payload, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(topic))
+        var notification = new NotificationEnvelope
         {
-            throw new ArgumentException("Topic cannot be empty.", nameof(topic));
-        }
+            Topic = topic,
+            Payload = payload,
+            TimestampUtc = DateTimeOffset.UtcNow
+        };
+
+        await NotifyAsync(notification, ct);
+    }
+
+    public async Task NotifyAsync(NotificationEnvelope notification, CancellationToken ct = default)
+    {
+        var normalized = NormalizeNotificationEnvelope(notification);
 
         ct.ThrowIfCancellationRequested();
-        await PublishEventAsync(topic, payload, ct);
+        await PublishEventAsync(normalized.Topic, normalized.Payload, ct);
 
-        if (!subscriptions.TryGetValue(topic, out var subscriberIds) || subscriberIds.Count == 0)
-        {
+        if (!subscriptions.TryGetValue(normalized.Topic, out var subscriberIds) || subscriberIds.Count == 0)
             return;
-        }
 
         var targets = subscriberIds.ToArray();
         foreach (var subscriberId in targets)
         {
             ct.ThrowIfCancellationRequested();
             var subscriber = GrainFactory.GetGrain<IAgent>(subscriberId);
-            await subscriber.ReceiveNotificationAsync(topic, payload, ct);
+            await subscriber.ReceiveNotificationAsync(CloneNotificationEnvelope(normalized), ct);
         }
     }
 
     public async Task ReceiveNotificationAsync(string topic, string payload, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(topic))
-        {
-            throw new ArgumentException("Topic cannot be empty.", nameof(topic));
-        }
-
-        ct.ThrowIfCancellationRequested();
-        var entry = new OrleansAgentNotificationRecord
+        var notification = new NotificationEnvelope
         {
             Topic = topic,
             Payload = payload,
             TimestampUtc = DateTimeOffset.UtcNow
+        };
+
+        await ReceiveNotificationAsync(notification, ct);
+    }
+
+    public async Task ReceiveNotificationAsync(NotificationEnvelope notification, CancellationToken ct = default)
+    {
+        var normalized = NormalizeNotificationEnvelope(notification);
+
+        ct.ThrowIfCancellationRequested();
+        var entry = new NotificationRecord
+        {
+            Topic = normalized.Topic,
+            Payload = normalized.Payload,
+            TimestampUtc = normalized.TimestampUtc,
+            ContentType = normalized.ContentType,
+            Schema = normalized.Schema,
+            SchemaVersion = normalized.SchemaVersion,
+            MessageId = normalized.MessageId,
+            CorrelationId = normalized.CorrelationId,
+            Headers = normalized.Headers
         };
 
         notifications.Add(entry);
@@ -312,36 +301,42 @@ public class OrleansAgentGrain(
         await PublishBehaviorStreamAsync("agent-notifications", entry);
     }
 
-    public Task<List<OrleansAgentNotificationRecord>> GetNotificationsAsync(CancellationToken ct = default)
+    public Task<List<NotificationRecord>> GetNotificationsAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         var snapshot = notifications
-            .Select(entry => new OrleansAgentNotificationRecord
+            .Select(entry => new NotificationRecord
             {
                 Topic = entry.Topic,
                 Payload = entry.Payload,
-                TimestampUtc = entry.TimestampUtc
+                TimestampUtc = entry.TimestampUtc,
+                ContentType = entry.ContentType,
+                Schema = entry.Schema,
+                SchemaVersion = entry.SchemaVersion,
+                MessageId = entry.MessageId,
+                CorrelationId = entry.CorrelationId,
+                Headers = entry.Headers is { Count: > 0 }
+                    ? new Dictionary<string, string>(entry.Headers, StringComparer.OrdinalIgnoreCase)
+                    : []
             })
             .ToList();
 
         return Task.FromResult(snapshot);
     }
 
+    // -- Tracking behavior --
+
     public async Task StartTrackingAsync(TimeSpan interval, int maxTicks, CancellationToken ct = default)
     {
         if (interval <= TimeSpan.Zero)
-        {
             throw new ArgumentOutOfRangeException(nameof(interval), "Interval must be greater than zero.");
-        }
 
         if (maxTicks <= 0)
-        {
             throw new ArgumentOutOfRangeException(nameof(maxTicks), "Max ticks must be greater than zero.");
-        }
 
         ct.ThrowIfCancellationRequested();
 
-        tracking[TrackingKey] = new OrleansAgentTrackingStatus
+        tracking[TrackingKey] = new AgentTrackingStatus
         {
             IsTracking = true,
             TickCount = 0,
@@ -366,64 +361,47 @@ public class OrleansAgentGrain(
         await WriteStateAsync(ct);
     }
 
-    public Task<OrleansAgentTrackingStatus> GetTrackingStatusAsync(CancellationToken ct = default)
+    public Task<AgentTrackingStatus> GetTrackingStatusAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(GetTrackingStatusSnapshot());
     }
 
-    public async Task<OrleansAgentConfig> ConfigureAsync(OrleansAgentConfigPatch patch, CancellationToken ct = default)
+    // -- Tools behavior --
+
+    public virtual async Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(patch);
+        if (string.IsNullOrWhiteSpace(toolName))
+            throw new ArgumentException("Tool name cannot be empty.", nameof(toolName));
+
         ct.ThrowIfCancellationRequested();
 
-        if (patch.MaxResponseChunks is <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(patch.MaxResponseChunks), "MaxResponseChunks must be greater than zero when provided.");
-        }
+        var tools = DefineTools();
+        var function = tools.OfType<AIFunction>()
+            .FirstOrDefault(t => string.Equals(t.Name, toolName, StringComparison.OrdinalIgnoreCase));
 
-        var config = GetConfigSnapshot();
-        config.ResponsesEnabled = patch.ResponsesEnabled ?? config.ResponsesEnabled;
-        config.ToolsEnabled = patch.ToolsEnabled ?? config.ToolsEnabled;
-        config.MaxResponseChunks = patch.MaxResponseChunks ?? config.MaxResponseChunks;
-        config.PromptPrefix = patch.PromptPrefix ?? config.PromptPrefix;
-        configurations[ConfigKey] = CloneConfig(config);
-        await WriteStateAsync(ct);
-        return CloneConfig(config);
+        if (function is null)
+            throw new InvalidOperationException($"Tool '{toolName}' was not found.");
+
+        AgentObservability.RecordToolCall();
+
+        var rawArgs = arguments is null
+            ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            : arguments.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value, StringComparer.OrdinalIgnoreCase);
+
+        var result = await function.InvokeAsync(new AIFunctionArguments(rawArgs), ct);
+        return result?.ToString();
     }
 
-    public Task<OrleansAgentConfig> GetConfigurationAsync(CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(CloneConfig(GetConfigSnapshot()));
-    }
-
-    public async Task<int> InvokeAddNumbersToolAsync(int a, int b, CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        var config = GetConfigSnapshot();
-        if (!config.ToolsEnabled)
-        {
-            throw new InvalidOperationException("Tool calls are disabled by configuration.");
-        }
-
-        var result = a + b;
-        values["last-tool-result"] = result.ToString(CultureInfo.InvariantCulture);
-        await WriteStateAsync(ct);
-        return result;
-    }
+    // -- Streams behavior --
 
     public async Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(streamNamespace))
-        {
             throw new ArgumentException("Stream namespace cannot be empty.", nameof(streamNamespace));
-        }
 
         if (string.IsNullOrWhiteSpace(message))
-        {
             throw new ArgumentException("Stream message cannot be empty.", nameof(message));
-        }
 
         ct.ThrowIfCancellationRequested();
         var streamProvider = this.GetStreamProvider("agents");
@@ -431,15 +409,69 @@ public class OrleansAgentGrain(
         await stream.OnNextAsync(message);
     }
 
+    // -- LLM streaming (not on grain interface) --
+
+    public virtual async IAsyncEnumerable<string> SendAsync(
+        string message,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        using var activity = AgentObservability.ActivitySource.StartActivity("agent.send", ActivityKind.Internal);
+        activity?.SetTag("agent.id", this.GetPrimaryKeyString());
+        activity?.SetTag("agent.display_name", DisplayName);
+
+        AgentObservability.RecordSend();
+
+        var inputMessage = message ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(inputMessage))
+            await AddHistoryAsync("user", inputMessage, ct);
+
+        if (Llm is null)
+            yield break;
+
+        var assistantText = new StringBuilder();
+        await using var updates = Llm.RunStreamingAsync(inputMessage, cancellationToken: ct).GetAsyncEnumerator(ct);
+        while (true)
+        {
+            AgentResponseUpdate update;
+            try
+            {
+                if (!await updates.MoveNextAsync())
+                    break;
+                update = updates.Current;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                AgentObservability.RecordFailure();
+                throw;
+            }
+
+            if (update.Text is { Length: > 0 } text)
+            {
+                assistantText.Append(text);
+                yield return text;
+            }
+        }
+
+        if (assistantText.Length > 0)
+            await AddHistoryAsync("assistant", assistantText.ToString(), ct);
+    }
+
+    // -- IRemindable --
+
     public async Task ReceiveReminder(string reminderName, TickStatus status)
     {
         if (!string.Equals(reminderName, TrackingReminderName, StringComparison.Ordinal))
-        {
             return;
-        }
 
         await HandleTrackingTickAsync();
     }
+
+    // -- Private tracking infrastructure --
 
     private async Task TrackingTimerTickAsync() => await HandleTrackingTickAsync();
 
@@ -490,19 +522,15 @@ public class OrleansAgentGrain(
 
         var reminder = await this.GetReminder(TrackingReminderName);
         if (reminder is not null)
-        {
             await this.UnregisterReminder(reminder);
-        }
     }
 
-    private OrleansAgentTrackingStatus GetTrackingStatusSnapshot()
+    private AgentTrackingStatus GetTrackingStatusSnapshot()
     {
         if (tracking.TryGetValue(TrackingKey, out var status))
-        {
             return CloneTrackingStatus(status);
-        }
 
-        return new OrleansAgentTrackingStatus
+        return new AgentTrackingStatus
         {
             IsTracking = false,
             TickCount = 0,
@@ -512,20 +540,7 @@ public class OrleansAgentGrain(
         };
     }
 
-    private OrleansAgentConfig GetConfigSnapshot() => configurations.TryGetValue(ConfigKey, out var config)
-        ? CloneConfig(config)
-        : OrleansAgentConfig.CreateDefault();
-
-    private static OrleansAgentConfig CloneConfig(OrleansAgentConfig config)
-        => new()
-        {
-            ResponsesEnabled = config.ResponsesEnabled,
-            ToolsEnabled = config.ToolsEnabled,
-            MaxResponseChunks = config.MaxResponseChunks,
-            PromptPrefix = config.PromptPrefix
-        };
-
-    private static OrleansAgentTrackingStatus CloneTrackingStatus(OrleansAgentTrackingStatus status)
+    private static AgentTrackingStatus CloneTrackingStatus(AgentTrackingStatus status)
         => new()
         {
             IsTracking = status.IsTracking,
@@ -533,6 +548,51 @@ public class OrleansAgentGrain(
             StartedAtUtc = status.StartedAtUtc,
             Interval = status.Interval,
             MaxTicks = status.MaxTicks
+        };
+
+    private static NotificationEnvelope NormalizeNotificationEnvelope(NotificationEnvelope notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+
+        if (string.IsNullOrWhiteSpace(notification.Topic))
+            throw new ArgumentException("Topic cannot be empty.", nameof(notification));
+
+        return new NotificationEnvelope
+        {
+            Topic = notification.Topic,
+            Payload = notification.Payload ?? string.Empty,
+            ContentType = string.IsNullOrWhiteSpace(notification.ContentType)
+                ? "application/json"
+                : notification.ContentType,
+            Schema = string.IsNullOrWhiteSpace(notification.Schema) ? null : notification.Schema,
+            SchemaVersion = string.IsNullOrWhiteSpace(notification.SchemaVersion) ? null : notification.SchemaVersion,
+            MessageId = string.IsNullOrWhiteSpace(notification.MessageId)
+                ? Guid.NewGuid().ToString("N")
+                : notification.MessageId,
+            CorrelationId = string.IsNullOrWhiteSpace(notification.CorrelationId) ? null : notification.CorrelationId,
+            Headers = notification.Headers is { Count: > 0 }
+                ? new Dictionary<string, string>(notification.Headers, StringComparer.OrdinalIgnoreCase)
+                : [],
+            TimestampUtc = notification.TimestampUtc == default
+                ? DateTimeOffset.UtcNow
+                : notification.TimestampUtc
+        };
+    }
+
+    private static NotificationEnvelope CloneNotificationEnvelope(NotificationEnvelope notification)
+        => new()
+        {
+            Topic = notification.Topic,
+            Payload = notification.Payload,
+            ContentType = notification.ContentType,
+            Schema = notification.Schema,
+            SchemaVersion = notification.SchemaVersion,
+            MessageId = notification.MessageId,
+            CorrelationId = notification.CorrelationId,
+            Headers = notification.Headers is { Count: > 0 }
+                ? new Dictionary<string, string>(notification.Headers, StringComparer.OrdinalIgnoreCase)
+                : [],
+            TimestampUtc = notification.TimestampUtc
         };
 
     private Task PublishBehaviorStreamAsync<TPayload>(string streamNamespace, TPayload payload)

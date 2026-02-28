@@ -1,16 +1,14 @@
-﻿namespace Core;
+using Orleans;
 
-public interface IAgent
-{
+namespace Core;
 
-}
-
-public class Agent : IAgent
-{
-
-}
-
-public class WeatherAgent : Agent
-{
-
-}
+public interface IAgent :
+    IGrainWithStringKey,
+    IAgentMetadataBehavior,
+    IAgentStateBehavior,
+    IAgentHistoryBehavior,
+    IAgentEventsBehavior,
+    IAgentNotificationsBehavior,
+    IAgentTrackingBehavior,
+    IAgentToolsBehavior,
+    IAgentStreamsBehavior;
