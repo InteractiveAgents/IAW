@@ -9,12 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Orleans" />
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ollama" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Sample.Silo\Sample.Silo.csproj" />
+    <ProjectReference Include="..\..\samples\Samples\Samples.csproj" />
+    <ProjectReference Include="..\Core\Core.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\DevUI\DevUI.csproj" />
+    <ProjectReference Include="..\Clients.Telegram.Bot\TelegramBot.csproj" />
   </ItemGroup>
 
 </Project>
