@@ -65,7 +65,7 @@ dotnet test IAW.slnx
 | `src/IAW.MCP` | MCP server bridge for external orchestration |
 | `samples/Samples` | Sample agents and usage examples |
 | `test/*` | Unit and integration tests |
-| `website/` | Documentation site source (Docusaurus) |
+| `website/` | Documentation site source (VitePress) |
 
 ## Contributing
 
