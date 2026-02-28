@@ -8,4 +8,5 @@
   <Project Path="src/IAW.ServiceDefaults/ServiceDefaults.csproj" />
   <Project Path="test/Agents.Tests/IAW.Agents.Tests.csproj" />
   <Project Path="test/Integration.Tests/IAW.Integration.Tests.csproj" />
+  <Project Path="test/TelegramBot.Tests/TelegramBot.Tests.csproj" />
 </Solution>
