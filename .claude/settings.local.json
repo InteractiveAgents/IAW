@@ -22,7 +22,15 @@
       "Bash(mv:*)",
       "Bash(rm:*)",
       "Bash(grep:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(\"E:/IAW/InteractiveAgents/IAW/global.json\":*)",
+      "mcp__aspire__list_integrations",
+      "mcp__aspire__get_integration_docs",
+      "Bash(npm install:*)",
+      "Bash(npm view:*)",
+      "Bash(npx vitepress:*)",
+      "Bash(echo exit: $?:*)",
+      "Bash(npm run:*)"
     ]
   },
   "enabledMcpjsonServers": [
