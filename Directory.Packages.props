@@ -3,6 +3,8 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.2" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.1.2-beta.518" />
     <PackageVersion Include="CommunityToolkit.Aspire.OllamaSharp" Version="13.1.2-beta.518" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.0.0-rc2" />
@@ -11,15 +13,32 @@
     <PackageVersion Include="Microsoft.Agents.AI.Hosting.OpenAI" Version="1.0.0-alpha.260225.1" />
     <PackageVersion Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-rc2" />
     <PackageVersion Include="Microsoft.Agents.AI.Workflows" Version="1.0.0-rc2" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="11.0.0-preview.1.26104.118" />
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.3.0" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.3.0" />
+    <PackageVersion Include="Microsoft.Orleans.Persistence.Memory" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.Journaling" Version="10.0.1-alpha.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.Server" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.TestingHost" Version="10.0.1" />
     <PackageVersion Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.23.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="ModelContextProtocol" Version="1.0.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="Anthropic" Version="12.5.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.3.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.3.0" />
+    <PackageVersion Include="OpenAI" Version="2.8.0" />
+    <PackageVersion Include="OllamaSharp" Version="5.4.16" />
+    <PackageVersion Include="Telegram.BotAPI" Version="9.4.0" />
   </ItemGroup>
 </Project>

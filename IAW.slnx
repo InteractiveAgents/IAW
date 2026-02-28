@@ -1,7 +1,11 @@
 <Solution>
-  <Project Path="samples/Sample.Silo/Sample.Silo.csproj" />
+  <Project Path="samples/Samples/Samples.csproj" />
+  <Project Path="src/Core/Core.csproj" />
   <Project Path="src/DevUI/DevUI.csproj" />
-  <Project Path="src/IAW.AppHost/IAW.AppHost.csproj" />
-  <Project Path="src/IAW.MCP/IAW.MCP.csproj" Id="f72a5392-8914-4f0c-a8b3-642c4a424a11" />
-  <Project Path="src/IAW.ServiceDefaults/IAW.ServiceDefaults.csproj" />
+  <Project Path="src/IAW.AppHost/Aspire.csproj" />
+  <Project Path="src/IAW.MCP/MCP.csproj" Id="f72a5392-8914-4f0c-a8b3-642c4a424a11" />
+  <Project Path="src/Clients.Telegram.Bot/TelegramBot.csproj" />
+  <Project Path="src/IAW.ServiceDefaults/ServiceDefaults.csproj" />
+  <Project Path="test/Agents.Tests/IAW.Agents.Tests.csproj" />
+  <Project Path="test/Integration.Tests/IAW.Integration.Tests.csproj" />
 </Solution>
