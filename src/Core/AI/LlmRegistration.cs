@@ -1,0 +1,132 @@
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using OllamaSharp;
+
+namespace Core.AI;
+
+public static class LlmRegistration
+{
+    public static IHostApplicationBuilder AddLlmProviders(this IHostApplicationBuilder builder)
+    {
+        LLMModel.EnsureAllModelsLoaded();
+        var config = builder.Configuration;
+
+        var declaredModels = ReadDeclaredModels(config);
+        var modelsToRegister = declaredModels.Count > 0
+            ? declaredModels
+            : LLMModel.All.Where(m => IsProviderConfigured(config, m.Provider)).ToList();
+
+        foreach (var model in modelsToRegister)
+        {
+            if (!IsProviderConfigured(config, model.Provider))
+                continue;
+
+            builder.Services.AddKeyedSingleton<IChatClient>(model.ServiceKey,
+                (sp, key) => CreateChatClient(sp, config, model));
+
+            RegisterAttributeMapper(builder.Services, model);
+        }
+
+        var firstConfigured = modelsToRegister
+            .FirstOrDefault(m => IsProviderConfigured(config, m.Provider));
+        if (firstConfigured is not null)
+        {
+            builder.Services.AddChatClient(services =>
+                services.GetRequiredKeyedService<IChatClient>(firstConfigured.ServiceKey));
+        }
+
+        return builder;
+    }
+
+    private static List<LLMModel> ReadDeclaredModels(IConfiguration config)
+    {
+        var result = new List<LLMModel>();
+        var modelsSection = config.GetSection("AI:LLM:Models");
+        if (!modelsSection.Exists())
+            return result;
+
+        foreach (var child in modelsSection.GetChildren())
+        {
+            var id = child["Id"];
+            var serviceKey = child["ServiceKey"];
+            if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(serviceKey))
+                continue;
+
+            var matchedModel = LLMModel.All.FirstOrDefault(m =>
+                string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(m.ServiceKey, serviceKey, StringComparison.OrdinalIgnoreCase));
+
+            if (matchedModel is not null)
+                result.Add(matchedModel);
+        }
+
+        return result;
+    }
+
+    private static void RegisterAttributeMapper(IServiceCollection services, LLMModel model)
+    {
+        var modelType = model.GetType();
+        var mapperType = typeof(LlmAttributeMapper<>).MakeGenericType(modelType);
+        var attributeType = typeof(LlmAttribute<>).MakeGenericType(modelType);
+        var interfaceType = typeof(IAttributeToFactoryMapper<>).MakeGenericType(attributeType);
+        services.AddSingleton(interfaceType, mapperType);
+    }
+
+    public static bool IsProviderConfigured(IConfiguration config, ProviderType provider)
+    {
+        return provider switch
+        {
+            ProviderType.Ollama => !string.IsNullOrEmpty(config[LlmConfig.OllamaEndpoint])
+                                   || !string.IsNullOrEmpty(config["ConnectionStrings:ollama"]),
+            ProviderType.Anthropic => !string.IsNullOrEmpty(config[LlmConfig.AnthropicApiKey]),
+            ProviderType.OpenAI => !string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]),
+            _ => false
+        };
+    }
+
+    internal static IChatClient CreateChatClient(IServiceProvider services, IConfiguration config, LLMModel model)
+    {
+        var innerClient = model.Provider switch
+        {
+            ProviderType.Ollama => CreateOllamaClient(config, model),
+            ProviderType.Anthropic => CreateAnthropicClient(config, model),
+            ProviderType.OpenAI => CreateOpenAiClient(config, model),
+            _ => throw new NotSupportedException($"Provider {model.Provider} not supported")
+        };
+
+        return new ChatClientBuilder(innerClient)
+            .UseOpenTelemetry(
+                loggerFactory: services.GetService<ILoggerFactory>(),
+                sourceName: "Core.Agent",
+                configure: telemetry => telemetry.EnableSensitiveData = true)
+            .Build(services);
+    }
+
+    private static IChatClient CreateOllamaClient(IConfiguration config, LLMModel model)
+    {
+        var endpoint = config[LlmConfig.OllamaEndpoint]
+            ?? config["ConnectionStrings:ollama"]
+            ?? "http://localhost:11434";
+        return new OllamaApiClient(new Uri(endpoint), model.Id);
+    }
+
+    private static IChatClient CreateAnthropicClient(IConfiguration config, LLMModel model)
+    {
+        var apiKey = config[LlmConfig.AnthropicApiKey]
+            ?? throw new InvalidOperationException("Anthropic API key not configured.");
+        var client = new Anthropic.AnthropicClient { ApiKey = apiKey };
+        return client.AsIChatClient(model.Id);
+    }
+
+    private static IChatClient CreateOpenAiClient(IConfiguration config, LLMModel model)
+    {
+        var apiKey = config[LlmConfig.OpenAiApiKey]
+            ?? throw new InvalidOperationException("OpenAI API key not configured.");
+        return new OpenAI.OpenAIClient(apiKey)
+            .GetChatClient(model.Id)
+            .AsIChatClient();
+    }
+}

@@ -13,15 +13,14 @@ namespace TelegramBot;
 
 public sealed class TelegramBotGrain(
     [Memory("agent-values")] IDurableDictionary<string, string> values,
-    [Memory("agent-history")] IDurableList<OrleansAgentHistoryEntry> history,
-    [Memory("agent-events")] IDurableList<OrleansAgentEventRecord> events,
+    [Memory("agent-history")] IDurableList<AgentHistoryEntry> history,
+    [Memory("agent-events")] IDurableList<AgentEventRecord> events,
     [Memory("agent-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("agent-notifications")] IDurableList<OrleansAgentNotificationRecord> notifications,
-    [Memory("agent-config")] IDurableDictionary<string, OrleansAgentConfig> configurations,
-    [Memory("agent-tracking")] IDurableDictionary<string, OrleansAgentTrackingStatus> tracking,
+    [Memory("agent-notifications")] IDurableList<NotificationRecord> notifications,
+    [Memory("agent-tracking")] IDurableDictionary<string, AgentTrackingStatus> tracking,
     ITelegramBotClient bot,
     ILogger<TelegramBotGrain> logger)
-    : OrleansAgentGrain(values, history, events, subscriptions, notifications, configurations, tracking),
+    : Agent(values, history, events, subscriptions, notifications, tracking),
       Core.ITelegramBot
 {
     private const string TopicRegistryStateKey = "telegram:topic-registry";
@@ -246,9 +245,8 @@ public sealed class TelegramBotGrain(
         if (update.ThreadId == registry?.AssistantThreadId)
         {
             var assistant = GrainFactory.GetGrain<IAgent>("personal-assistant");
-            var chunks = await assistant.SendDeterministicAsync(update.Text!, ct);
-            var response = chunks.Count > 0 ? string.Join(" ", chunks) : "I'm thinking...";
-            await SendText(update.ChatId, response, update.ThreadId, ct);
+            await assistant.AddHistoryAsync("user", update.Text!, ct);
+            await SendText(update.ChatId, "Message received. Processing...", update.ThreadId, ct);
             return;
         }
 
@@ -259,9 +257,8 @@ public sealed class TelegramBotGrain(
         }
 
         var generalAssistant = GrainFactory.GetGrain<IAgent>("personal-assistant");
-        var generalChunks = await generalAssistant.SendDeterministicAsync(update.Text!, ct);
-        var generalResponse = generalChunks.Count > 0 ? string.Join(" ", generalChunks) : "Received.";
-        await SendText(update.ChatId, generalResponse, update.ThreadId, ct);
+        await generalAssistant.AddHistoryAsync("user", update.Text!, ct);
+        await SendText(update.ChatId, "Received.", update.ThreadId, ct);
     }
 
     private async Task HandleCallback(TelegramBotUpdate update, CancellationToken ct)
