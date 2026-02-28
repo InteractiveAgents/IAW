@@ -12,7 +12,17 @@
       "Bash(aspire run:*)",
       "mcp__aspire__execute_resource_command",
       "Bash(ls:*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "WebFetch(domain:weblog.west-wind.com)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet:*)",
+      "Bash(taskkill:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(grep:*)",
+      "Bash(git:*)"
     ]
   },
   "enabledMcpjsonServers": [
