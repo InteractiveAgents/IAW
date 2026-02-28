@@ -55,4 +55,8 @@ builder.AddProject<Projects.TelegramBot>("telegram-bot")
     })
     .WaitFor(samples);
 
+builder.AddViteApp("website", "../../website")
+    .WithNpm()
+    .WithExternalHttpEndpoints();
+
 builder.Build().Run();
