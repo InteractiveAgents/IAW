@@ -1,5 +1,4 @@
 using Core;
-using Orleans.Runtime;
 using Orleans.Streams;
 using Orleans.TestingHost;
 using Xunit;

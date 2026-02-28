@@ -1,5 +1,5 @@
-using System.Reflection;
 using Core;
+using System.Reflection;
 using Xunit;
 
 namespace IAW.Agents.Tests;

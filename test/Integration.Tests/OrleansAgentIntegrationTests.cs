@@ -1,13 +1,12 @@
-using System.Net;
-using System.Text.Json;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Orleans;
 using Orleans.Streams;
+using System.Net;
+using System.Text.Json;
 using Xunit;
 
 namespace IAW.Integration.Tests;

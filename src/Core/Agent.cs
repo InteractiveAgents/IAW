@@ -1,14 +1,10 @@
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using Orleans.Journaling;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using Core.AI;
-using Microsoft.Agents.AI;
-using Microsoft.Extensions.AI;
-using Orleans;
-using Orleans.Journaling;
-using Orleans.Runtime;
-using Orleans.Streams;
 
 namespace Core;
 
@@ -386,10 +382,10 @@ public class Agent(
         AgentObservability.RecordToolCall();
 
         var rawArgs = arguments is null
-            ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            ? [with(StringComparer.OrdinalIgnoreCase)]
             : arguments.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        var result = await function.InvokeAsync(new AIFunctionArguments(rawArgs), ct);
+        var result = await function.InvokeAsync([with(rawArgs)], ct);
         return result?.ToString();
     }
 

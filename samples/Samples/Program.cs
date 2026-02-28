@@ -1,12 +1,10 @@
-using System.Net;
-using System.Net.Sockets;
-using System.Text.Json;
 using Core;
-using Orleans;
-using Orleans.Hosting;
 using Orleans.Journaling;
 using Orleans.Streams;
 using ServiceDefaults;
+using System.Net;
+using System.Net.Sockets;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
