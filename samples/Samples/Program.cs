@@ -2,23 +2,12 @@ using Core;
 using Orleans.Journaling;
 using Orleans.Streams;
 using ServiceDefaults;
-using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseOrleans(silo =>
 {
-    var clusterId = builder.Configuration["IAW:Orleans:ClusterId"] ?? "default";
-    var serviceId = builder.Configuration["IAW:Orleans:ServiceId"] ?? "default";
-    var primarySiloEndpoint = ParseEndpoint(builder.Configuration["IAW:Orleans:PrimarySiloEndpoint"]);
-
-    silo.UseLocalhostClustering(
-        primarySiloEndpoint: primarySiloEndpoint,
-        serviceId: serviceId,
-        clusterId: clusterId);
-
     silo.AddMemoryGrainStorage("Default");
     silo.AddMemoryGrainStorage("PubSubStore");
     silo.AddMemoryStreams("agents");
@@ -571,43 +560,6 @@ static async Task<int> WaitForProcessedCountAsync(IAgent processor, int target, 
     }
 
     throw new TimeoutException("Event processing did not complete in time.");
-}
-
-static IPEndPoint? ParseEndpoint(string? endpointValue)
-{
-    if (string.IsNullOrWhiteSpace(endpointValue))
-    {
-        return null;
-    }
-
-    if (Uri.TryCreate(endpointValue, UriKind.Absolute, out var uri))
-    {
-        return ResolveEndpoint(uri.Host, uri.Port);
-    }
-
-    var parts = endpointValue.Split(':', 2, StringSplitOptions.TrimEntries);
-    if (parts.Length == 2 && int.TryParse(parts[1], out var port))
-    {
-        return ResolveEndpoint(parts[0], port);
-    }
-
-    return null;
-}
-
-static IPEndPoint? ResolveEndpoint(string host, int port)
-{
-    try
-    {
-        var addresses = Dns.GetHostAddresses(host);
-        var address = addresses.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork)
-            ?? addresses.FirstOrDefault();
-
-        return address is null ? null : new IPEndPoint(address, port);
-    }
-    catch
-    {
-        return null;
-    }
 }
 
 public sealed record SampleWeatherAlertPayload(string City, string Severity, int TemperatureC);
