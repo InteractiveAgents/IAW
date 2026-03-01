@@ -20,7 +20,7 @@ dotnet build IAW.slnx                                               # build ever
 
 # Test
 dotnet test IAW.slnx                                                # run all tests
-dotnet test test/Agents.Tests/IAW.Agents.Tests.csproj               # Orleans TestingHost unit tests only
+dotnet test test/Core.Tests/IAW.Core.Tests.csproj                   # AgentTest<Agent> behavior + scenario tests
 dotnet test test/Integration.Tests/IAW.Integration.Tests.csproj     # Aspire integration tests only
 dotnet test test/TelegramBot.Tests/TelegramBot.Tests.csproj         # TelegramBot model tests only
 dotnet test IAW.slnx --filter "FullyQualifiedName~MethodName"       # run a single test by name
@@ -38,9 +38,10 @@ src/
   DevUI/                            -- Microsoft Agent Framework dev UI
 samples/
   Samples/Samples.csproj            -- Orleans silo with ~20 HTTP sample endpoints
+  IAW.Testing/IAW.Testing.csproj     -- Testing framework: AgentTest<T>, AspireAgentTest<T>, ScenarioBuilder
 test/
-  Agents.Tests/                     -- Orleans TestingHost unit tests (xunit v3)
-  Integration.Tests/                -- Aspire DistributedApplicationTestingBuilder tests
+  Core.Tests/                       -- AgentTest<Agent> (41 universal behavior tests) + architecture guards
+  Integration.Tests/                -- AspireAgentTest<Agent> cross-silo integration tests
   TelegramBot.Tests/                -- TelegramBot model unit tests
 ```
 
@@ -99,11 +100,13 @@ All grain-to-grain types in `OrleansAgentContracts.cs` use `[GenerateSerializer]
 
 ## Test Patterns
 
-**Orleans unit tests** (`Agents.Tests`): Use `TestClusterBuilder` with `AgentsSiloConfigurator` (memory storage/streams/reminders). Tests use `IAsyncLifetime` for cluster lifecycle. Access grains via `_cluster.GrainFactory.GetGrain<IAgent>("id")`.
+**IAW.Testing package** (`src/IAW.Testing`): Ships `AgentTest<T>` and `AspireAgentTest<T>` base classes. Any class inheriting `AgentTest<T>` automatically gets 15 universal behavior tests covering all 8 IAgent behaviors. Includes a fluent `ScenarioBuilder` for multi-agent orchestration (`Given/When/Then`) and `MockChatClient` for LLM simulation.
 
-**Integration tests** (`Integration.Tests`): Boot full Aspire app via `DistributedApplicationTestingBuilder.CreateAsync<Projects.Aspire>()`. Wait for `"samples"` resource to reach `Running` state. Test both HTTP endpoints and direct Orleans client connections.
+**Unit tests** (`Core.Tests`): `CoreAgentTests : AgentTest<Agent>` — single line inherits all 15 behavior tests. `ScenarioBuilderTests` exercises the fluent scenario API. `ArchitectureGuardTests` validates design constraints via reflection. Total: 41 tests.
 
-**Architecture guard tests**: Reflection-based tests ensuring `Agent` stays `internal`, legacy streaming APIs aren't exposed, and removed types don't resurface.
+**Integration tests** (`Integration.Tests`): `OrleansAgentIntegrationTests : AspireAgentTest<Agent>` — boots full Aspire app, tests HTTP endpoints + direct Orleans client. Uses the same `Scenario` builder for cross-silo tests.
+
+**Writing new agent tests**: Just inherit `AgentTest<YourAgent>` — all behaviors pass automatically. Add custom `[Fact]` methods for agent-specific logic.
 
 ## Code Style
 
