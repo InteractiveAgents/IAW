@@ -5,6 +5,7 @@
   <ItemGroup>
     <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.1.2" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.2" />
+    <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ngrok" Version="13.1.2-beta.518" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.1.2-beta.518" />
     <PackageVersion Include="CommunityToolkit.Aspire.OllamaSharp" Version="13.1.2-beta.518" />
     <PackageVersion Include="Microsoft.Agents.AI" Version="1.0.0-rc2" />

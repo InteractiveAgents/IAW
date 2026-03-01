@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Core;
 using Microsoft.Extensions.Options;
 
@@ -8,43 +9,64 @@ public sealed class TelegramBotOptions
     public string BotToken { get; set; } = string.Empty;
     public string WebhookUrl { get; set; } = string.Empty;
     public string WebhookSecretToken { get; set; } = string.Empty;
+    public string NgrokApiUrl { get; set; } = string.Empty;
     public long OwnerChatId { get; set; }
 }
 
 public sealed class WebhookSetupService(
     IGrainFactory grains,
     IOptions<TelegramBotOptions> options,
+    IHttpClientFactory httpClientFactory,
     ILogger<WebhookSetupService> logger) : BackgroundService
 {
-    private const int MaxRetries = 10;
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(3);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var config = options.Value;
-        if (string.IsNullOrWhiteSpace(config.WebhookUrl))
+        var webhookUrl = config.WebhookUrl;
+
+        if (string.IsNullOrWhiteSpace(webhookUrl))
+            webhookUrl = await DiscoverFromNgrok(config.NgrokApiUrl, stoppingToken);
+
+        if (string.IsNullOrWhiteSpace(webhookUrl))
         {
-            logger.LogWarning("No webhook URL configured, skipping webhook setup");
+            logger.LogWarning("No webhook URL configured and ngrok discovery failed, skipping webhook setup");
             return;
         }
 
-        for (var attempt = 1; attempt <= MaxRetries; attempt++)
+        var bot = grains.GetGrain<ITelegramBot>("bot");
+        await bot.SetWebhook(webhookUrl, config.WebhookSecretToken, stoppingToken);
+        logger.LogInformation("Webhook registered: {Url}", webhookUrl);
+    }
+
+    async Task<string?> DiscoverFromNgrok(string ngrokApiUrl, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(ngrokApiUrl))
+            return null;
+
+        // wait for ngrok to be ready
+        await Task.Delay(TimeSpan.FromSeconds(3), ct);
+
+        try
         {
-            try
+            using var http = httpClientFactory.CreateClient();
+            var json = await http.GetFromJsonAsync<JsonElement>(
+                $"{ngrokApiUrl.TrimEnd('/')}/api/tunnels", ct);
+
+            foreach (var tunnel in json.GetProperty("tunnels").EnumerateArray())
             {
-                var bot = grains.GetGrain<ITelegramBot>("bot");
-                await bot.SetWebhook(config.WebhookUrl, config.WebhookSecretToken, stoppingToken);
-                logger.LogInformation("Webhook registered on attempt {Attempt}: {Url}", attempt, config.WebhookUrl);
-                return;
-            }
-            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-            {
-                logger.LogWarning(ex, "Webhook setup attempt {Attempt}/{Max} failed", attempt, MaxRetries);
-                if (attempt < MaxRetries)
-                    await Task.Delay(RetryDelay, stoppingToken);
+                var publicUrl = tunnel.GetProperty("public_url").GetString();
+                if (publicUrl?.StartsWith("https://") == true)
+                {
+                    logger.LogInformation("Discovered ngrok tunnel: {Url}", publicUrl);
+                    return $"{publicUrl}/webhook";
+                }
             }
         }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to discover webhook URL from ngrok at {NgrokApiUrl}", ngrokApiUrl);
+        }
 
-        logger.LogError("Failed to register webhook after {Max} attempts", MaxRetries);
+        return null;
     }
 }

@@ -37,6 +37,7 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
     return new TelegramBotClient(config.BotToken);
 });
 
+builder.Services.AddHttpClient();
 builder.Services.AddHostedService<WebhookSetupService>();
 builder.AddServiceDefaults();
 
