@@ -1,4 +1,5 @@
 using Core;
+using Core.GitHub;
 using Orleans.Journaling;
 using Orleans.Streams;
 using ServiceDefaults;
@@ -8,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseOrleans(silo =>
 {
+    silo.UseLocalhostClustering();
     silo.AddMemoryGrainStorage("Default");
     silo.AddMemoryGrainStorage("PubSubStore");
     silo.AddMemoryStreams("agents");
@@ -16,6 +18,7 @@ builder.Host.UseOrleans(silo =>
     silo.AddStateMachineStorage();
 });
 
+builder.AddGitHubClient();
 builder.AddServiceDefaults();
 var app = builder.Build();
 

@@ -23,10 +23,15 @@ public abstract class AspireAgentTest<T> : IAsyncLifetime where T : class, IAgen
 
     protected IAgent Agent(string id) => _orleansClient.GetGrain<IAgent>(id);
 
-    protected virtual string[] AppHostArgs => ["--Parameters:anthropic-api-key=test-key"];
+    protected virtual string[] AppHostArgs =>
+    [
+        "--Parameters:anthropic-api-key=test-key",
+        "--Parameters:github-token=test-token",
+        "--Parameters:ngrok-auth-token=test-ngrok",
+        "--Parameters:bot-token=test-bot"
+    ];
     protected virtual string WaitForResource => "samples";
     protected virtual string OrleansSiloResource => "samples";
-    protected virtual string OrleansSiloEndpointName => "orleans-gateway";
     protected virtual TimeSpan StartupTimeout => TimeSpan.FromMinutes(3);
 
     protected virtual Task OnAppStartedAsync() => Task.CompletedTask;
@@ -45,15 +50,11 @@ public abstract class AspireAgentTest<T> : IAsyncLifetime where T : class, IAgen
             .WaitAsync(TimeSpan.FromSeconds(60), startCts.Token);
 
         _httpClient = _app.CreateHttpClient(OrleansSiloResource);
-        var gatewayEndpoint = _app.GetEndpoint(OrleansSiloResource, OrleansSiloEndpointName);
 
         _orleansClientHost = Host.CreateApplicationBuilder()
             .UseOrleansClient(client =>
             {
-                client.UseLocalhostClustering(
-                    gatewayPort: gatewayEndpoint.Port,
-                    serviceId: "default",
-                    clusterId: "default");
+                client.UseLocalhostClustering();
                 client.AddMemoryStreams("agents");
             })
             .Build();

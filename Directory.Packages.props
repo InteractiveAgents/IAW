@@ -41,6 +41,7 @@
     <PackageVersion Include="OpenAI" Version="2.9.0" />
     <PackageVersion Include="OllamaSharp" Version="5.4.18" />
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.1.2" />
+    <PackageVersion Include="Octokit" Version="14.0.0" />
     <PackageVersion Include="Telegram.BotAPI" Version="9.4.0" />
   </ItemGroup>
 </Project>

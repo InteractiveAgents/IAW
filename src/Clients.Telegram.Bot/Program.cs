@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseOrleans(silo =>
 {
+    silo.UseLocalhostClustering();
     silo.AddMemoryGrainStorage("Default");
     silo.AddMemoryGrainStorage("PubSubStore");
     silo.AddMemoryStreams("agents");

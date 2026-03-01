@@ -11,6 +11,7 @@ public static class IAWExtensions
     private static readonly HashSet<ProviderType> _declaredProviders = [];
     private static IResourceBuilder<ParameterResource>? _anthropicKeyParam;
     private static IResourceBuilder<ParameterResource>? _openaiKeyParam;
+    private static IResourceBuilder<ParameterResource>? _gitHubTokenParam;
     private static IResourceBuilder<OllamaResource>? _ollamaResource;
     private static readonly List<IResourceBuilder<OllamaModelResource>> _ollamaModelResources = [];
 
@@ -23,6 +24,7 @@ public static class IAWExtensions
         _declaredProviders.Clear();
         _anthropicKeyParam = null;
         _openaiKeyParam = null;
+        _gitHubTokenParam = null;
         _ollamaResource = null;
         _ollamaModelResources.Clear();
 
@@ -91,6 +93,9 @@ public static class IAWExtensions
             _openaiKeyParam ??= appBuilder.AddParameter("openai-api-key", secret: true);
             builder.WithEnvironment("AI__LLM__OpenAiApiKey", _openaiKeyParam);
         }
+
+        _gitHubTokenParam ??= appBuilder.AddParameter("github-token", secret: true);
+        builder.WithEnvironment("GitHub__Token", _gitHubTokenParam);
 
         foreach (var modelResource in _ollamaModelResources)
         {
