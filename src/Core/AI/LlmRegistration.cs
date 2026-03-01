@@ -17,7 +17,7 @@ public static class LlmRegistration
         var declaredModels = ReadDeclaredModels(config);
         var modelsToRegister = declaredModels.Count > 0
             ? declaredModels
-            : LLMModel.All.Where(m => IsProviderConfigured(config, m.Provider)).ToList();
+            : [.. LLMModel.All.Where(m => IsProviderConfigured(config, m.Provider))];
 
         foreach (var model in modelsToRegister)
         {

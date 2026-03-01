@@ -25,7 +25,7 @@ public abstract class LLMModel
 
     public static IReadOnlyList<LLMModel> All
     {
-        get { lock (_lock) { return _registry.ToList(); } }
+        get { lock (_lock) { return [.. _registry]; } }
     }
 
     protected LLMModel()

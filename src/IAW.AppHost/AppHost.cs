@@ -4,7 +4,8 @@ using Core.AI.Models;
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    .WithLLM<Claude45Haiku>();
+    .WithLLM<Claude45Haiku>()
+    .WithLLM<Qwen25>();
 
 var samples = builder.AddProject<Projects.Samples>("samples")
     .WithReference(iaw)

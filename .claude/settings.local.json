@@ -34,7 +34,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:github.com)",
       "Bash(curl:*)",
-      "mcp__aspire__list_structured_logs"
+      "mcp__aspire__list_structured_logs",
+      "Bash(xargs cat:*)"
     ]
   },
   "enabledMcpjsonServers": [

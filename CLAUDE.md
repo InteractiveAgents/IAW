@@ -22,7 +22,6 @@ dotnet build IAW.slnx                                               # build ever
 dotnet test IAW.slnx                                                # run all tests
 dotnet test test/Core.Tests/IAW.Core.Tests.csproj                   # AgentTest<Agent> behavior + scenario tests
 dotnet test test/Integration.Tests/IAW.Integration.Tests.csproj     # Aspire integration tests only
-dotnet test test/TelegramBot.Tests/TelegramBot.Tests.csproj         # TelegramBot model tests only
 dotnet test IAW.slnx --filter "FullyQualifiedName~MethodName"       # run a single test by name
 ```
 
@@ -42,7 +41,6 @@ samples/
 test/
   Core.Tests/                       -- AgentTest<Agent> (41 universal behavior tests) + architecture guards
   Integration.Tests/                -- AspireAgentTest<Agent> cross-silo integration tests
-  TelegramBot.Tests/                -- TelegramBot model unit tests
 ```
 
 Central package management via `Directory.Packages.props` — all package versions are declared there.
