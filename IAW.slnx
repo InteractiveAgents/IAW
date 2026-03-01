@@ -6,7 +6,6 @@
   <Folder Name="/src/">
     <Project Path="src/IAW.Testing/IAW.Testing.csproj" />
   </Folder>
-  <Folder Name="/src/IAW.AppHost/" />
   <Project Path="samples/Samples/Samples.csproj" />
   <Project Path="src/Clients.Telegram.Bot/TelegramBot.csproj" />
   <Project Path="src/Core/Core.csproj" />
@@ -14,7 +13,6 @@
   <Project Path="src/IAW.AppHost/Aspire.csproj" />
   <Project Path="src/IAW.MCP/MCP.csproj" Id="f72a5392-8914-4f0c-a8b3-642c4a424a11" />
   <Project Path="src/IAW.ServiceDefaults/ServiceDefaults.csproj" />
-  <Project Path="test/Agents.Tests/IAW.Agents.Tests.csproj" />
   <Project Path="test/Integration.Tests/IAW.Integration.Tests.csproj" />
   <Project Path="test/TelegramBot.Tests/TelegramBot.Tests.csproj" />
   <Project Path="test/Core.Tests/IAW.Core.Tests.csproj" />

@@ -30,7 +30,11 @@
       "Bash(npm view:*)",
       "Bash(npx vitepress:*)",
       "Bash(echo exit: $?:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl:*)",
+      "mcp__aspire__list_structured_logs"
     ]
   },
   "enabledMcpjsonServers": [

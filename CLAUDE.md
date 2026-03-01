@@ -9,8 +9,16 @@ IAW (Interactive Agents Web) is an Orleans 10.0-based multi-agent runtime. Agent
 ## Build & Run Commands
 
 ```bash
-dotnet build IAW.slnx                                              # build everything
-dotnet run --project src/IAW.AppHost/Aspire.csproj                  # run Aspire AppHost (orchestrates all services)
+# Run (always use aspire CLI — never dotnet run manually)
+aspire run                                                          # start everything (default)
+aspire run --project src/IAW.AppHost/Aspire.csproj                  # explicit AppHost path
+aspire run --log-level debug                                        # verbose output for troubleshooting
+aspire run --log-level trace                                        # maximum verbosity
+
+# Build
+dotnet build IAW.slnx                                               # build everything
+
+# Test
 dotnet test IAW.slnx                                                # run all tests
 dotnet test test/Agents.Tests/IAW.Agents.Tests.csproj               # Orleans TestingHost unit tests only
 dotnet test test/Integration.Tests/IAW.Integration.Tests.csproj     # Aspire integration tests only
