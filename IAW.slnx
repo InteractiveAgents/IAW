@@ -17,4 +17,5 @@
   <Project Path="test/Agents.Tests/IAW.Agents.Tests.csproj" />
   <Project Path="test/Integration.Tests/IAW.Integration.Tests.csproj" />
   <Project Path="test/TelegramBot.Tests/TelegramBot.Tests.csproj" />
+  <Project Path="test/Core.Tests/IAW.Core.Tests.csproj" />
 </Solution>
