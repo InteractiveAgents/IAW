@@ -1,9 +1,7 @@
 using Aspire.Hosting;
-using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
 using Core;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using IAW.Testing;
 using Orleans.Streams;
 using System.Net;
 using System.Text.Json;
@@ -11,58 +9,14 @@ using Xunit;
 
 namespace IAW.Integration.Tests;
 
-public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
+public sealed class OrleansAgentIntegrationTests : AspireAgentTest<Agent>
 {
-    private DistributedApplication _app = null!;
-    private HttpClient _samplesClient = null!;
-    private IHost _orleansClientHost = null!;
-    private IClusterClient _orleansClient = null!;
-    private Uri _orleansGatewayEndpoint = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Aspire>(
-            ["--Parameters:anthropic-api-key=test-key"]);
-
-        _app = await appHost.BuildAsync();
-
-        using var startTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-        await _app.StartAsync(startTimeout.Token);
-        await _app.ResourceNotifications
-            .WaitForResourceAsync("samples", KnownResourceStates.Running)
-            .WaitAsync(TimeSpan.FromSeconds(60), startTimeout.Token);
-
-        _samplesClient = _app.CreateHttpClient("samples");
-        _orleansGatewayEndpoint = _app.GetEndpoint("samples", "orleans-gateway");
-
-        _orleansClientHost = Host.CreateApplicationBuilder()
-            .UseOrleansClient(client =>
-            {
-                client.UseLocalhostClustering(
-                    gatewayPort: _orleansGatewayEndpoint.Port,
-                    serviceId: "default",
-                    clusterId: "default");
-                client.AddMemoryStreams("agents");
-            })
-            .Build();
-
-        await _orleansClientHost.StartAsync(startTimeout.Token);
-        _orleansClient = _orleansClientHost.Services.GetRequiredService<IClusterClient>();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _samplesClient.Dispose();
-        await _orleansClientHost.StopAsync();
-        _orleansClientHost.Dispose();
-        await _app.DisposeAsync();
-    }
-
     [Fact]
     public void AspireTestingHost_ExposesOrleansTestResource()
     {
-        Assert.False(string.IsNullOrWhiteSpace(_orleansGatewayEndpoint.Host));
-        Assert.True(_orleansGatewayEndpoint.Port > 0);
+        var gatewayEndpoint = App.GetEndpoint("samples", "orleans-gateway");
+        Assert.False(string.IsNullOrWhiteSpace(gatewayEndpoint.Host));
+        Assert.True(gatewayEndpoint.Port > 0);
     }
 
     [Fact]
@@ -176,7 +130,7 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         Assert.Equal(3, second.GetProperty("visit1").GetInt32());
         Assert.Equal(4, second.GetProperty("visit2").GetInt32());
 
-        var state = await _orleansClient.GetGrain<IAgent>(agentId).GetStateAsync(ct);
+        var state = await OrleansClient.GetGrain<IAgent>(agentId).GetStateAsync(ct);
         Assert.Equal("Seattle", state["city"]);
         Assert.Equal("4", state["visits"]);
     }
@@ -288,7 +242,7 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
     public async Task AspireEndpointDiscovery_CanRunAgentEventProcessingE2E()
     {
         var ct = TestContext.Current.CancellationToken;
-        var samplesEndpoint = _app.GetEndpoint("samples");
+        var samplesEndpoint = App.GetEndpoint("samples");
         using var client = new HttpClient
         {
             BaseAddress = samplesEndpoint
@@ -309,8 +263,8 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var streamId = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new { city = "Seattle", severity = "high", source = "direct-client" });
 
-        var processor = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-{Guid.NewGuid():N}");
-        var streamProvider = _orleansClient.GetStreamProvider("agents");
+        var processor = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-{Guid.NewGuid():N}");
+        var streamProvider = OrleansClient.GetStreamProvider("agents");
         var stream = streamProvider.GetStream<string>(StreamId.Create(streamNamespace, streamId));
 
         var handle = await stream.SubscribeAsync(async (message, _) =>
@@ -348,8 +302,8 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var streamId = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new { city = "Seattle", severity = "high", source = "single-publish-check" });
 
-        var processor = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-single-{Guid.NewGuid():N}");
-        var streamProvider = _orleansClient.GetStreamProvider("agents");
+        var processor = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-single-{Guid.NewGuid():N}");
+        var streamProvider = OrleansClient.GetStreamProvider("agents");
         var stream = streamProvider.GetStream<string>(StreamId.Create(streamNamespace, streamId));
 
         var handle = await stream.SubscribeAsync(async (message, _) =>
@@ -394,9 +348,9 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var streamId = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new { city = "Seattle", severity = "high", source = "dual-subscriber-check" });
 
-        var processorA = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-a-{Guid.NewGuid():N}");
-        var processorB = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-b-{Guid.NewGuid():N}");
-        var streamProvider = _orleansClient.GetStreamProvider("agents");
+        var processorA = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-a-{Guid.NewGuid():N}");
+        var processorB = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-b-{Guid.NewGuid():N}");
+        var streamProvider = OrleansClient.GetStreamProvider("agents");
         var stream = streamProvider.GetStream<string>(StreamId.Create(streamNamespace, streamId));
 
         var handleA = await stream.SubscribeAsync(async (message, _) =>
@@ -466,8 +420,8 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var streamId = Guid.NewGuid();
         var payload = JsonSerializer.Serialize(new { city = "Seattle", severity = "high", source = "no-subscriber-check" });
 
-        var processor = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-none-{Guid.NewGuid():N}");
-        var streamProvider = _orleansClient.GetStreamProvider("agents");
+        var processor = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-none-{Guid.NewGuid():N}");
+        var streamProvider = OrleansClient.GetStreamProvider("agents");
         var stream = streamProvider.GetStream<string>(StreamId.Create(streamNamespace, streamId));
 
         await stream.OnNextAsync(payload);
@@ -493,9 +447,9 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var payload1 = JsonSerializer.Serialize(new { city = "Seattle", severity = "low", sequence = 1 });
         var payload2 = JsonSerializer.Serialize(new { city = "Seattle", severity = "high", sequence = 2 });
 
-        var processorA = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-a-ordered-{Guid.NewGuid():N}");
-        var processorB = _orleansClient.GetGrain<IAgent>($"integration-direct-processor-b-ordered-{Guid.NewGuid():N}");
-        var streamProvider = _orleansClient.GetStreamProvider("agents");
+        var processorA = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-a-ordered-{Guid.NewGuid():N}");
+        var processorB = OrleansClient.GetGrain<IAgent>($"integration-direct-processor-b-ordered-{Guid.NewGuid():N}");
+        var streamProvider = OrleansClient.GetStreamProvider("agents");
         var stream = streamProvider.GetStream<string>(StreamId.Create(streamNamespace, streamId));
 
         var handleA = await stream.SubscribeAsync(async (message, _) =>
@@ -564,13 +518,13 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var ct = TestContext.Current.CancellationToken;
         var agentId = $"integration-direct-persist-{Guid.NewGuid():N}";
 
-        var agent = _orleansClient.GetGrain<IAgent>(agentId);
+        var agent = OrleansClient.GetGrain<IAgent>(agentId);
         await agent.SetStateAsync("city", "Seattle", ct);
         var visit1 = await agent.IncrementAsync("visits", ct);
         await agent.AddHistoryAsync("user", "hello from direct persistence", ct);
         await agent.AddHistoryAsync("assistant", "response one", ct);
 
-        var sameAgent = _orleansClient.GetGrain<IAgent>(agentId);
+        var sameAgent = OrleansClient.GetGrain<IAgent>(agentId);
         var visit2 = await sameAgent.IncrementAsync("visits", ct);
         await sameAgent.AddHistoryAsync("user", "second direct persistence", ct);
         await sameAgent.AddHistoryAsync("assistant", "response two", ct);
@@ -598,8 +552,8 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var messageId = Guid.NewGuid().ToString("N");
         var correlationId = Guid.NewGuid().ToString("N");
 
-        var publisher = _orleansClient.GetGrain<IAgent>(publisherId);
-        var subscriber = _orleansClient.GetGrain<IAgent>(subscriberId);
+        var publisher = OrleansClient.GetGrain<IAgent>(publisherId);
+        var subscriber = OrleansClient.GetGrain<IAgent>(subscriberId);
 
         await publisher.SubscribeAsync(topic, subscriberId, ct);
         await publisher.NotifyAsync(new NotificationEnvelope
@@ -652,8 +606,8 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         var messageId = Guid.NewGuid().ToString("N");
         var correlationId = Guid.NewGuid().ToString("N");
 
-        var publisher = _orleansClient.GetGrain<IAgent>(publisherId);
-        var subscriber = _orleansClient.GetGrain<IAgent>(subscriberId);
+        var publisher = OrleansClient.GetGrain<IAgent>(publisherId);
+        var subscriber = OrleansClient.GetGrain<IAgent>(subscriberId);
 
         await publisher.SubscribeAsync(topic, subscriberId, ct);
         await publisher.NotifyAsync(
@@ -702,7 +656,7 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
 
     private async Task<JsonElement> GetJsonAsync(string path, CancellationToken ct)
     {
-        return await GetJsonAsync(_samplesClient, path, ct);
+        return await GetJsonAsync(HttpClient, path, ct);
     }
 
     private static async Task<JsonElement> GetJsonAsync(HttpClient client, string path, CancellationToken ct)
@@ -732,6 +686,20 @@ public sealed class OrleansAgentIntegrationTests : IAsyncLifetime
         }
 
         throw new TimeoutException("Direct Orleans client event processing did not complete in time.");
+    }
+
+    [Fact]
+    public async Task Scenario_CrossSilo_NotificationDelivery()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var publisherId = $"integration-scenario-pub-{Guid.NewGuid():N}";
+        var subscriberId = $"integration-scenario-sub-{Guid.NewGuid():N}";
+
+        await Scenario
+            .Given(Scenario.Agent(publisherId)).Subscribes("weather.alert", to: subscriberId)
+            .When(Scenario.Agent(publisherId)).Notifies("weather.alert", "storm")
+            .Then(Scenario.Agent(subscriberId)).HasNotification("weather.alert", "storm")
+            .RunAsync(ct);
     }
 
     private sealed record WeatherAlertPayload(string City, string Severity, int TemperatureC);
