@@ -1,14 +1,31 @@
 using Aspire.Hosting.Orleans;
+using CommunityToolkit.Aspire.Hosting.Ollama;
 using Core.AI;
 
 namespace Aspire;
 
 public static class IAWExtensions
 {
+    private static IDistributedApplicationBuilder? _appBuilder;
+    private static readonly List<LLMModel> _declaredModels = [];
+    private static readonly HashSet<ProviderType> _declaredProviders = [];
+    private static IResourceBuilder<ParameterResource>? _anthropicKeyParam;
+    private static IResourceBuilder<ParameterResource>? _openaiKeyParam;
+    private static IResourceBuilder<OllamaResource>? _ollamaResource;
+    private static readonly List<IResourceBuilder<OllamaModelResource>> _ollamaModelResources = [];
+
     public static OrleansService AddIAW(
         this IDistributedApplicationBuilder builder,
         string name = "agents")
     {
+        _appBuilder = builder;
+        _declaredModels.Clear();
+        _declaredProviders.Clear();
+        _anthropicKeyParam = null;
+        _openaiKeyParam = null;
+        _ollamaResource = null;
+        _ollamaModelResources.Clear();
+
         return builder.AddOrleans(name)
             .WithDevelopmentClustering()
             .WithMemoryGrainStorage("Default")
@@ -16,11 +33,6 @@ public static class IAWExtensions
             .WithMemoryStreaming("agents")
             .WithMemoryReminders();
     }
-
-    private static readonly List<LLMModel> _declaredModels = [];
-    private static readonly HashSet<ProviderType> _declaredProviders = [];
-    private static IResourceBuilder<ParameterResource>? _anthropicKeyParam;
-    private static IResourceBuilder<ParameterResource>? _openaiKeyParam;
 
     public static OrleansService WithLLM<TModel>(this OrleansService orleans)
         where TModel : LLMModel
@@ -31,13 +43,33 @@ public static class IAWExtensions
         _declaredModels.Add(model);
         _declaredProviders.Add(model.Provider);
 
+        if (model.Provider == ProviderType.Ollama && _appBuilder is not null)
+        {
+            _ollamaResource ??= _appBuilder.AddOllama("ollama");
+            var modelResource = _ollamaResource.AddModel(model.Id);
+            _ollamaModelResources.Add(modelResource);
+        }
+
+        return orleans;
+    }
+
+    public static OrleansService WithOllama(
+        this OrleansService orleans,
+        Action<IResourceBuilder<OllamaResource>> configure)
+    {
+        if (_appBuilder is null)
+            throw new InvalidOperationException("Call AddIAW() before WithOllama().");
+
+        _ollamaResource ??= _appBuilder.AddOllama("ollama");
+        configure(_ollamaResource);
+
         return orleans;
     }
 
     public static IResourceBuilder<T> WithLLMEnvironment<T>(
         this IResourceBuilder<T> builder,
         IDistributedApplicationBuilder appBuilder)
-        where T : IResourceWithEnvironment
+        where T : IResourceWithEnvironment, IResourceWithWaitSupport
     {
         for (var i = 0; i < _declaredModels.Count; i++)
         {
@@ -58,6 +90,12 @@ public static class IAWExtensions
         {
             _openaiKeyParam ??= appBuilder.AddParameter("openai-api-key", secret: true);
             builder.WithEnvironment("AI__LLM__OpenAiApiKey", _openaiKeyParam);
+        }
+
+        foreach (var modelResource in _ollamaModelResources)
+        {
+            builder.WithReference(modelResource);
+            builder.WaitFor(modelResource);
         }
 
         return builder;

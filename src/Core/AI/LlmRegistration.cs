@@ -80,11 +80,19 @@ public static class LlmRegistration
         return provider switch
         {
             ProviderType.Ollama => !string.IsNullOrEmpty(config[LlmConfig.OllamaEndpoint])
-                                   || !string.IsNullOrEmpty(config["ConnectionStrings:ollama"]),
+                                   || !string.IsNullOrEmpty(config["ConnectionStrings:ollama"])
+                                   || HasOllamaModelConnectionString(config),
             ProviderType.Anthropic => !string.IsNullOrEmpty(config[LlmConfig.AnthropicApiKey]),
             ProviderType.OpenAI => !string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]),
             _ => false
         };
+    }
+
+    private static bool HasOllamaModelConnectionString(IConfiguration config)
+    {
+        var connectionStrings = config.GetSection("ConnectionStrings");
+        return connectionStrings.GetChildren().Any(c =>
+            c.Key.StartsWith("ollama-", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static IChatClient CreateChatClient(IServiceProvider services, IConfiguration config, LLMModel model)
@@ -107,10 +115,35 @@ public static class LlmRegistration
 
     private static IChatClient CreateOllamaClient(IConfiguration config, LLMModel model)
     {
-        var endpoint = config[LlmConfig.OllamaEndpoint]
+        var modelConnectionString = FindOllamaModelConnectionString(config, model);
+        var endpoint = ParseOllamaEndpoint(modelConnectionString)
+            ?? config[LlmConfig.OllamaEndpoint]
             ?? config["ConnectionStrings:ollama"]
             ?? "http://localhost:11434";
         return new OllamaApiClient(new Uri(endpoint), model.Id);
+    }
+
+    private static string? FindOllamaModelConnectionString(IConfiguration config, LLMModel model)
+    {
+        // Aspire generates connection names like "ollama-qwen2-5" for model id "qwen2.5"
+        var sanitizedId = model.Id.Replace(".", "-").Replace(":", "-");
+        return config[$"ConnectionStrings:ollama-{sanitizedId}"];
+    }
+
+    private static string? ParseOllamaEndpoint(string? connectionString)
+    {
+        if (string.IsNullOrEmpty(connectionString))
+            return null;
+
+        // Aspire Ollama connection strings use "Endpoint=http://...;Model=..." format
+        if (connectionString.StartsWith("Endpoint=", StringComparison.OrdinalIgnoreCase))
+            return connectionString.Split(';')[0]["Endpoint=".Length..];
+
+        // Plain URI format
+        if (connectionString.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return connectionString;
+
+        return null;
     }
 
     private static IChatClient CreateAnthropicClient(IConfiguration config, LLMModel model)

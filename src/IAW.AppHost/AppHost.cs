@@ -5,7 +5,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
-    .WithLLM<Qwen25>();
+    .WithLLM<Qwen25>()
+    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
 
 var samples = builder.AddProject<Projects.Samples>("samples")
     .WithReference(iaw)
@@ -21,13 +22,9 @@ var samples = builder.AddProject<Projects.Samples>("samples")
         endpoint.Port = 30_000;
     });
 
-var ollama = builder.AddOllama("ollama").WithOpenWebUI().WithGPUSupport().WithDataVolume();
-var qwen = ollama.AddModel("qwen2.5");
-
 builder.AddProject<Projects.DevUI>("devui")
-    .WithReference(qwen)
     .WithReference(iaw.AsClient())
-    .WaitFor(qwen)
+    .WithLLMEnvironment(builder)
     .WaitFor(samples)
     .WithEnvironment("IAW__Orleans__Gateways__0", samples.GetEndpoint("orleans-gateway"));
 
