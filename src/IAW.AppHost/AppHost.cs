@@ -32,4 +32,8 @@ builder.AddViteApp("website", "../../website")
     .WithNpm()
     .WithExternalHttpEndpoints();
 
+builder.AddProject<Projects.MCP>("mcp")
+    .WithReference(iaw.AsClient())
+    .WaitFor(samples);
+
 builder.Build().Run();

@@ -20,6 +20,7 @@
     <ProjectReference Include="..\Core\Core.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\DevUI\DevUI.csproj" />
     <ProjectReference Include="..\Clients.Telegram.Bot\TelegramBot.csproj" />
+    <ProjectReference Include="..\IAW.MCP\MCP.csproj" />
   </ItemGroup>
 
 </Project>
