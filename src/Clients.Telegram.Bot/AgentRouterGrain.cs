@@ -26,15 +26,27 @@ public sealed class AgentRouterGrain(
         ("build", "Building .NET projects, compiling code, running tests"),
         ("aspire", "Aspire resources, service orchestration, health monitoring, resource management"),
         ("roslyn", "C# code analysis, type maps, architecture analysis, pattern detection, Roslyn"),
-        ("dot-net", "dotnet CLI, testing, code formatting, .NET development"),
-        ("nu-get", "NuGet packages, dependency management, outdated packages"),
-        ("git-hub", "GitHub operations, pull requests, issues, releases, repository management"),
+        ("dotnet", "dotnet CLI, testing, code formatting, .NET development"),
+        ("nuget", "NuGet packages, dependency management, outdated packages"),
+        ("github", "GitHub operations, pull requests, issues, releases, repository management"),
         ("reviewer", "Code review, quality analysis, best practices"),
         ("self-improvement", "Code quality analysis, improvement proposals, self-modification"),
         ("planning", "Execution plans, task planning, agent coordination"),
         ("notification", "Alerts, notifications, event aggregation"),
         ("deployer", "Deployment, release builds, Aspire deployment")
     ];
+
+    private bool _registryBuilt;
+
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        await base.OnActivateAsync(cancellationToken);
+        if (!_registryBuilt)
+        {
+            await RebuildRegistryAsync(cancellationToken);
+            _registryBuilt = true;
+        }
+    }
 
     public async Task<AgentRouteResult> RouteAsync(string message, CancellationToken ct = default)
     {

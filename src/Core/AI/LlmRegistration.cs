@@ -199,6 +199,12 @@ public static class LlmRegistration
                     .GetEmbeddingClient("text-embedding-3-small")
                     .AsIEmbeddingGenerator());
         }
+        else
+        {
+            builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
+                (_, _) => throw new InvalidOperationException(
+                    "No embedding provider configured. Set AI:LLM:GitHubModelsApiKey or AI:LLM:OpenAiApiKey."));
+        }
 
         return builder;
     }
