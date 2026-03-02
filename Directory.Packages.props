@@ -44,5 +44,7 @@
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.1.2" />
     <PackageVersion Include="Octokit" Version="14.0.0" />
     <PackageVersion Include="Telegram.BotAPI" Version="9.4.0" />
+    <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Qdrant.Client" Version="13.1.2" />
   </ItemGroup>
 </Project>

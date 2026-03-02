@@ -24,9 +24,14 @@ builder.AddProject<Projects.DevUI>("devui")
 var ngrokAuthToken = builder.AddParameter("ngrok-auth-token", secret: true);
 var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
 
+var qdrant = builder.AddQdrant("qdrant")
+    .WithLifetime(ContainerLifetime.Persistent);
+
 var botToken = builder.AddParameter("bot-token", secret: true);
 var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
     .WithReference(iaw)
+    .WithReference(qdrant)
+    .WaitFor(qdrant)
     .WithLLMEnvironment(builder)
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; })
     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
