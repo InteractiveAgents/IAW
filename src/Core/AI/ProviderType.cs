@@ -4,5 +4,6 @@ public enum ProviderType
 {
     Ollama,
     Anthropic,
-    OpenAI
+    OpenAI,
+    GitHub
 }

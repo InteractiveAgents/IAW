@@ -41,5 +41,7 @@ public abstract class LLMModel
         _ = Models.Gpt4oMini.Instance;
         _ = Models.Llama32.Instance;
         _ = Models.Qwen25.Instance;
+        _ = Models.GitHubGpt4oMini.Instance;
+        _ = Models.GitHubGpt4o.Instance;
     }
 }
