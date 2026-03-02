@@ -5,6 +5,7 @@ using Orleans.Journaling;
 using ServiceDefaults;
 using Telegram.BotAPI;
 using TelegramBot;
+using TelegramBot.Services;
 using BotUpdate = Telegram.BotAPI.GettingUpdates.Update;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -39,6 +40,9 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 
 builder.Services.AddHttpClient();
 builder.Services.AddHostedService<WebhookSetupService>();
+builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
+builder.Services.AddSingleton<IVoiceTranscriptionService, VoiceTranscriptionService>();
+builder.Services.AddSingleton<IVoiceCallService, VoiceCallService>();
 builder.AddServiceDefaults();
 
 var app = builder.Build();
