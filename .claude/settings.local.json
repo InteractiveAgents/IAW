@@ -35,7 +35,21 @@
       "WebFetch(domain:github.com)",
       "Bash(curl:*)",
       "mcp__aspire__list_structured_logs",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "Bash(tasklist:*)",
+      "Bash(cmd.exe:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(gh api:*)",
+      "Bash(powershell:*)",
+      "Bash(powershell.exe:*)",
+      "WebFetch(domain:core.telegram.org)",
+      "mcp__aspire__list_apphosts",
+      "mcp__aspire__select_apphost",
+      "Bash(netstat:*)",
+      "WebFetch(domain:techcommunity.microsoft.com)",
+      "WebFetch(domain:aspire.dev)",
+      "WebFetch(domain:telegrambots.github.io)",
+      "WebFetch(domain:mehmetozkaya.medium.com)"
     ]
   },
   "enabledMcpjsonServers": [

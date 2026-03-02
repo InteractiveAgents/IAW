@@ -1,19 +1,33 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using System.Net;
+using ServiceDefaults;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+builder.AddServiceDefaults();
+
+var gatewayAddress = builder.Configuration["Orleans:PrimaryGateway"];
 
 builder.UseOrleansClient(client =>
 {
-    client.AddMemoryStreams("agents");
+    if (!string.IsNullOrEmpty(gatewayAddress))
+    {
+        var uri = new Uri(gatewayAddress);
+        client.UseStaticClustering(new IPEndPoint(IPAddress.Loopback, uri.Port));
+    }
+    else
+    {
+        client.UseLocalhostClustering();
+    }
 });
 
 builder.Services
     .AddMcpServer()
-    .WithStdioServerTransport()
+    .WithHttpTransport()
     .WithTools<AgentTools>();
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+
+app.MapDefaultEndpoints();
+app.MapMcp();
+
+app.Run();

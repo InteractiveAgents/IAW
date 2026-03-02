@@ -16,26 +16,9 @@ hero:
       text: View on GitHub
       link: https://github.com/InteractiveAgents/IAW
 
-features:
-  - icon: "\U0001F9E0"
-    title: Durable Memory
-    details: Every agent has six built-in durable state collections backed by Orleans journaled grain storage — key-value pairs, conversation history, events, subscriptions, notifications, and tracking status.
-  - icon: "\U0001F4E1"
-    title: Agent-to-Agent Communication
-    details: Agents communicate through pub/sub notifications, Orleans streams, and direct grain calls. Subscribe to topics, broadcast events, and build reactive multi-agent workflows.
-  - icon: "\U0001F916"
-    title: LLM Integration
-    details: Plug in any LLM provider — Anthropic, OpenAI, or Ollama — through Microsoft.Extensions.AI. Agents stream responses via SendAsync and register custom tools through DefineTools.
-  - icon: "\U0001F527"
-    title: Generic Tools
-    details: Define agent-specific tools as AIFunction instances. The base Agent class discovers and invokes them automatically through InvokeToolAsync with full observability tracing.
-  - icon: "\U0001F4CA"
-    title: Observability
-    details: Built-in OpenTelemetry tracing and metrics via System.Diagnostics. Track sends, tool calls, and failures with the Core.Agent ActivitySource and Meter.
-  - icon: "\U0001F680"
-    title: Aspire-Native
-    details: First-class .NET Aspire integration. AddIAW() configures the full Orleans cluster, WithLLM() declares models, and WithLLMEnvironment() wires API keys — all in the AppHost.
 ---
+
+<BehaviorTabs />
 
 ## Quick Start
 

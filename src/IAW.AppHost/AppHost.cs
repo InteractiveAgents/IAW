@@ -1,4 +1,5 @@
 using Aspire;
+using Aspire.Hosting;
 using Core.AI.Models;
 
 var builder = DistributedApplication.CreateBuilder(args);
@@ -11,7 +12,9 @@ var iaw = builder.AddIAW("iaw")
 
 var samples = builder.AddProject<Projects.Samples>("samples")
     .WithReference(iaw)
-    .WithLLMEnvironment(builder);
+    .WithLLMEnvironment(builder)
+    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30000; })
+    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; });
 
 builder.AddProject<Projects.DevUI>("devui")
     .WithReference(iaw.AsClient())
@@ -25,6 +28,8 @@ var botToken = builder.AddParameter("bot-token", secret: true);
 var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
     .WithReference(iaw)
     .WithLLMEnvironment(builder)
+    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; })
+    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
     .WithEnvironment("Telegram__BotToken", botToken)
     .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"));
 
@@ -36,6 +41,7 @@ builder.AddViteApp("website", "../../website")
 
 builder.AddProject<Projects.MCP>("mcp")
     .WithReference(iaw.AsClient())
+    .WithEnvironment("Orleans__PrimaryGateway", samples.GetEndpoint("orleans-gateway"))
     .WaitFor(samples);
 
 builder.Build().Run();
