@@ -82,8 +82,8 @@ app.MapPost("/webhook", async (
         FromUserId = update.Message?.From?.Id ?? update.CallbackQuery?.From?.Id
     };
 
-    var bot = grains.GetGrain<Core.ITelegramBot>("bot");
-    _ = bot.HandleUpdate(botUpdate, ct);
+    var conversation = grains.GetGrain<Core.ITelegramConversation>($"conversation-{chatId}");
+    _ = conversation.HandleUpdate(botUpdate, ct);
 
     return Results.Ok();
 });
