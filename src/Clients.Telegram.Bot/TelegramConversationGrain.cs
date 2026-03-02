@@ -1,6 +1,7 @@
 using Core;
 using Core.AI;
 using Core.AI.Models;
+using Core.Routing;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 using System.Text;
@@ -317,6 +318,16 @@ public sealed class TelegramConversationGrain(
             return;
         }
 
+        var router = GrainFactory.GetGrain<IAgentRouter>("router");
+        var route = await router.RouteAsync(update.Text!, ct);
+
+        var targetAgent = GrainFactory.GetGrain<IAgent>(route.AgentId);
+        var agentMeta = await targetAgent.GetMetadataAsync(ct);
+
+        logger.LogInformation("Routed message to {AgentId} (confidence: {Confidence}, escalated: {Escalated})",
+            route.AgentId, route.Confidence, route.Escalated);
+
+        await targetAgent.AddHistoryAsync("user", update.Text!, ct);
         await StreamResponseAsync(update.ChatId, update.ThreadId, update.Text!, ct);
     }
 
