@@ -26,6 +26,7 @@ builder.Host.UseOrleans(silo =>
 });
 
 builder.AddLlmProviders();
+builder.AddEmbeddingProvider();
 builder.AddQdrantClient("qdrant");
 
 builder.Services.Configure<TelegramBotOptions>(builder.Configuration.GetSection("Telegram"));

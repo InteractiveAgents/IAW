@@ -176,4 +176,30 @@ public static class LlmRegistration
             .GetChatClient(model.Id)
             .AsIChatClient();
     }
+
+    public static IHostApplicationBuilder AddEmbeddingProvider(this IHostApplicationBuilder builder)
+    {
+        var config = builder.Configuration;
+
+        if (!string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]))
+        {
+            var token = config[LlmConfig.GitHubModelsApiKey]!;
+            builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
+                (_, _) => new OpenAI.OpenAIClient(
+                        new ApiKeyCredential(token),
+                        new OpenAI.OpenAIClientOptions { Endpoint = new Uri(LlmConfig.GitHubModelsEndpoint) })
+                    .GetEmbeddingClient("text-embedding-3-small")
+                    .AsIEmbeddingGenerator());
+        }
+        else if (!string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]))
+        {
+            var apiKey = config[LlmConfig.OpenAiApiKey]!;
+            builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
+                (_, _) => new OpenAI.OpenAIClient(apiKey)
+                    .GetEmbeddingClient("text-embedding-3-small")
+                    .AsIEmbeddingGenerator());
+        }
+
+        return builder;
+    }
 }
