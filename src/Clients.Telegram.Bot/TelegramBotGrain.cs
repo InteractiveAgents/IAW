@@ -1,5 +1,9 @@
 using Core;
+using Core.AI;
+using Core.AI.Models;
+using Microsoft.Extensions.AI;
 using Orleans.Journaling;
+using System.Text;
 using System.Text.Json;
 using Telegram.BotAPI;
 using Telegram.BotAPI.AvailableMethods;
@@ -16,6 +20,7 @@ public sealed class TelegramBotGrain(
     [Memory("agent-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
     [Memory("agent-notifications")] IDurableList<NotificationRecord> notifications,
     [Memory("agent-tracking")] IDurableDictionary<string, AgentTrackingStatus> tracking,
+    [Llm<Claude45Haiku>] IChatClient chatClient,
     ITelegramBotClient bot,
     ILogger<TelegramBotGrain> logger)
     : Agent(values, history, events, subscriptions, notifications, tracking),
@@ -23,6 +28,15 @@ public sealed class TelegramBotGrain(
 {
     private const string TopicRegistryStateKey = "telegram:topic-registry";
     private const string StartCommand = "/start";
+
+    public override string DisplayName => "Telegram Bot";
+    public override string SystemPrompt => "You are a helpful AI assistant in a Telegram chat. Keep responses concise and well-formatted for mobile reading.";
+
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        await base.OnActivateAsync(cancellationToken);
+        Activate(chatClient);
+    }
 
     public async Task HandleUpdate(TelegramBotUpdate update, CancellationToken ct)
     {
@@ -126,6 +140,63 @@ public sealed class TelegramBotGrain(
     {
         await bot.SendChatActionAsync(chatId, ChatActions.Typing,
             messageThreadId: threadId, cancellationToken: ct);
+    }
+
+    private async Task StreamResponseAsync(long chatId, int? threadId, string userMessage, CancellationToken ct)
+    {
+        var draftId = Random.Shared.Next(1, int.MaxValue);
+        var accumulated = new StringBuilder();
+        var throttle = TimeSpan.FromMilliseconds(400);
+        var typingInterval = TimeSpan.FromSeconds(4);
+        var lastDraftUpdate = DateTimeOffset.MinValue;
+        var lastTypingUpdate = DateTimeOffset.UtcNow;
+
+        try
+        {
+            await foreach (var token in SendAsync(userMessage, ct))
+            {
+                accumulated.Append(token);
+                var now = DateTimeOffset.UtcNow;
+
+                if (now - lastTypingUpdate >= typingInterval)
+                {
+                    try { await SendTyping(chatId, threadId, ct); }
+                    catch (BotRequestException) { }
+                    lastTypingUpdate = now;
+                }
+
+                if (now - lastDraftUpdate >= throttle)
+                {
+                    try
+                    {
+                        await bot.SendMessageDraftAsync(chatId, draftId, accumulated.ToString(),
+                            messageThreadId: threadId, cancellationToken: ct);
+                    }
+                    catch (BotRequestException ex) when (ex.ErrorCode == 429)
+                    {
+                        logger.LogWarning("Rate limited during streaming, skipping draft update");
+                    }
+                    catch (BotRequestException ex)
+                    {
+                        logger.LogWarning(ex, "Draft update failed, continuing to accumulate");
+                    }
+                    lastDraftUpdate = now;
+                }
+            }
+
+            var finalText = accumulated.Length > 0 ? accumulated.ToString() : "I couldn't generate a response.";
+            await bot.SendMessageAsync(chatId, finalText,
+                messageThreadId: threadId, cancellationToken: ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Streaming failed for chat {ChatId}", chatId);
+            var errorText = accumulated.Length > 0
+                ? accumulated + "\n\n(Response was interrupted)"
+                : "Sorry, something went wrong. Please try again.";
+            try { await SendText(chatId, errorText, threadId, ct); }
+            catch (BotRequestException) { }
+        }
     }
 
     public async Task SetReaction(long chatId, int messageId, string emoji, CancellationToken ct)
@@ -240,23 +311,13 @@ public sealed class TelegramBotGrain(
 
         await SendTyping(update.ChatId, update.ThreadId, ct);
 
-        if (update.ThreadId == registry?.AssistantThreadId)
-        {
-            var assistant = GrainFactory.GetGrain<IAgent>("personal-assistant");
-            await assistant.AddHistoryAsync("user", update.Text!, ct);
-            await SendText(update.ChatId, "Message received. Processing...", update.ThreadId, ct);
-            return;
-        }
-
         if (update.ThreadId == registry?.SettingsThreadId)
         {
             await SendText(update.ChatId, "Settings: coming soon.", update.ThreadId, ct);
             return;
         }
 
-        var generalAssistant = GrainFactory.GetGrain<IAgent>("personal-assistant");
-        await generalAssistant.AddHistoryAsync("user", update.Text!, ct);
-        await SendText(update.ChatId, "Received.", update.ThreadId, ct);
+        await StreamResponseAsync(update.ChatId, update.ThreadId, update.Text!, ct);
     }
 
     private async Task HandleCallback(TelegramBotUpdate update, CancellationToken ct)

@@ -1,4 +1,5 @@
 using Core;
+using Core.AI;
 using Microsoft.Extensions.Options;
 using Orleans.Journaling;
 using ServiceDefaults;
@@ -23,6 +24,8 @@ builder.Host.UseOrleans(silo =>
     silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
     silo.AddStateMachineStorage();
 });
+
+builder.AddLlmProviders();
 
 builder.Services.Configure<TelegramBotOptions>(builder.Configuration.GetSection("Telegram"));
 

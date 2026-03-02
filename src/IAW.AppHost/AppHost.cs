@@ -24,6 +24,7 @@ var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
 var botToken = builder.AddParameter("bot-token", secret: true);
 var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
     .WithReference(iaw)
+    .WithLLMEnvironment(builder)
     .WithEnvironment("Telegram__BotToken", botToken)
     .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"));
 
