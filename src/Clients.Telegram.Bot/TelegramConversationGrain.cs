@@ -11,6 +11,7 @@ using Telegram.BotAPI.AvailableMethods;
 using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
 using Telegram.BotAPI.UpdatingMessages;
+using TelegramBot.Services;
 
 namespace TelegramBot;
 
@@ -58,6 +59,12 @@ public sealed class TelegramConversationGrain(
             if (!string.IsNullOrEmpty(update.CallbackData))
             {
                 await HandleCallback(update, ct);
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(update.VoiceFileId))
+            {
+                await HandleVoiceMessage(update, ct);
                 return;
             }
 
@@ -315,6 +322,49 @@ public sealed class TelegramConversationGrain(
 
         await SendText(chatId, "Send me a message in the Assistant topic to start chatting.",
             registry.AssistantThreadId, ct);
+    }
+
+    private async Task HandleVoiceMessage(TelegramBotUpdate update, CancellationToken ct)
+    {
+        await SendTyping(update.ChatId, update.ThreadId, ct);
+
+        string? wavPath = null;
+        try
+        {
+            var file = await bot.GetFileAsync(update.VoiceFileId!, ct);
+            var downloadUrl = $"{bot.Options.ServerAddress}/file/bot{bot.Options.BotToken}/{file.FilePath}";
+
+            await using var oggStream = new MemoryStream();
+            using var httpClient = ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
+            var response = await httpClient.GetAsync(downloadUrl, ct);
+            response.EnsureSuccessStatusCode();
+            await response.Content.CopyToAsync(oggStream, ct);
+            oggStream.Position = 0;
+
+            var converter = ServiceProvider.GetRequiredService<IAudioConverter>();
+            wavPath = await converter.ConvertOggToWavAsync(oggStream, ct);
+
+            var transcriber = ServiceProvider.GetRequiredService<IVoiceTranscriptionService>();
+            var transcribedText = await transcriber.TranscribeAsync(wavPath, ct);
+
+            if (string.IsNullOrWhiteSpace(transcribedText))
+            {
+                await SendText(update.ChatId, "Could not transcribe the voice message.", update.ThreadId, ct);
+                return;
+            }
+
+            await StreamResponseAsync(update.ChatId, update.ThreadId, transcribedText, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Voice processing failed for chat {ChatId}", update.ChatId);
+            await SendText(update.ChatId, "Sorry, I couldn't process your voice message.", update.ThreadId, ct);
+        }
+        finally
+        {
+            if (wavPath is not null && System.IO.File.Exists(wavPath))
+                System.IO.File.Delete(wavPath);
+        }
     }
 
     private async Task HandleTextMessage(TelegramBotUpdate update, CancellationToken ct)

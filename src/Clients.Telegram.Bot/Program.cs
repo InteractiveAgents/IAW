@@ -85,7 +85,9 @@ app.MapPost("/webhook", async (
         CallbackData = update.CallbackQuery?.Data,
         Username = update.Message?.From?.Username ?? update.CallbackQuery?.From?.Username,
         FirstName = update.Message?.From?.FirstName ?? update.CallbackQuery?.From?.FirstName,
-        FromUserId = update.Message?.From?.Id ?? update.CallbackQuery?.From?.Id
+        FromUserId = update.Message?.From?.Id ?? update.CallbackQuery?.From?.Id,
+        VoiceFileId = update.Message?.Voice?.FileId,
+        VoiceDuration = update.Message?.Voice?.Duration ?? 0
     };
 
     var conversation = grains.GetGrain<Core.ITelegramConversation>($"conversation-{chatId}");
