@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.ClientModel;
 using OllamaSharp;
 
 namespace Core.AI;
@@ -84,6 +85,7 @@ public static class LlmRegistration
                                    || HasOllamaModelConnectionString(config),
             ProviderType.Anthropic => !string.IsNullOrEmpty(config[LlmConfig.AnthropicApiKey]),
             ProviderType.OpenAI => !string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]),
+            ProviderType.GitHub => !string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]),
             _ => false
         };
     }
@@ -102,6 +104,7 @@ public static class LlmRegistration
             ProviderType.Ollama => CreateOllamaClient(config, model),
             ProviderType.Anthropic => CreateAnthropicClient(config, model),
             ProviderType.OpenAI => CreateOpenAiClient(config, model),
+            ProviderType.GitHub => CreateGitHubModelsClient(config, model),
             _ => throw new NotSupportedException($"Provider {model.Provider} not supported")
         };
 
@@ -159,6 +162,17 @@ public static class LlmRegistration
         var apiKey = config[LlmConfig.OpenAiApiKey]
             ?? throw new InvalidOperationException("OpenAI API key not configured.");
         return new OpenAI.OpenAIClient(apiKey)
+            .GetChatClient(model.Id)
+            .AsIChatClient();
+    }
+
+    private static IChatClient CreateGitHubModelsClient(IConfiguration config, LLMModel model)
+    {
+        var token = config[LlmConfig.GitHubModelsApiKey]
+            ?? throw new InvalidOperationException("GitHub token not configured for GitHub Models.");
+        return new OpenAI.OpenAIClient(
+                new ApiKeyCredential(token),
+                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(LlmConfig.GitHubModelsEndpoint) })
             .GetChatClient(model.Id)
             .AsIChatClient();
     }
