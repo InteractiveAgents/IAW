@@ -37,6 +37,9 @@ public sealed class TelegramConversationGrain(
     {
         await base.OnActivateAsync(cancellationToken);
         Activate(chatClient);
+
+        var userAgent = GrainFactory.GetGrain<IAgent>("user");
+        await userAgent.SubscribeAsync("user.preference.changed", this.GetPrimaryKeyString(), cancellationToken);
     }
 
     public async Task HandleUpdate(TelegramBotUpdate update, CancellationToken ct)
