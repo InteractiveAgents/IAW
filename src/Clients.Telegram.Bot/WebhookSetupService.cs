@@ -33,7 +33,7 @@ public sealed class WebhookSetupService(
             return;
         }
 
-        var bot = grains.GetGrain<ITelegramBot>("bot");
+        var bot = grains.GetGrain<ITelegramConversation>("bot-webhook");
         await bot.SetWebhook(webhookUrl, config.WebhookSecretToken, stoppingToken);
         logger.LogInformation("Webhook registered: {Url}", webhookUrl);
     }

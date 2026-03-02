@@ -19,3 +19,44 @@ public interface ITelegramConversation : IAgent
     Task SetWebhook(string url, string? secretToken = null, CancellationToken ct = default);
     Task AnswerCallback(string callbackQueryId, string? text = null, CancellationToken ct = default);
 }
+
+[GenerateSerializer]
+public sealed class TelegramBotUpdate
+{
+    [Id(0)] public long ChatId { get; set; }
+    [Id(1)] public int MessageId { get; set; }
+    [Id(2)] public int? ThreadId { get; set; }
+    [Id(3)] public string? Text { get; set; }
+    [Id(4)] public string? CallbackQueryId { get; set; }
+    [Id(5)] public string? CallbackData { get; set; }
+    [Id(6)] public string? Username { get; set; }
+    [Id(7)] public string? FirstName { get; set; }
+    [Id(8)] public long? FromUserId { get; set; }
+}
+
+[GenerateSerializer]
+public sealed class TelegramSendResult
+{
+    [Id(0)] public bool Success { get; set; }
+    [Id(1)] public int MessageId { get; set; }
+    [Id(2)] public string? Error { get; set; }
+
+    public static TelegramSendResult Ok(int messageId) => new() { Success = true, MessageId = messageId };
+    public static TelegramSendResult Fail(string error) => new() { Success = false, Error = error };
+}
+
+[GenerateSerializer]
+public sealed class TelegramInlineButton
+{
+    [Id(0)] public string Text { get; set; } = string.Empty;
+    [Id(1)] public string CallbackData { get; set; } = string.Empty;
+}
+
+[GenerateSerializer]
+public sealed class TelegramTopicRegistry
+{
+    [Id(0)] public int AssistantThreadId { get; set; }
+    [Id(1)] public int NotificationsThreadId { get; set; }
+    [Id(2)] public int SettingsThreadId { get; set; }
+    [Id(3)] public Dictionary<string, int> TaskTopics { get; set; } = [];
+}
