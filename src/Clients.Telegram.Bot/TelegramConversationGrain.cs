@@ -24,6 +24,9 @@ public sealed class TelegramConversationGrain(
     [Memory("agent-tracking")] IDurableDictionary<string, AgentTrackingStatus> tracking,
     [Llm<Claude45Haiku>] IChatClient chatClient,
     ITelegramBotClient bot,
+    IHttpClientFactory httpClientFactory,
+    IAudioConverter audioConverter,
+    IVoiceTranscriptionService transcriptionService,
     ILogger<TelegramConversationGrain> logger)
     : Agent(values, history, events, subscriptions, notifications, tracking),
       Core.ITelegramConversation
@@ -335,17 +338,15 @@ public sealed class TelegramConversationGrain(
             var downloadUrl = $"{bot.Options.ServerAddress}/file/bot{bot.Options.BotToken}/{file.FilePath}";
 
             await using var oggStream = new MemoryStream();
-            using var httpClient = ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient();
+            using var httpClient = httpClientFactory.CreateClient();
             var response = await httpClient.GetAsync(downloadUrl, ct);
             response.EnsureSuccessStatusCode();
             await response.Content.CopyToAsync(oggStream, ct);
             oggStream.Position = 0;
 
-            var converter = ServiceProvider.GetRequiredService<IAudioConverter>();
-            wavPath = await converter.ConvertOggToWavAsync(oggStream, ct);
+            wavPath = await audioConverter.ConvertOggToWavAsync(oggStream, ct);
 
-            var transcriber = ServiceProvider.GetRequiredService<IVoiceTranscriptionService>();
-            var transcribedText = await transcriber.TranscribeAsync(wavPath, ct);
+            var transcribedText = await transcriptionService.TranscribeAsync(wavPath, ct);
 
             if (string.IsNullOrWhiteSpace(transcribedText))
             {

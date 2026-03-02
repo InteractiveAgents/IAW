@@ -203,7 +203,7 @@ public static class LlmRegistration
         {
             builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
                 (_, _) => throw new InvalidOperationException(
-                    "No embedding provider configured. Set AI:LLM:GitHubModelsApiKey or AI:LLM:OpenAiApiKey."));
+                    "No embedding provider configured. Set AI:LLM:GitHubToken or AI:LLM:OpenAiApiKey."));
         }
 
         return builder;

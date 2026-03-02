@@ -96,16 +96,17 @@ public sealed class AgentRouterGrain(
                     cancellationToken: ct);
             }
 
+            var descriptions = AgentDescriptions.Select(a => a.Description).ToList();
+            var allVectors = await embeddings.GenerateAsync(descriptions, cancellationToken: ct);
+
             var points = new List<PointStruct>();
             for (var i = 0; i < AgentDescriptions.Length; i++)
             {
-                var (id, description) = AgentDescriptions[i];
-                var vector = await EmbedSingleAsync(description, ct);
                 points.Add(new PointStruct
                 {
                     Id = (ulong)(i + 1),
-                    Vectors = vector,
-                    Payload = { ["agentId"] = id }
+                    Vectors = allVectors[i].Vector.ToArray(),
+                    Payload = { ["agentId"] = AgentDescriptions[i].Id }
                 });
             }
 
