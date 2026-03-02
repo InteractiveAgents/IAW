@@ -59,4 +59,5 @@ public sealed class TelegramTopicRegistry
     [Id(1)] public int NotificationsThreadId { get; set; }
     [Id(2)] public int SettingsThreadId { get; set; }
     [Id(3)] public Dictionary<string, int> TaskTopics { get; set; } = [];
+    [Id(4)] public int TeamThreadId { get; set; }
 }

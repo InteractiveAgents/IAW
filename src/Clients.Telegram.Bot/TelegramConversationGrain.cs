@@ -237,12 +237,14 @@ public sealed class TelegramConversationGrain(
         try
         {
             var assistantThreadId = await CreateTopic(chatId, "Assistant", ct);
+            var teamThreadId = await CreateTopic(chatId, "Team", ct);
             var notificationsThreadId = await CreateTopic(chatId, "Notifications", ct);
             var settingsThreadId = await CreateTopic(chatId, "Settings", ct);
 
             var registry = new TelegramTopicRegistry
             {
                 AssistantThreadId = assistantThreadId,
+                TeamThreadId = teamThreadId,
                 NotificationsThreadId = notificationsThreadId,
                 SettingsThreadId = settingsThreadId
             };
@@ -274,6 +276,19 @@ public sealed class TelegramConversationGrain(
     public async Task AnswerCallback(string callbackQueryId, string? text, CancellationToken ct)
     {
         await bot.AnswerCallbackQueryAsync(callbackQueryId, text, cancellationToken: ct);
+    }
+
+    private async Task PostToTeamTopicAsync(long chatId, int teamThreadId, string agentName, string message, CancellationToken ct)
+    {
+        var text = $"[{agentName}] {message}";
+        try
+        {
+            await SendText(chatId, text, teamThreadId, ct);
+        }
+        catch (BotRequestException ex)
+        {
+            logger.LogWarning(ex, "Failed to post to Team topic");
+        }
     }
 
     private async Task HandleStartCommand(long chatId, CancellationToken ct)
@@ -326,6 +341,12 @@ public sealed class TelegramConversationGrain(
 
         logger.LogInformation("Routed message to {AgentId} (confidence: {Confidence}, escalated: {Escalated})",
             route.AgentId, route.Confidence, route.Escalated);
+
+        if (route.Escalated && registry?.TeamThreadId > 0)
+        {
+            await PostToTeamTopicAsync(update.ChatId, registry.TeamThreadId,
+                "Router", $"Delegated to {agentMeta.DisplayName}: {update.Text}", ct);
+        }
 
         await targetAgent.AddHistoryAsync("user", update.Text!, ct);
         await StreamResponseAsync(update.ChatId, update.ThreadId, update.Text!, ct);
