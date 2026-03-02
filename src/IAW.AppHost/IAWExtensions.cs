@@ -29,6 +29,8 @@ public static class IAWExtensions
         _ollamaModelResources.Clear();
 
         return builder.AddOrleans(name)
+            .WithClusterId("dev")
+            .WithServiceId("dev")
             .WithDevelopmentClustering()
             .WithMemoryGrainStorage("Default")
             .WithMemoryGrainStorage("PubSubStore")

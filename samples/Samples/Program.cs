@@ -7,13 +7,18 @@ using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var siloPort = builder.Configuration.GetValue("Orleans:Endpoints:SiloPort", 11_111);
+var gatewayPort = builder.Configuration.GetValue("Orleans:Endpoints:GatewayPort", 30_000);
+var clusterId = builder.Configuration.GetValue("Orleans:ClusterId", "dev");
+var serviceId = builder.Configuration.GetValue("Orleans:ServiceId", "dev");
+
 builder.Host.UseOrleans(silo =>
 {
-    silo.UseLocalhostClustering();
-    silo.AddMemoryGrainStorage("Default");
-    silo.AddMemoryGrainStorage("PubSubStore");
-    silo.AddMemoryStreams("agents");
-    silo.UseInMemoryReminderService();
+    silo.UseLocalhostClustering(
+        siloPort: siloPort,
+        gatewayPort: gatewayPort,
+        serviceId: serviceId,
+        clusterId: clusterId);
     silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
     silo.AddStateMachineStorage();
 });
