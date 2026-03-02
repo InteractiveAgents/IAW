@@ -6,6 +6,8 @@ using Orleans.Journaling;
 
 namespace Samples;
 
+public interface IGitHubTestAgent : IAgent;
+
 public sealed class GitHubTestAgent(
     [Memory("agent-values")] IDurableDictionary<string, string> values,
     [Memory("agent-history")] IDurableList<AgentHistoryEntry> history,
@@ -14,7 +16,7 @@ public sealed class GitHubTestAgent(
     [Memory("agent-notifications")] IDurableList<NotificationRecord> notifications,
     [Memory("agent-tracking")] IDurableDictionary<string, AgentTrackingStatus> tracking,
     [Llm<GitHubGpt4oMini>] IChatClient chatClient)
-    : Agent(values, history, events, subscriptions, notifications, tracking)
+    : Agent(values, history, events, subscriptions, notifications, tracking), IGitHubTestAgent
 {
     public override string DisplayName => "GitHub Test Agent";
     public override string SystemPrompt => "You are a helpful test agent. Keep responses under 50 words.";

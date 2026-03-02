@@ -33,7 +33,7 @@ app.MapDefaultEndpoints();
 
 app.MapGet("/samples/github-models", async (IGrainFactory grains, CancellationToken ct) =>
 {
-    var agent = grains.GetGrain<IAgent>($"github-test-{Guid.NewGuid():N}");
+    var agent = grains.GetGrain<Samples.IGitHubTestAgent>($"github-test-{Guid.NewGuid():N}");
     var metadata = await agent.GetMetadataAsync(ct);
 
     return Results.Ok(new
@@ -41,8 +41,7 @@ app.MapGet("/samples/github-models", async (IGrainFactory grains, CancellationTo
         model = "gpt-4o-mini",
         provider = "GitHub",
         agentId = metadata.Id,
-        displayName = metadata.DisplayName,
-        activated = true
+        displayName = metadata.DisplayName
     });
 });
 
