@@ -46,5 +46,9 @@
     <PackageVersion Include="Telegram.BotAPI" Version="9.4.0" />
     <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.1.2" />
     <PackageVersion Include="Aspire.Qdrant.Client" Version="13.1.2" />
+    <PackageVersion Include="Concentus" Version="2.2.2" />
+    <PackageVersion Include="Concentus.Oggfile" Version="1.0.6" />
+    <PackageVersion Include="NAudio" Version="2.2.1" />
+    <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
   </ItemGroup>
 </Project>

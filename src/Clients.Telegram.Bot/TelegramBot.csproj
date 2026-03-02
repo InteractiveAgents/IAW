@@ -16,6 +16,10 @@
     <PackageReference Include="Microsoft.Orleans.Streaming" />
     <PackageReference Include="Telegram.BotAPI" />
     <PackageReference Include="Aspire.Qdrant.Client" />
+    <PackageReference Include="Concentus" />
+    <PackageReference Include="Concentus.Oggfile" />
+    <PackageReference Include="NAudio" />
+    <PackageReference Include="ElBruno.PersonaPlex" />
   </ItemGroup>
 
   <ItemGroup>
