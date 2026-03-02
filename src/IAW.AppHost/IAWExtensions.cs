@@ -1,5 +1,4 @@
 using Aspire.Hosting.Orleans;
-using CommunityToolkit.Aspire.Hosting.Ollama;
 using Core.AI;
 
 namespace Aspire;
@@ -96,8 +95,11 @@ public static class IAWExtensions
             builder.WithEnvironment("AI__LLM__OpenAiApiKey", _openaiKeyParam);
         }
 
-        _gitHubTokenParam ??= appBuilder.AddParameter("github-token", secret: true);
-        builder.WithEnvironment("GitHub__Token", _gitHubTokenParam);
+        if (_declaredProviders.Contains(ProviderType.GitHub))
+        {
+            _gitHubTokenParam ??= appBuilder.AddParameter("github-token", secret: true);
+            builder.WithEnvironment("AI__LLM__GitHubToken", _gitHubTokenParam);
+        }
 
         foreach (var modelResource in _ollamaModelResources)
         {

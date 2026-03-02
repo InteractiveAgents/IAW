@@ -1,4 +1,5 @@
 using Core;
+using Core.AI;
 using Core.GitHub;
 using Orleans.Journaling;
 using Orleans.Streams;
@@ -24,10 +25,26 @@ builder.Host.UseOrleans(silo =>
 });
 
 builder.AddGitHubClient();
+builder.AddLlmProviders();
 builder.AddServiceDefaults();
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
+
+app.MapGet("/samples/github-models", async (IGrainFactory grains, CancellationToken ct) =>
+{
+    var agent = grains.GetGrain<IAgent>($"github-test-{Guid.NewGuid():N}");
+    var metadata = await agent.GetMetadataAsync(ct);
+
+    return Results.Ok(new
+    {
+        model = "gpt-4o-mini",
+        provider = "GitHub",
+        agentId = metadata.Id,
+        displayName = metadata.DisplayName,
+        activated = true
+    });
+});
 
 app.MapGet("/", () => "Hello World!");
 

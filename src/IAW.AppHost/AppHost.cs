@@ -5,6 +5,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
+    .WithLLM<GitHubGpt4oMini>()
     .WithLLM<Qwen25>()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
 
