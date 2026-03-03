@@ -49,7 +49,14 @@
       "WebFetch(domain:techcommunity.microsoft.com)",
       "WebFetch(domain:aspire.dev)",
       "WebFetch(domain:telegrambots.github.io)",
-      "WebFetch(domain:mehmetozkaya.medium.com)"
+      "WebFetch(domain:mehmetozkaya.medium.com)",
+      "Bash(test:*)",
+      "mcp__aspire__list_traces",
+      "Bash(aspire stop:*)",
+      "Bash(wmic process:*)",
+      "Bash(aspire mcp:*)",
+      "Bash(docker ps:*)",
+      "Bash(ping:*)"
     ]
   },
   "enabledMcpjsonServers": [
