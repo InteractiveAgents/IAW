@@ -1,166 +1,171 @@
 # Architecture
 
-This page covers the agent class hierarchy, durable state model, behavior interfaces, LLM integration, and observability infrastructure.
+This page covers the V2 agent class hierarchy, durable state model, the `IAgentV2` interface, LLM integration, and observability infrastructure.
 
 ## Class Hierarchy
 
 ```
 DurableGrain (Orleans.Journaling)
-  └── Agent (Core)
-        ├── implements IAgent
+  └── AgentV2 (Core.V2)
+        ├── implements IAgentV2
         └── implements IRemindable
 ```
 
-`Agent` is a primary-constructor class that extends `DurableGrain` from `Microsoft.Orleans.Journaling`. It implements two interfaces: `IAgent` (the grain contract) and `IRemindable` (for tracking reminders).
+`AgentV2` is a single flat base class that extends `DurableGrain` from `Microsoft.Orleans.Journaling`. It implements `IAgentV2` (the grain contract) and `IRemindable` (for scheduled reminders). There are no optional behavior interfaces to compose -- every `AgentV2` grain supports the full API surface.
 
 `DurableGrain` provides journaled, transactional state persistence. All state mutations are committed via `WriteStateAsync()`.
 
-## Durable State Collections
+## Durable State
 
-The `Agent` constructor accepts six durable state collections, each annotated with `[Memory("name")]`:
+The `AgentV2` constructor accepts six durable state collections, each annotated with `[Memory("name")]`. These are hidden from derived agents -- you never need to declare them yourself:
 
-| Parameter | Type | Storage Key | Purpose |
+| Collection | Type | Storage Key | Purpose |
 |---|---|---|---|
-| `values` | `IDurableDictionary<string, string>` | `agent-values` | Arbitrary key-value state |
-| `history` | `IDurableList<AgentHistoryEntry>` | `agent-history` | Conversation history (role, content, timestamp) |
-| `events` | `IDurableList<AgentEventRecord>` | `agent-events` | Named events with optional payload |
-| `subscriptions` | `IDurableDictionary<string, List<string>>` | `agent-subscriptions` | Topic-to-subscriber mappings |
-| `notifications` | `IDurableList<NotificationRecord>` | `agent-notifications` | Received notification records |
-| `tracking` | `IDurableDictionary<string, AgentTrackingStatus>` | `agent-tracking` | Periodic tracking state |
+| messages | `IDurableList<AgentMessage>` | `v2-messages` | Conversation history (role, content, timestamp, metadata) |
+| memory | `IDurableDictionary<string, string>` | `v2-memory` | Arbitrary key-value state |
+| events | `IDurableList<AgentEvent>` | `v2-events` | Typed events with optional payload and metadata |
+| subscriptions | `IDurableDictionary<string, List<string>>` | `v2-subscriptions` | Topic-to-subscriber mappings |
+| notifications | `IDurableList<NotificationRecord>` | `v2-notifications` | Received notification records |
+| tracking | `IDurableDictionary<string, string>` | `v2-tracking` | Schedule status (serialized JSON) |
 
 All collections are backed by Orleans journaled grain storage, meaning they survive grain deactivation and silo restarts.
 
-## The IAgent Interface
+Derived agents have read access to `Messages`, `Memory`, and `Events` via protected properties.
 
-`IAgent` composes eight behavior interfaces plus `IGrainWithStringKey`:
+## The IAgentV2 Interface
 
-```csharp
-public interface IAgent :
-    IGrainWithStringKey,
-    IAgentMetadataBehavior,
-    IAgentStateBehavior,
-    IAgentHistoryBehavior,
-    IAgentEventsBehavior,
-    IAgentNotificationsBehavior,
-    IAgentTrackingBehavior,
-    IAgentToolsBehavior,
-    IAgentStreamsBehavior;
-```
-
-## Behavior Interfaces
-
-### IAgentMetadataBehavior
+`IAgentV2` extends `IGrainWithStringKey` with a unified API surface:
 
 ```csharp
-Task<AgentMetadata> GetMetadataAsync(CancellationToken ct = default);
-```
-
-Returns the agent's `Id`, `DisplayName`, and `Capabilities` list. Default capabilities are: `state`, `history`, `events`, `notifications`, `tracking`, `streams`, `tools`.
-
-### IAgentStateBehavior
-
-```csharp
-Task SetStateAsync(string key, string value, CancellationToken ct = default);
-Task<string?> GetStateValueAsync(string key, CancellationToken ct = default);
-Task<Dictionary<string, string>> GetStateAsync(CancellationToken ct = default);
-Task<int> IncrementAsync(string counterKey, CancellationToken ct = default);
-```
-
-Key-value state stored in `IDurableDictionary<string, string>`. `IncrementAsync` parses the current value as an integer, increments it, and persists the result.
-
-### IAgentHistoryBehavior
-
-```csharp
-Task AddHistoryAsync(string role, string content, CancellationToken ct = default);
-Task<List<AgentHistoryEntry>> GetHistoryAsync(CancellationToken ct = default);
-```
-
-Appends entries to the durable history list and publishes each entry to the `"agent-history"` Orleans stream.
-
-### IAgentEventsBehavior
-
-```csharp
-Task PublishEventAsync(string name, string? payload = null, CancellationToken ct = default);
-Task<List<AgentEventRecord>> GetEventsAsync(CancellationToken ct = default);
-```
-
-Records named events (with optional JSON payload) to durable storage and publishes to the `"agent-events"` stream.
-
-### IAgentNotificationsBehavior
-
-```csharp
-Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
-Task NotifyAsync(string topic, string payload, CancellationToken ct = default);
-Task NotifyAsync(NotificationEnvelope notification, CancellationToken ct = default);
-Task ReceiveNotificationAsync(string topic, string payload, CancellationToken ct = default);
-Task ReceiveNotificationAsync(NotificationEnvelope notification, CancellationToken ct = default);
-Task<List<NotificationRecord>> GetNotificationsAsync(CancellationToken ct = default);
-```
-
-Pub/sub notification system. `SubscribeAsync` registers a subscriber agent for a topic. `NotifyAsync` fans out the notification to all subscribers by calling `ReceiveNotificationAsync` on each subscriber grain.
-
-`NotificationEnvelope` carries structured metadata: `Topic`, `Payload`, `ContentType`, `Schema`, `SchemaVersion`, `MessageId`, `CorrelationId`, `Headers`, and `TimestampUtc`.
-
-### IAgentTrackingBehavior
-
-```csharp
-Task StartTrackingAsync(TimeSpan interval, int maxTicks, CancellationToken ct = default);
-Task StopTrackingAsync(CancellationToken ct = default);
-Task<AgentTrackingStatus> GetTrackingStatusAsync(CancellationToken ct = default);
-```
-
-Schedules periodic ticks. If the interval is >= 1 minute, Orleans reminders are used (surviving silo restarts). For shorter intervals, grain timers are used. Tracking stops automatically after `maxTicks`.
-
-### IAgentToolsBehavior
-
-```csharp
-Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default);
-```
-
-Invokes a tool by name from the list returned by `DefineTools()`. Looks up the matching `AIFunction`, calls it with the provided arguments, and records the call via `AgentObservability`.
-
-### IAgentStreamsBehavior
-
-```csharp
-Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
-```
-
-Publishes a string message to an Orleans stream using the `"agents"` stream provider.
-
-## LLM Integration
-
-The `Agent` class integrates with LLMs through `Microsoft.Extensions.AI`:
-
-```csharp
-protected AIAgent? Llm { get; private set; }
-
-public virtual void Activate(IChatClient chatClient)
+public interface IAgentV2 : IGrainWithStringKey
 {
-    var tools = DefineTools();
-    Llm = chatClient.AsAIAgent(SystemPrompt, Id, DisplayName, [.. tools], null, null);
+    Task<AgentProfile> GetProfileAsync(CancellationToken ct = default);
+
+    Task<AgentReply> RespondAsync(AgentRequest request, CancellationToken ct = default);
+
+    Task AppendMessageAsync(AgentMessage message, CancellationToken ct = default);
+    Task<List<AgentMessage>> QueryMessagesAsync(AgentMessageQuery? query = null, CancellationToken ct = default);
+
+    Task SetMemoryAsync(string key, string value, CancellationToken ct = default);
+    Task<string?> GetMemoryAsync(string key, CancellationToken ct = default);
+
+    Task AppendEventAsync(AgentEvent agentEvent, CancellationToken ct = default);
+    Task<List<AgentEvent>> QueryEventsAsync(AgentEventQuery? query = null, CancellationToken ct = default);
+
+    Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
+    Task NotifyAsync(NotificationEnvelope envelope, CancellationToken ct = default);
+    Task ReceiveNotificationAsync(NotificationEnvelope envelope, CancellationToken ct = default);
+    Task<List<NotificationRecord>> QueryNotificationsAsync(CancellationToken ct = default);
+
+    Task StartScheduleAsync(TimeSpan interval, int? maxTicks = null, CancellationToken ct = default);
+    Task StopScheduleAsync(CancellationToken ct = default);
+    Task<ScheduleStatus> GetScheduleStatusAsync(CancellationToken ct = default);
+
+    Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
+
+    Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default);
 }
 ```
 
-Call `Activate(IChatClient)` to initialize the LLM. The `IChatClient` is converted to an `AIAgent` (from `Microsoft.Agents.AI`) with the agent's system prompt, identity, and tools.
+### Key Differences from V1
 
-The `SendAsync` method streams LLM responses:
+| V1 (IAgent) | V2 (IAgentV2) |
+|---|---|
+| 8 composed behavior interfaces | Single flat interface |
+| `GetMetadataAsync()` returns `AgentMetadata` | `GetProfileAsync()` returns `AgentProfile` |
+| `AddHistoryAsync(role, content)` | `AppendMessageAsync(AgentMessage)` with metadata |
+| `GetHistoryAsync()` | `QueryMessagesAsync(AgentMessageQuery?)` with filtering |
+| `PublishEventAsync(name, payload)` | `AppendEventAsync(AgentEvent)` with metadata |
+| `GetEventsAsync()` | `QueryEventsAsync(AgentEventQuery?)` with filtering |
+| `GetNotificationsAsync()` | `QueryNotificationsAsync()` |
+| `StartTrackingAsync(interval, maxTicks)` | `StartScheduleAsync(interval, maxTicks?)` |
+| `StopTrackingAsync()` | `StopScheduleAsync()` |
+| `GetTrackingStatusAsync()` | `GetScheduleStatusAsync()` returns `ScheduleStatus` |
+| `SetStateAsync(key, value)` | `SetMemoryAsync(key, value)` |
+| `GetStateValueAsync(key)` | `GetMemoryAsync(key)` |
+
+## LLM Integration
+
+Models are registered in `src/Core/AI/Models/` as singletons extending `LLMModel`. Each has a provider (Anthropic, OpenAI, GitHub, Ollama) and a `ServiceKey`.
+
+### Injection into Grains
+
+Use `[Llm<TModel>]` on a constructor parameter. Orleans resolves this via `LlmAttributeMapper<TModel>` to a keyed `IChatClient`:
 
 ```csharp
-public virtual async IAsyncEnumerable<string> SendAsync(
-    string message,
+public class MyAgent(
+    // ... durable state (hidden in AgentV2) ...
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : AgentV2
+{
+    // Use chatClient in OnRespondAsync
+}
+```
+
+### AppHost Declaration
+
+```csharp
+var iaw = builder.AddIAW("iaw")
+    .WithLLM<Claude45Haiku>()
+    .WithLLM<Sonnet46>();
+```
+
+### Provider Registration
+
+`AddLlmProviders(this IHostApplicationBuilder)` in `LlmRegistration.cs` reads `AI:LLM:Models` configuration and registers `IChatClient` per model, wrapped with OpenTelemetry instrumentation.
+
+### RespondWithLlmAsync
+
+`AgentV2` provides a helper method that builds the full chat history, includes tools from `DefineTools()`, and calls `IChatClient.GetResponseAsync`:
+
+```csharp
+protected async Task<AgentReply> RespondWithLlmAsync(
+    IChatClient chatClient,
+    AgentRequest request,
     CancellationToken ct = default)
 ```
 
-It records the user message to history, streams tokens from the LLM via `Llm.RunStreamingAsync()`, records the complete assistant response to history, and emits OpenTelemetry traces and metrics throughout.
+## Aspire Hosting
+
+`IAWExtensions.cs` provides:
+- `AddIAW(name)` -- creates Orleans resource with in-memory storage, streams, and reminders
+- `WithLLM<TModel>()` -- declares which LLM models to use (auto-provisions Ollama containers)
+- `WithOllama(configure)` -- customize Ollama with GPU support, data volumes, and OpenWebUI
+- `WithLLMEnvironment()` -- injects `AI__LLM__Models__*` env vars + API key secrets
+
+### Multi-Silo Topology
+
+IAW supports multiple silos in the same cluster. Each silo uses distinct ports:
+
+```csharp
+// Silo 1: samples on ports 11111/30000
+builder.AddProject<Projects.Samples>("samples")
+    .WithReference(iaw)
+    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; })
+    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30000; });
+
+// Silo 2: telegram-bot on ports 11112/30001
+builder.AddProject<Projects.TelegramBot>("telegram-bot")
+    .WithReference(iaw)
+    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
+    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; });
+```
+
+Non-silo projects (like the MCP server or DevUI) connect as clients:
+
+```csharp
+builder.AddProject<Projects.MCP>("mcp")
+    .WithReference(iaw.AsClient());
+```
 
 ## Observability
 
 The `AgentObservability` class provides built-in telemetry:
 
-- **ActivitySource**: `"Core.Agent"` -- emits distributed traces for `agent.send` operations
+- **ActivitySource**: `"Core.Agent"` -- emits distributed traces for `agent.respond` and `agent.llm` operations
 - **Meter**: `"Core.Agent"` -- exposes three counters:
-  - `core.agent.sends` -- total LLM send operations
+  - `core.agent.sends` -- total respond operations
   - `core.agent.tool_calls` -- total tool invocations
-  - `core.agent.failures` -- total failures during sends
+  - `core.agent.failures` -- total failures during respond
 
-Activities include `agent.id` and `agent.display_name` tags for filtering in your observability backend. All telemetry follows OpenTelemetry conventions and integrates with the .NET Aspire dashboard.
+Activities include `agent.id` and `agent.display_name` tags for filtering. All telemetry follows OpenTelemetry conventions and integrates with the .NET Aspire dashboard.

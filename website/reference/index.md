@@ -1,157 +1,218 @@
 # API Reference
 
-Complete reference for all IAW interfaces, behavior contracts, and data types.
+Complete reference for all IAW V2 interfaces, contracts, and data types.
 
-## IAgent
+## IAgentV2
 
-The root grain interface. Every agent exposes this single interface, which is a composition of eight behavior interfaces:
-
-```csharp
-public interface IAgent :
-    IGrainWithStringKey,
-    IAgentMetadataBehavior,
-    IAgentStateBehavior,
-    IAgentHistoryBehavior,
-    IAgentEventsBehavior,
-    IAgentNotificationsBehavior,
-    IAgentTrackingBehavior,
-    IAgentToolsBehavior,
-    IAgentStreamsBehavior;
-```
-
-## Behavior Interfaces
-
-### IAgentMetadataBehavior
+The root grain interface. Every V2 agent exposes this single interface:
 
 ```csharp
-public interface IAgentMetadataBehavior
+public interface IAgentV2 : IGrainWithStringKey
 {
-    Task<AgentMetadata> GetMetadataAsync(CancellationToken ct = default);
-}
-```
+    Task<AgentProfile> GetProfileAsync(CancellationToken ct = default);
 
-### IAgentStateBehavior
+    Task<AgentReply> RespondAsync(AgentRequest request, CancellationToken ct = default);
 
-```csharp
-public interface IAgentStateBehavior
-{
-    Task SetStateAsync(string key, string value, CancellationToken ct = default);
-    Task<string?> GetStateValueAsync(string key, CancellationToken ct = default);
-    Task<Dictionary<string, string>> GetStateAsync(CancellationToken ct = default);
-    Task<int> IncrementAsync(string counterKey, CancellationToken ct = default);
-}
-```
+    Task AppendMessageAsync(AgentMessage message, CancellationToken ct = default);
+    Task<List<AgentMessage>> QueryMessagesAsync(AgentMessageQuery? query = null, CancellationToken ct = default);
 
-### IAgentHistoryBehavior
+    Task SetMemoryAsync(string key, string value, CancellationToken ct = default);
+    Task<string?> GetMemoryAsync(string key, CancellationToken ct = default);
 
-```csharp
-public interface IAgentHistoryBehavior
-{
-    Task AddHistoryAsync(string role, string content, CancellationToken ct = default);
-    Task<List<AgentHistoryEntry>> GetHistoryAsync(CancellationToken ct = default);
-}
-```
+    Task AppendEventAsync(AgentEvent agentEvent, CancellationToken ct = default);
+    Task<List<AgentEvent>> QueryEventsAsync(AgentEventQuery? query = null, CancellationToken ct = default);
 
-### IAgentEventsBehavior
-
-```csharp
-public interface IAgentEventsBehavior
-{
-    Task PublishEventAsync(string name, string? payload = null, CancellationToken ct = default);
-    Task<List<AgentEventRecord>> GetEventsAsync(CancellationToken ct = default);
-}
-```
-
-### IAgentNotificationsBehavior
-
-```csharp
-public interface IAgentNotificationsBehavior
-{
     Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
-    Task NotifyAsync(string topic, string payload, CancellationToken ct = default);
-    Task NotifyAsync(NotificationEnvelope notification, CancellationToken ct = default);
-    Task ReceiveNotificationAsync(string topic, string payload, CancellationToken ct = default);
-    Task ReceiveNotificationAsync(NotificationEnvelope notification, CancellationToken ct = default);
-    Task<List<NotificationRecord>> GetNotificationsAsync(CancellationToken ct = default);
-}
-```
+    Task NotifyAsync(NotificationEnvelope envelope, CancellationToken ct = default);
+    Task ReceiveNotificationAsync(NotificationEnvelope envelope, CancellationToken ct = default);
+    Task<List<NotificationRecord>> QueryNotificationsAsync(CancellationToken ct = default);
 
-### IAgentTrackingBehavior
+    Task StartScheduleAsync(TimeSpan interval, int? maxTicks = null, CancellationToken ct = default);
+    Task StopScheduleAsync(CancellationToken ct = default);
+    Task<ScheduleStatus> GetScheduleStatusAsync(CancellationToken ct = default);
 
-```csharp
-public interface IAgentTrackingBehavior
-{
-    Task StartTrackingAsync(TimeSpan interval, int maxTicks, CancellationToken ct = default);
-    Task StopTrackingAsync(CancellationToken ct = default);
-    Task<AgentTrackingStatus> GetTrackingStatusAsync(CancellationToken ct = default);
-}
-```
+    Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
 
-### IAgentToolsBehavior
-
-```csharp
-public interface IAgentToolsBehavior
-{
     Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default);
 }
 ```
 
-### IAgentStreamsBehavior
+## AgentV2 Override Points
+
+These are the methods you override when building agents:
 
 ```csharp
-public interface IAgentStreamsBehavior
+public abstract class AgentV2 : DurableGrain, IAgentV2, IRemindable
 {
-    Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
+    // Required: agent identity and configuration
+    protected abstract AgentProfile Profile { get; }
+
+    // Optional: handle incoming requests (default returns "Not implemented")
+    protected virtual Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default);
+
+    // Optional: expose tools for LLM and InvokeToolAsync (default returns empty list)
+    protected virtual IReadOnlyList<AITool> DefineTools();
+
+    // Optional: handle scheduled ticks (default is no-op)
+    protected virtual Task OnScheduleTickAsync(int tickCount, CancellationToken ct = default);
+
+    // Optional: customize how subscriber grains are resolved
+    protected virtual IAgentV2 ResolveSubscriber(string subscriberId);
 }
+```
+
+### Protected Properties
+
+```csharp
+// Read access to the durable message list
+protected IDurableList<AgentMessage> Messages { get; }
+
+// Read access to the durable key-value memory
+protected IDurableDictionary<string, string> Memory { get; }
+
+// Read access to the durable event list
+protected IDurableList<AgentEvent> Events { get; }
+
+// The grain's primary key string
+protected string AgentId { get; }
+```
+
+### Helper Methods
+
+```csharp
+// Call an LLM with the full message history and tools
+protected Task<AgentReply> RespondWithLlmAsync(
+    IChatClient chatClient, AgentRequest request, CancellationToken ct = default);
 ```
 
 ## Contract Types
 
-### AgentMetadata
+### AgentProfile
 
-Returned by `GetMetadataAsync`. Identifies the agent and lists its capabilities.
+Returned by `GetProfileAsync`. Identifies the agent and its configuration.
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentMetadata
+public sealed class AgentProfile
 {
     [Id(0)] public string Id { get; set; } = string.Empty;
     [Id(1)] public string DisplayName { get; set; } = string.Empty;
-    [Id(2)] public List<string> Capabilities { get; set; } = [];
+    [Id(2)] public string? Description { get; set; }
+    [Id(3)] public string Instructions { get; set; } = string.Empty;
+    [Id(4)] public List<string> Capabilities { get; set; } = [];
 }
 ```
 
-### AgentHistoryEntry
+### AgentRequest
 
-A single conversation turn stored by `AddHistoryAsync`.
+Input to `RespondAsync`.
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentHistoryEntry
+public sealed class AgentRequest
 {
-    [Id(0)] public string Role { get; set; } = string.Empty;
-    [Id(1)] public string Content { get; set; } = string.Empty;
-    [Id(2)] public DateTimeOffset TimestampUtc { get; set; }
+    [Id(0)] public string Input { get; set; } = string.Empty;
+    [Id(1)] public string? ConversationId { get; set; }
+    [Id(2)] public Dictionary<string, string> Metadata { get; set; } = [];
+    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 ```
 
-### AgentEventRecord
+### AgentReply
 
-An immutable event log entry created by `PublishEventAsync`.
+Output from `RespondAsync` and `OnRespondAsync`.
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentEventRecord
+public sealed class AgentReply
 {
-    [Id(0)] public string Name { get; set; } = string.Empty;
-    [Id(1)] public string? Payload { get; set; }
-    [Id(2)] public DateTimeOffset TimestampUtc { get; set; }
+    [Id(0)] public string Output { get; set; } = string.Empty;
+    [Id(1)] public string? ModelId { get; set; }
+    [Id(2)] public Dictionary<string, string> Metadata { get; set; } = [];
+    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+```
+
+### AgentMessage
+
+A single conversation turn stored by `AppendMessageAsync` and `RespondAsync`.
+
+```csharp
+[GenerateSerializer]
+public sealed class AgentMessage
+{
+    [Id(0)] public string MessageId { get; set; } = Guid.NewGuid().ToString("N");
+    [Id(1)] public string Role { get; set; } = string.Empty;
+    [Id(2)] public string Content { get; set; } = string.Empty;
+    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
+    [Id(4)] public Dictionary<string, string> Metadata { get; set; } = [];
+}
+```
+
+### AgentMessageQuery
+
+Filter for `QueryMessagesAsync`.
+
+```csharp
+[GenerateSerializer]
+public sealed class AgentMessageQuery
+{
+    [Id(0)] public int? Limit { get; set; }
+    [Id(1)] public DateTimeOffset? SinceUtc { get; set; }
+    [Id(2)] public string? Role { get; set; }
+    [Id(3)] public bool Descending { get; set; }
+}
+```
+
+### AgentEvent
+
+An event log entry created by `AppendEventAsync`.
+
+```csharp
+[GenerateSerializer]
+public sealed class AgentEvent
+{
+    [Id(0)] public string EventId { get; set; } = Guid.NewGuid().ToString("N");
+    [Id(1)] public string Type { get; set; } = string.Empty;
+    [Id(2)] public string? Payload { get; set; }
+    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
+    [Id(4)] public Dictionary<string, string> Metadata { get; set; } = [];
+}
+```
+
+### AgentEventQuery
+
+Filter for `QueryEventsAsync`.
+
+```csharp
+[GenerateSerializer]
+public sealed class AgentEventQuery
+{
+    [Id(0)] public int? Limit { get; set; }
+    [Id(1)] public DateTimeOffset? SinceUtc { get; set; }
+    [Id(2)] public string? Type { get; set; }
+    [Id(3)] public bool Descending { get; set; }
+}
+```
+
+### ScheduleStatus
+
+Returned by `GetScheduleStatusAsync`.
+
+```csharp
+[GenerateSerializer]
+public sealed class ScheduleStatus
+{
+    [Id(0)] public bool IsRunning { get; set; }
+    [Id(1)] public TimeSpan Interval { get; set; }
+    [Id(2)] public int TickCount { get; set; }
+    [Id(3)] public int? MaxTicks { get; set; }
 }
 ```
 
 ### NotificationEnvelope
 
-A rich notification message with metadata, used as input to `NotifyAsync` and `ReceiveNotificationAsync`.
+A rich notification message used as input to `NotifyAsync` and `ReceiveNotificationAsync`.
 
 ```csharp
 [GenerateSerializer]
@@ -189,29 +250,11 @@ public sealed class NotificationRecord
 }
 ```
 
-### AgentTrackingStatus
-
-Status of the periodic tracking timer, returned by `GetTrackingStatusAsync`.
-
-```csharp
-[GenerateSerializer]
-public sealed class AgentTrackingStatus
-{
-    [Id(0)] public bool IsTracking { get; set; }
-    [Id(1)] public int TickCount { get; set; }
-    [Id(2)] public DateTimeOffset? StartedAtUtc { get; set; }
-    [Id(3)] public TimeSpan Interval { get; set; }
-    [Id(4)] public int MaxTicks { get; set; }
-}
-```
-
 ## NotificationJson
 
 Static helper class for type-safe notification serialization and deserialization.
 
 ### CreateEnvelope
-
-Creates a `NotificationEnvelope` with a serialized typed payload.
 
 ```csharp
 public static NotificationEnvelope CreateEnvelope<TPayload>(
@@ -225,43 +268,28 @@ public static NotificationEnvelope CreateEnvelope<TPayload>(
     JsonSerializerOptions? serializerOptions = null)
 ```
 
-- Throws `ArgumentException` if `topic` is null or whitespace
-- Sets `ContentType` to `"application/json"`
-- Generates a new `MessageId` if none is provided
-- Copies headers into a case-insensitive dictionary
+### ReadPayload
 
-### ReadPayload (NotificationEnvelope)
-
-Extension method to deserialize the payload from a `NotificationEnvelope`.
+Extension methods to deserialize the JSON payload from a `NotificationEnvelope` or `NotificationRecord`:
 
 ```csharp
 public static TPayload? ReadPayload<TPayload>(
     this NotificationEnvelope notification,
     JsonSerializerOptions? serializerOptions = null)
-```
 
-- Throws `ArgumentNullException` if `notification` is null
-- Throws `InvalidOperationException` if `ContentType` does not contain `"json"`
-- Returns `default` if `Payload` is null or whitespace
-
-### ReadPayload (NotificationRecord)
-
-Extension method to deserialize the payload from a `NotificationRecord`.
-
-```csharp
 public static TPayload? ReadPayload<TPayload>(
     this NotificationRecord notification,
     JsonSerializerOptions? serializerOptions = null)
 ```
 
-- Same validation behavior as the `NotificationEnvelope` overload
+Both methods validate that `ContentType` contains `"json"` and throw `InvalidOperationException` if it does not.
 
-## ITelegramBot
+## ITelegramConversation
 
 Extends `IAgent` with Telegram-specific messaging. See the [Telegram Bot guide](/guide/telegram) for full usage details.
 
 ```csharp
-public interface ITelegramBot : IAgent
+public interface ITelegramConversation : IAgent
 {
     [OneWay]
     Task HandleUpdate(TelegramBotUpdate update, CancellationToken ct = default);
@@ -276,62 +304,5 @@ public interface ITelegramBot : IAgent
     Task<TelegramTopicRegistry> EnsureTopics(long chatId, CancellationToken ct = default);
     Task SetWebhook(string url, string? secretToken = null, CancellationToken ct = default);
     Task AnswerCallback(string callbackQueryId, string? text = null, CancellationToken ct = default);
-}
-```
-
-### TelegramBotUpdate
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramBotUpdate
-{
-    [Id(0)] public long ChatId { get; set; }
-    [Id(1)] public int MessageId { get; set; }
-    [Id(2)] public int? ThreadId { get; set; }
-    [Id(3)] public string? Text { get; set; }
-    [Id(4)] public string? CallbackQueryId { get; set; }
-    [Id(5)] public string? CallbackData { get; set; }
-    [Id(6)] public string? Username { get; set; }
-    [Id(7)] public string? FirstName { get; set; }
-    [Id(8)] public long? FromUserId { get; set; }
-}
-```
-
-### TelegramSendResult
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramSendResult
-{
-    [Id(0)] public bool Success { get; set; }
-    [Id(1)] public int MessageId { get; set; }
-    [Id(2)] public string? Error { get; set; }
-
-    public static TelegramSendResult Ok(int messageId);
-    public static TelegramSendResult Fail(string error);
-}
-```
-
-### TelegramInlineButton
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramInlineButton
-{
-    [Id(0)] public string Text { get; set; } = string.Empty;
-    [Id(1)] public string CallbackData { get; set; } = string.Empty;
-}
-```
-
-### TelegramTopicRegistry
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramTopicRegistry
-{
-    [Id(0)] public int AssistantThreadId { get; set; }
-    [Id(1)] public int NotificationsThreadId { get; set; }
-    [Id(2)] public int SettingsThreadId { get; set; }
-    [Id(3)] public Dictionary<string, int> TaskTopics { get; set; } = [];
 }
 ```

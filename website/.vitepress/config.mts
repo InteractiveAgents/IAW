@@ -14,6 +14,7 @@ export default defineConfig({
 
     nav: [
       { text: 'Guide', link: '/guide/' },
+      { text: 'Tutorials', link: '/tutorials/first-agent' },
       { text: 'Reference', link: '/reference/' }
     ],
 
@@ -36,8 +37,17 @@ export default defineConfig({
         {
           text: 'Integrations',
           items: [
+            { text: 'MCP Server', link: '/guide/mcp' },
             { text: 'Telegram Bot', link: '/guide/telegram' },
             { text: 'Testing', link: '/guide/testing' }
+          ]
+        }
+      ],
+      '/tutorials/': [
+        {
+          text: 'Tutorials',
+          items: [
+            { text: 'Build Your First Agent', link: '/tutorials/first-agent' }
           ]
         }
       ],
@@ -45,7 +55,8 @@ export default defineConfig({
         {
           text: 'API Reference',
           items: [
-            { text: 'Overview', link: '/reference/' }
+            { text: 'Overview', link: '/reference/' },
+            { text: 'Configuration', link: '/reference/configuration' }
           ]
         }
       ]

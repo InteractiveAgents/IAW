@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Interactive Agents
   text: Build intelligent agent systems on .NET
-  tagline: An open-source ecosystem of agents that collaborate, remember, improve, and orchestrate tasks — powered by Orleans and Aspire.
+  tagline: An open-source ecosystem of agents that collaborate, remember, improve, and orchestrate tasks -- powered by Orleans and Aspire.
   image:
     src: /logo.svg
     alt: Interactive Agents
@@ -31,21 +31,16 @@ dotnet add package IAW.Core
 ### Create your first agent
 
 ```csharp
-using Core;
-using Microsoft.Extensions.AI;
-using Orleans.Journaling;
+using Core.V2;
 
-public class GreeterAgent(
-    [Memory("agent-values")] IDurableDictionary<string, string> values,
-    [Memory("agent-history")] IDurableList<AgentHistoryEntry> history,
-    [Memory("agent-events")] IDurableList<AgentEventRecord> events,
-    [Memory("agent-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("agent-notifications")] IDurableList<NotificationRecord> notifications,
-    [Memory("agent-tracking")] IDurableDictionary<string, AgentTrackingStatus> tracking)
-    : Agent(values, history, events, subscriptions, notifications, tracking)
+public class Greeter : AgentV2
 {
-    public override string DisplayName => "Greeter";
-    public override string SystemPrompt => "You are a friendly greeter.";
+    protected override AgentProfile Profile => new()
+    {
+        Id = this.GetPrimaryKeyString(),
+        DisplayName = "Greeter",
+        Instructions = "You are a friendly greeter."
+    };
 }
 ```
 
@@ -53,6 +48,7 @@ public class GreeterAgent(
 
 ```csharp
 using Aspire;
+using Core.AI.Models;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
