@@ -6,10 +6,10 @@ using Qdrant.Client.Grpc;
 
 namespace TelegramBot;
 
-public sealed class AgentRouterGrain(
+public sealed class AgentRouter(
     QdrantClient qdrant,
     [FromKeyedServices("embedding")] IEmbeddingGenerator<string, Embedding<float>> embeddings,
-    ILogger<AgentRouterGrain> logger) : Grain, IAgentRouter
+    ILogger<AgentRouter> logger) : Grain, IAgentRouter
 {
     private const string CollectionName = "agent-routing";
     private const float ConfidenceThreshold = 0.7f;

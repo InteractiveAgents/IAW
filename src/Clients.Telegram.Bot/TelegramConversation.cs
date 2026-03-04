@@ -19,7 +19,7 @@ using TelegramBot.Services;
 
 namespace TelegramBot;
 
-public sealed class TelegramConversationGrain(
+public sealed class TelegramConversation(
     [Memory("v2-messages")] IDurableList<AgentMessage> messages,
     [Memory("v2-memory")] IDurableDictionary<string, string> memory,
     [Memory("v2-events")] IDurableList<AgentEvent> events,
@@ -31,7 +31,7 @@ public sealed class TelegramConversationGrain(
     IHttpClientFactory httpClientFactory,
     IAudioConverter audioConverter,
     IVoiceTranscriptionService transcriptionService,
-    ILogger<TelegramConversationGrain> logger)
+    ILogger<TelegramConversation> logger)
     : Agent(messages, memory, events, subscriptions, notifications, tracking),
       Core.ITelegramConversation
 {
@@ -129,10 +129,23 @@ public sealed class TelegramConversationGrain(
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Telegram API error handling update from chat {ChatId}", update.ChatId);
         }
+        catch (OperationCanceledException)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "Cancelled");
+        }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Unexpected error handling update from chat {ChatId}", update.ChatId);
+            try
+            {
+                await SendText(update.ChatId, "Something went wrong processing your message. Please try again.",
+                    update.ThreadId, ct);
+            }
+            catch (Exception sendEx)
+            {
+                logger.LogWarning(sendEx, "Failed to send error notification to chat {ChatId}", update.ChatId);
+            }
         }
     }
 
@@ -425,9 +438,12 @@ public sealed class TelegramConversationGrain(
 
             var transcribedText = await transcriptionService.TranscribeAsync(wavPath, ct);
 
-            if (string.IsNullOrWhiteSpace(transcribedText))
+            if (string.IsNullOrWhiteSpace(transcribedText) || transcribedText.StartsWith('['))
             {
-                await SendText(update.ChatId, "Could not transcribe the voice message.", update.ThreadId, ct);
+                var fallback = string.IsNullOrWhiteSpace(transcribedText)
+                    ? "Could not transcribe the voice message."
+                    : transcribedText;
+                await SendText(update.ChatId, fallback, update.ThreadId, ct);
                 return;
             }
 
@@ -438,7 +454,15 @@ public sealed class TelegramConversationGrain(
         catch (Exception ex)
         {
             logger.LogError(ex, "Voice processing failed for chat {ChatId}", update.ChatId);
-            await SendText(update.ChatId, "Sorry, I couldn't process your voice message.", update.ThreadId, ct);
+            try
+            {
+                await SendText(update.ChatId, "Sorry, I couldn't process your voice message. Please try again or send text instead.",
+                    update.ThreadId, ct);
+            }
+            catch (Exception sendEx)
+            {
+                logger.LogWarning(sendEx, "Failed to send voice error notification to chat {ChatId}", update.ChatId);
+            }
         }
         finally
         {
