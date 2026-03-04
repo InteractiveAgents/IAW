@@ -28,6 +28,9 @@ public abstract class AgentV2(
 
     protected abstract AgentProfile Profile { get; }
 
+    protected virtual IAgentV2 ResolveSubscriber(string subscriberId)
+        => GrainFactory.GetGrain<IAgentV2>(subscriberId);
+
     protected virtual Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default)
         => Task.FromResult(new AgentReply { Output = "Not implemented" });
 
@@ -278,7 +281,7 @@ public abstract class AgentV2(
         foreach (var subscriberId in targets)
         {
             ct.ThrowIfCancellationRequested();
-            var subscriber = GrainFactory.GetGrain<IAgentV2>(subscriberId);
+            var subscriber = ResolveSubscriber(subscriberId);
             await subscriber.ReceiveNotificationAsync(CloneNotificationEnvelope(normalized), ct);
         }
     }

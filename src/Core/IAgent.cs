@@ -1,7 +1,9 @@
+using Core.V2;
+
 namespace Core;
 
 public interface IAgent :
-    IGrainWithStringKey,
+    IAgentV2,
     IAgentMetadataBehavior,
     IAgentStateBehavior,
     IAgentHistoryBehavior,

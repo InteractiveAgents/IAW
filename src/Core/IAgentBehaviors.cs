@@ -25,13 +25,11 @@ public interface IAgentEventsBehavior
     Task<List<AgentEventRecord>> GetEventsAsync(CancellationToken ct = default);
 }
 
+// V1 convenience overloads not covered by IAgentV2
 public interface IAgentNotificationsBehavior
 {
-    Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
     Task NotifyAsync(string topic, string payload, CancellationToken ct = default);
-    Task NotifyAsync(NotificationEnvelope notification, CancellationToken ct = default);
     Task ReceiveNotificationAsync(string topic, string payload, CancellationToken ct = default);
-    Task ReceiveNotificationAsync(NotificationEnvelope notification, CancellationToken ct = default);
     Task<List<NotificationRecord>> GetNotificationsAsync(CancellationToken ct = default);
 }
 
@@ -42,12 +40,8 @@ public interface IAgentTrackingBehavior
     Task<AgentTrackingStatus> GetTrackingStatusAsync(CancellationToken ct = default);
 }
 
-public interface IAgentToolsBehavior
-{
-    Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default);
-}
+// InvokeToolAsync is inherited from IAgentV2
+public interface IAgentToolsBehavior;
 
-public interface IAgentStreamsBehavior
-{
-    Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
-}
+// PublishStreamAsync is inherited from IAgentV2
+public interface IAgentStreamsBehavior;

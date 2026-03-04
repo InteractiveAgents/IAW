@@ -13,7 +13,18 @@ public abstract class AgentTestV2<T> : IAsyncLifetime where T : class, IAgentV2
     protected TestCluster Cluster { get; private set; } = null!;
     protected IStreamProvider StreamProvider => Cluster.Client.GetStreamProvider("agents");
 
-    protected IAgentV2 AgentV2(string id) => Cluster.GrainFactory.GetGrain<IAgentV2>(id);
+    protected IAgentV2 AgentV2(string id)
+    {
+        // When T implements a specific grain interface beyond IAgentV2, resolve via that
+        // to avoid ambiguity when multiple grain classes implement IAgentV2
+        var specificInterface = typeof(T).GetInterfaces()
+            .FirstOrDefault(i => i != typeof(IAgentV2) && typeof(IAgentV2).IsAssignableFrom(i) && typeof(IGrainWithStringKey).IsAssignableFrom(i));
+
+        if (specificInterface is not null)
+            return (IAgentV2)Cluster.GrainFactory.GetGrain(specificInterface, id);
+
+        return Cluster.GrainFactory.GetGrain<IAgentV2>(id);
+    }
     protected string UniqueId(string prefix) => $"{prefix}-{_testRunId}";
 
     public async ValueTask InitializeAsync()
