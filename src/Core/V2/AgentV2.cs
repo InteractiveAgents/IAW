@@ -15,7 +15,7 @@ public abstract class AgentV2(
     : DurableGrain, IAgentV2, IRemindable
 {
     private const string ScheduleReminderName = "v2-schedule";
-    private const string ScheduleKey = "status";
+    private const string ScheduleKey = "__v2-schedule-status";
     private static readonly TimeSpan MinimumReminderPeriod = TimeSpan.FromMinutes(1);
 
     private IGrainTimer? _scheduleTimer;
@@ -45,8 +45,7 @@ public abstract class AgentV2(
         var status = GetScheduleStatusSnapshot();
         if (status.IsRunning &&
             status.Interval > TimeSpan.Zero &&
-            status.MaxTicks > 0 &&
-            status.TickCount < status.MaxTicks)
+            (!status.MaxTicks.HasValue || status.TickCount < status.MaxTicks.Value))
         {
             await StartScheduleTimerAsync(status.Interval);
         }
@@ -308,7 +307,7 @@ public abstract class AgentV2(
         await PublishBehaviorStreamAsync("agent-notifications", record);
     }
 
-    public Task<List<NotificationRecord>> GetNotificationsAsync(CancellationToken ct = default)
+    public Task<List<NotificationRecord>> QueryNotificationsAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -334,13 +333,10 @@ public abstract class AgentV2(
 
     // -- Scheduling --
 
-    public async Task StartScheduleAsync(TimeSpan interval, int maxTicks, CancellationToken ct = default)
+    public async Task StartScheduleAsync(TimeSpan interval, int? maxTicks = null, CancellationToken ct = default)
     {
         if (interval <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(interval), "Interval must be greater than zero.");
-
-        if (maxTicks <= 0)
-            throw new ArgumentOutOfRangeException(nameof(maxTicks), "Max ticks must be greater than zero.");
 
         ct.ThrowIfCancellationRequested();
 
@@ -413,7 +409,7 @@ public abstract class AgentV2(
             ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             : arguments.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        var result = await function.InvokeAsync([with(rawArgs)], ct);
+        var result = await function.InvokeAsync(new AIFunctionArguments(rawArgs), ct);
         return result?.ToString();
     }
 
@@ -429,29 +425,13 @@ public abstract class AgentV2(
         if (!string.IsNullOrEmpty(Profile.Instructions))
             chatMessages.Add(new ChatMessage(ChatRole.System, Profile.Instructions));
 
+        // _messages already contains the current user message (added by RespondAsync)
         foreach (var msg in messages)
             chatMessages.Add(new ChatMessage(new ChatRole(msg.Role), msg.Content));
 
-        chatMessages.Add(new ChatMessage(ChatRole.User, request.Input));
-
         var options = new ChatOptions { Tools = [.. DefineTools()] };
-
-        ChatResponse response;
-        try
-        {
-            response = await chatClient.GetResponseAsync(chatMessages, options, ct);
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            AgentObservability.RecordFailure();
-            throw;
-        }
-
-        var output = string.Join("", response.Messages
-            .Where(m => m.Role == ChatRole.Assistant)
-            .Select(m => m.Text));
-
+        var response = await chatClient.GetResponseAsync(chatMessages, options, ct);
+        var output = string.Join("", response.Messages.Where(m => m.Role == ChatRole.Assistant).Select(m => m.Text));
         return new AgentReply { Output = output, ModelId = response.ModelId };
     }
 
@@ -480,16 +460,19 @@ public abstract class AgentV2(
 
         status.TickCount++;
 
+        // Persist FIRST so crash during callback doesn't lose the count
+        tracking[ScheduleKey] = SerializeScheduleStatus(status);
+        await WriteStateAsync();
+
         await OnScheduleTickAsync(status.TickCount);
 
         if (status.MaxTicks.HasValue && status.TickCount >= status.MaxTicks.Value)
         {
             status.IsRunning = false;
+            tracking[ScheduleKey] = SerializeScheduleStatus(status);
             await StopScheduleTimerAsync();
+            await WriteStateAsync();
         }
-
-        tracking[ScheduleKey] = SerializeScheduleStatus(status);
-        await WriteStateAsync();
     }
 
     private async Task StartScheduleTimerAsync(TimeSpan interval)
@@ -532,7 +515,7 @@ public abstract class AgentV2(
             IsRunning = false,
             TickCount = 0,
             Interval = TimeSpan.Zero,
-            MaxTicks = 0
+            MaxTicks = null
         };
     }
 

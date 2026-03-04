@@ -18,9 +18,9 @@ public interface IAgentV2 : IGrainWithStringKey
     Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
     Task NotifyAsync(NotificationEnvelope envelope, CancellationToken ct = default);
     Task ReceiveNotificationAsync(NotificationEnvelope envelope, CancellationToken ct = default);
-    Task<List<NotificationRecord>> GetNotificationsAsync(CancellationToken ct = default);
+    Task<List<NotificationRecord>> QueryNotificationsAsync(CancellationToken ct = default);
 
-    Task StartScheduleAsync(TimeSpan interval, int maxTicks, CancellationToken ct = default);
+    Task StartScheduleAsync(TimeSpan interval, int? maxTicks = null, CancellationToken ct = default);
     Task StopScheduleAsync(CancellationToken ct = default);
     Task<ScheduleStatus> GetScheduleStatusAsync(CancellationToken ct = default);
 
