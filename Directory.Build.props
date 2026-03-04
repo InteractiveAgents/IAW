@@ -15,5 +15,7 @@
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>https://interactiveagents.github.io/IAW</PackageProjectUrl>
     <Copyright>Copyright (c) 2026 InteractiveAgents</Copyright>
+    <PackageTags>agents;orleans;aspire;ai;multi-agent;llm</PackageTags>
+    <Description>IAW - Interactive Agents Web: Orleans-based multi-agent runtime for .NET</Description>
   </PropertyGroup>
 </Project>
