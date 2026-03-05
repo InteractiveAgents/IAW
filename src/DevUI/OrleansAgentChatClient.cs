@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Core;
 using Core.V2;
 using Microsoft.Extensions.AI;
 
@@ -17,7 +18,7 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
 
         try
         {
-            var agent = cluster.GetGrain<IAgentV2>(agentId);
+            var agent = cluster.GetGrain<IAgent>(agentId);
             var reply = await agent.RespondAsync(
                 new AgentRequest { Input = userText },
                 cancellationToken);
