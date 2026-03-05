@@ -173,8 +173,7 @@ public abstract class AgentV2(
         if (string.IsNullOrWhiteSpace(key))
             throw new ArgumentException("Memory key cannot be empty.", nameof(key));
 
-        ct.ThrowIfCancellationRequested();
-        memory[key] = value;
+        memory.TryAdd(key, value);       
         await WriteStateAsync(ct);
     }
 
@@ -435,7 +434,14 @@ public abstract class AgentV2(
         var options = new ChatOptions { Tools = [.. DefineTools()] };
         var response = await chatClient.GetResponseAsync(chatMessages, options, ct);
         var output = string.Join("", response.Messages.Where(m => m.Role == ChatRole.Assistant).Select(m => m.Text));
-        return new AgentReply { Output = output, ModelId = response.ModelId };
+        return new AgentReply
+        {
+            Output = output,
+            ModelId = response.ModelId,
+            InputTokens = response.Usage?.InputTokenCount,
+            OutputTokens = response.Usage?.OutputTokenCount,
+            TotalTokens = response.Usage?.TotalTokenCount
+        };
     }
 
     // -- IRemindable --

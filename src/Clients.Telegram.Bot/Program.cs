@@ -3,6 +3,7 @@ using Core.AI;
 using Microsoft.Extensions.Options;
 using Orleans.Journaling;
 using ServiceDefaults;
+using System.Diagnostics;
 using Telegram.BotAPI;
 using TelegramBot;
 using TelegramBot.Services;
@@ -75,6 +76,7 @@ app.MapPost("/webhook", async (
     if (chatId == 0)
         return Results.Ok();
 
+    var currentActivity = Activity.Current;
     var botUpdate = new TelegramBotUpdate
     {
         ChatId = chatId,
@@ -87,7 +89,11 @@ app.MapPost("/webhook", async (
         FirstName = update.Message?.From?.FirstName ?? update.CallbackQuery?.From?.FirstName,
         FromUserId = update.Message?.From?.Id ?? update.CallbackQuery?.From?.Id,
         VoiceFileId = update.Message?.Voice?.FileId,
-        VoiceDuration = update.Message?.Voice?.Duration ?? 0
+        VoiceDuration = update.Message?.Voice?.Duration ?? 0,
+        CorrelationId = currentActivity?.TraceId.ToHexString() ?? context.TraceIdentifier,
+        TraceId = currentActivity?.TraceId.ToHexString(),
+        ParentSpanId = currentActivity?.SpanId.ToHexString(),
+        TraceSampled = currentActivity?.Recorded ?? false
     };
 
     var conversation = grains.GetGrain<Core.ITelegramConversation>($"conversation-{chatId}");

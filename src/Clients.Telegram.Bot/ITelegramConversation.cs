@@ -34,6 +34,10 @@ public sealed class TelegramBotUpdate
     [Id(8)] public long? FromUserId { get; set; }
     [Id(9)] public string? VoiceFileId { get; set; }
     [Id(10)] public int VoiceDuration { get; set; }
+    [Id(11)] public string? CorrelationId { get; set; }
+    [Id(12)] public string? TraceId { get; set; }
+    [Id(13)] public string? ParentSpanId { get; set; }
+    [Id(14)] public bool TraceSampled { get; set; }
 }
 
 [GenerateSerializer]

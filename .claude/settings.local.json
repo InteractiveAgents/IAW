@@ -56,7 +56,9 @@
       "Bash(wmic process:*)",
       "Bash(aspire mcp:*)",
       "Bash(docker ps:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(wc:*)",
+      "mcp__aspire__list_trace_structured_logs"
     ]
   },
   "enabledMcpjsonServers": [

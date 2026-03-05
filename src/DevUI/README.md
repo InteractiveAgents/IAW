@@ -10,10 +10,12 @@ DevUI runs as an **Orleans client** (not a silo), connecting to the `samples` si
 DevUI (Orleans Client)
   └── OrleansAgentChatClient : IChatClient
         └── IClusterClient.GetGrain<IAgent>(agentId).RespondAsync()
-              └── Agent grain in samples silo (with UseOpenTelemetry pipeline)
+              └── SmartAgent grain in samples silo (Claude 4.5 Haiku + UseOpenTelemetry)
 ```
 
 `OrleansAgentChatClient` bridges `Microsoft.Extensions.AI.IChatClient` to Orleans `IAgent` grains. The `AddAIAgent()` registration passes the grain ID as `instructions`, which the client uses for routing.
+
+`SmartAgent` (in samples silo) extends `Agent` with `[Llm<Claude45Haiku>]` injection. It selects system prompt and display name by grain ID, then delegates to `RespondWithLlmAsync()` for LLM-powered responses.
 
 ## Running
 
@@ -58,3 +60,4 @@ GenAI telemetry flows through the agent pipeline:
 - `Program.cs` -- Orleans client setup, agent registration, DevUI mapping
 - `OrleansAgentChatClient.cs` -- IChatClient → IAgent grain bridge
 - `appsettings.json` -- Telemetry config (SampleRatio: 1.0)
+- `../samples/SmartAgent.cs` -- LLM-powered agent grain with per-ID system prompts

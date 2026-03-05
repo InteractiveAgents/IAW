@@ -22,7 +22,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         var results = new List<AgentProfile>();
         foreach (var id in WellKnownAgentIds)
         {
-            var agent = orleans.GetGrain<IAgent>(id);
+            var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:id);
             var profile = await agent.GetProfileAsync(ct);
             results.Add(profile);
         }
@@ -35,7 +35,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("The message to send to the assistant")] string message,
         CancellationToken ct)
     {
-        var assistant = orleans.GetGrain<IAgent>("personal-assistant");
+        var assistant = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"personal-assistant");
         var request = new AgentRequest { Input = message };
         var reply = await assistant.RespondAsync(request, ct);
         return JsonSerializer.Serialize(new { reply.Output, reply.ModelId, reply.TimestampUtc }, JsonOptions);
@@ -48,7 +48,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("The message to send")] string message,
         CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(agentId);
+        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
         var request = new AgentRequest { Input = message };
         var reply = await agent.RespondAsync(request, ct);
         return JsonSerializer.Serialize(new { agentId, reply.Output, reply.ModelId, reply.TimestampUtc }, JsonOptions);
@@ -60,7 +60,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("The agent grain ID")] string agentId,
         CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(agentId);
+        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
         var profile = await agent.GetProfileAsync(ct);
         var recentMessages = await agent.QueryMessagesAsync(
             new AgentMessageQuery { Limit = 5, Descending = true }, ct);
@@ -75,7 +75,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Priority: low, medium, high")] string priority = "medium",
         CancellationToken ct = default)
     {
-        var pa = orleans.GetGrain<IAgent>("personal-assistant");
+        var pa = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"personal-assistant");
         var request = new AgentRequest
         {
             Input = task,
@@ -92,7 +92,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Maximum number of events to return")] int limit = 20,
         CancellationToken ct = default)
     {
-        var agent = orleans.GetGrain<IAgent>(agentId);
+        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
         var events = await agent.QueryEventsAsync(
             new AgentEventQuery { Limit = limit, Descending = true }, ct);
         return JsonSerializer.Serialize(events, JsonOptions);
@@ -104,7 +104,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("The agent grain ID")] string agentId,
         CancellationToken ct = default)
     {
-        var agent = orleans.GetGrain<IAgent>(agentId);
+        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
         var profile = await agent.GetProfileAsync(ct);
         var messageCount = (await agent.QueryMessagesAsync(ct: ct)).Count;
         var eventCount = (await agent.QueryEventsAsync(ct: ct)).Count;
@@ -119,7 +119,7 @@ internal sealed class AgentTools(IClusterClient orleans)
     [Description("Trigger self-improvement analysis across the agent team.")]
     public async Task<string> AgentTriggerSelfImprovement(CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>("self-improvement");
+        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"self-improvement");
         var request = new AgentRequest
         {
             Input = "Analyze recent agent interactions and propose improvements"

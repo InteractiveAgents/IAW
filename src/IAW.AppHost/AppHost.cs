@@ -1,10 +1,7 @@
 using Aspire;
-using Aspire.Hosting;
 using Core.AI.Models;
-using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
-var waitForExternalDependencies = builder.Configuration.GetValue("IAW:WaitForExternalDependencies", false);
 
 var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
@@ -38,10 +35,8 @@ var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; })
     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
     .WithEnvironment("Telegram__BotToken", botToken)
-    .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"));
-
-if (waitForExternalDependencies)
-    telegramBot.WaitFor(qdrant);
+    .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
+    .WaitFor(qdrant);
 
 ngrok.WithTunnelEndpoint(telegramBot, "http");
 
@@ -52,6 +47,7 @@ builder.AddViteApp("website", "../../website")
 builder.AddProject<Projects.MCP>("mcp")
     .WithReference(iaw.AsClient())
     .WithEnvironment("Orleans__PrimaryGateway", samples.GetEndpoint("orleans-gateway"))
+    .WithHttpEndpoint(port: 5300, name: "mcp-direct", isProxied: false)
     .WaitFor(samples);
 
 builder.Build().Run();

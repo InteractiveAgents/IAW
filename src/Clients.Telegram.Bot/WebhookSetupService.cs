@@ -16,7 +16,6 @@ public sealed class TelegramBotOptions
 public sealed class WebhookSetupService(
     IGrainFactory grains,
     IOptions<TelegramBotOptions> options,
-    IHttpClientFactory httpClientFactory,
     ILogger<WebhookSetupService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -48,7 +47,12 @@ public sealed class WebhookSetupService(
 
         try
         {
-            using var http = httpClientFactory.CreateClient();
+            // Use a direct short-timeout client here to avoid noisy resilience retries
+            // when ngrok is intentionally unavailable in local/dev runs.
+            using var http = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(3)
+            };
             var json = await http.GetFromJsonAsync<JsonElement>(
                 $"{ngrokApiUrl.TrimEnd('/')}/api/tunnels", ct);
 

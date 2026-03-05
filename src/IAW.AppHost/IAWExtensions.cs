@@ -1,5 +1,6 @@
 using Aspire.Hosting.Orleans;
 using Core.AI;
+using Microsoft.Extensions.Configuration;
 
 namespace Aspire;
 
@@ -101,10 +102,12 @@ public static class IAWExtensions
         if (_declaredProviders.Contains(ProviderType.GitHub))
             builder.WithEnvironment("AI__LLM__GitHubToken", _gitHubTokenParam);
 
+        var waitForLlmModelResources = appBuilder.Configuration.GetValue("IAW:WaitForLlmModelResources", false);
         foreach (var modelResource in _ollamaModelResources)
         {
             builder.WithReference(modelResource);
-            builder.WaitFor(modelResource);
+            if (waitForLlmModelResources)
+                builder.WaitFor(modelResource);
         }
 
         return builder;

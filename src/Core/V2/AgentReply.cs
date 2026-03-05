@@ -14,4 +14,13 @@ public sealed class AgentReply
 
     [Id(3)]
     public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    [Id(4)]
+    public long? InputTokens { get; set; }
+
+    [Id(5)]
+    public long? OutputTokens { get; set; }
+
+    [Id(6)]
+    public long? TotalTokens { get; set; }
 }

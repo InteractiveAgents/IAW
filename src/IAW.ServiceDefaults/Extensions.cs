@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using System.Diagnostics;
 
 namespace ServiceDefaults;
 
@@ -17,6 +19,7 @@ public static class Extensions
 {
     private const string HealthEndpointPath = "/health";
     private const string AlivenessEndpointPath = "/alive";
+    private const double DefaultTraceSampleRatio = 0.2;
 
     public static TBuilder AddServiceDefaults<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
@@ -46,6 +49,10 @@ public static class Extensions
 
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
+        var configuredSampleRatio = builder.Configuration.GetValue<double?>("Telemetry:Tracing:SampleRatio")
+            ?? DefaultTraceSampleRatio;
+        var traceSampleRatio = Math.Clamp(configuredSampleRatio, 0d, 1d);
+
         builder.Logging.AddOpenTelemetry(logging =>
         {
             logging.IncludeFormattedMessage = true;
@@ -62,6 +69,7 @@ public static class Extensions
             })
             .WithTracing(tracing =>
             {
+                tracing.SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(traceSampleRatio)));
                 tracing.AddSource(builder.Environment.ApplicationName)
                     .AddSource("Core.Agent")
                     .AddSource("Microsoft.Extensions.AI")
@@ -73,7 +81,11 @@ public static class Extensions
                     )
                     // Uncomment the following line to enable gRPC instrumentation (requires the OpenTelemetry.Instrumentation.GrpcNetClient package)
                     //.AddGrpcClientInstrumentation()
-                    .AddHttpClientInstrumentation();
+                    .AddHttpClientInstrumentation(options =>
+                    {
+                        // Keep traces correlated: capture client spans only when a sampled parent span exists.
+                        options.FilterHttpRequestMessage = _ => Activity.Current?.Recorded ?? false;
+                    });
             });
 
         builder.AddOpenTelemetryExporters();

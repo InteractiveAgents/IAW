@@ -18,12 +18,27 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
 
         try
         {
-            var agent = cluster.GetGrain<IAgent>(agentId);
+            var agent = cluster.GetGrain<IAgent>(agentId, grainClassNamePrefix: "Samples.SmartAgent");
             var reply = await agent.RespondAsync(
                 new AgentRequest { Input = userText },
                 cancellationToken);
 
-            return new ChatResponse(new ChatMessage(ChatRole.Assistant, reply.Output));
+            var response = new ChatResponse(new ChatMessage(ChatRole.Assistant, reply.Output))
+            {
+                ModelId = reply.ModelId
+            };
+
+            if (reply.InputTokens.HasValue || reply.OutputTokens.HasValue || reply.TotalTokens.HasValue)
+            {
+                response.Usage = new UsageDetails
+                {
+                    InputTokenCount = reply.InputTokens,
+                    OutputTokenCount = reply.OutputTokens,
+                    TotalTokenCount = reply.TotalTokens
+                };
+            }
+
+            return response;
         }
         catch (Exception ex)
         {
