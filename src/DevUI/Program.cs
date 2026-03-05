@@ -1,51 +1,62 @@
-using Microsoft.Agents.AI;
-using Microsoft.Agents.AI.DevUI;
+using System.Net;
+using DevUI;
 using Microsoft.Agents.AI.Hosting;
-using Microsoft.Agents.AI.Workflows;
+using Microsoft.Agents.AI.Hosting.OpenAI;
+using Microsoft.Agents.AI.DevUI;
 using Microsoft.Extensions.AI;
-using System.ComponentModel;
+using ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddOllamaApiClient("ollama-qwen2-5").AddChatClient();
+builder.AddServiceDefaults();
 
-builder.AddAIAgent("writer", "You write short stories (300 words or less) about the specified topic.");
+var gatewayAddress = builder.Configuration["Orleans:PrimaryGateway"];
 
-builder.AddAIAgent("editor", (sp, key) => new ChatClientAgent(
-    sp.GetRequiredService<IChatClient>(),
-    name: key,
-    instructions: "You edit short stories to improve grammar and style, ensuring the stories are less than 300 words. Once finished editing, you select a title and format the story for publishing.",
-    tools: [AIFunctionFactory.Create(FormatStory)]
-));
+builder.UseOrleansClient(client =>
+{
+    if (!string.IsNullOrEmpty(gatewayAddress))
+    {
+        var uri = new Uri(gatewayAddress);
+        client.UseStaticClustering(new IPEndPoint(IPAddress.Loopback, uri.Port));
+    }
+    else
+    {
+        client.UseLocalhostClustering();
+    }
+});
 
-builder.AddWorkflow("publisher", (sp, key) => AgentWorkflowBuilder.BuildSequential(
-    workflowName: key,
-    sp.GetRequiredKeyedService<AIAgent>("writer"),
-    sp.GetRequiredKeyedService<AIAgent>("editor")
-)).AddAsAIAgent();
+builder.Services.AddSingleton<IChatClient, OrleansAgentChatClient>();
 
-// Register services for OpenAI responses and conversations (also required for DevUI)
+// Well-known agents — instructions field carries the grain ID for OrleansAgentChatClient routing
+builder.AddAIAgent("personal-assistant", instructions: "personal-assistant");
+builder.AddAIAgent("roslyn", instructions: "roslyn");
+builder.AddAIAgent("dotnet", instructions: "dotnet");
+builder.AddAIAgent("nuget", instructions: "nuget");
+builder.AddAIAgent("github", instructions: "github");
+builder.AddAIAgent("reviewer", instructions: "reviewer");
+builder.AddAIAgent("self-improvement", instructions: "self-improvement");
+builder.AddAIAgent("fs", instructions: "fs");
+builder.AddAIAgent("shell", instructions: "shell");
+builder.AddAIAgent("git", instructions: "git");
+builder.AddAIAgent("build", instructions: "build");
+builder.AddAIAgent("knowledge", instructions: "knowledge");
+builder.AddAIAgent("user", instructions: "user");
+builder.AddAIAgent("planning", instructions: "planning");
+builder.AddAIAgent("notification", instructions: "notification");
+
 builder.Services.AddOpenAIResponses();
 builder.Services.AddOpenAIConversations();
 
 var app = builder.Build();
 app.UseHttpsRedirection();
+app.MapDefaultEndpoints();
 
-// Map endpoints for OpenAI responses and conversations (also required for DevUI)
 app.MapOpenAIResponses();
 app.MapOpenAIConversations();
 
 if (builder.Environment.IsDevelopment())
 {
-    // Map DevUI endpoint to /devui
     app.MapDevUI();
 }
 
 app.Run();
-
-[Description("Formats the story for publication, revealing its title.")]
-string FormatStory(string title, string story) => $"""
-    **Title**: {title}
-
-    {story}
-    """;

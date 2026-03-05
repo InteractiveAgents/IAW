@@ -8,13 +8,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Aspire.OllamaSharp" />
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Agents.AI.DevUI" />
     <PackageReference Include="Microsoft.Agents.AI.Hosting" />
     <PackageReference Include="Microsoft.Agents.AI.Hosting.OpenAI" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
+    <PackageReference Include="Microsoft.Orleans.Sdk" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\IAW.ServiceDefaults\ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>

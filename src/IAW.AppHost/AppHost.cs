@@ -1,8 +1,10 @@
 using Aspire;
 using Aspire.Hosting;
 using Core.AI.Models;
+using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
+var waitForExternalDependencies = builder.Configuration.GetValue("IAW:WaitForExternalDependencies", false);
 
 var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
@@ -19,6 +21,7 @@ var samples = builder.AddProject<Projects.Samples>("samples")
 builder.AddProject<Projects.DevUI>("devui")
     .WithReference(iaw.AsClient())
     .WithLLMEnvironment(builder)
+    .WithEnvironment("Orleans__PrimaryGateway", samples.GetEndpoint("orleans-gateway"))
     .WaitFor(samples);
 
 var ngrokAuthToken = builder.AddParameter("ngrok-auth-token", secret: true);
@@ -31,12 +34,14 @@ var botToken = builder.AddParameter("bot-token", secret: true);
 var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
     .WithReference(iaw)
     .WithReference(qdrant)
-    .WaitFor(qdrant)
     .WithLLMEnvironment(builder)
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; })
     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
     .WithEnvironment("Telegram__BotToken", botToken)
     .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"));
+
+if (waitForExternalDependencies)
+    telegramBot.WaitFor(qdrant);
 
 ngrok.WithTunnelEndpoint(telegramBot, "http");
 
