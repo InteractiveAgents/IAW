@@ -31,12 +31,12 @@ dotnet test IAW.slnx --filter "FullyQualifiedName~MethodName"       # run a sing
 src/
   Core/Core.csproj                  -- Agent base class (AgentV2), V2 contracts, LLM integration
   IAW.AppHost/Aspire.csproj         -- Aspire orchestration (AppHost)
-  IAW.MCP/MCP.csproj                -- MCP server bridge (stdio, self-contained exe)
+  IAW.MCP/MCP.csproj                -- MCP server bridge (Orleans client, HTTP transport)
   IAW.ServiceDefaults/              -- Shared Aspire defaults (OpenTelemetry, health checks)
-  Clients.Telegram.Bot/             -- Telegram bot silo service
-  DevUI/                            -- Microsoft Agent Framework dev UI
+  Clients.Telegram.Bot/             -- Telegram bot (Orleans silo, ports 11112/30001)
+  DevUI/                            -- Microsoft Agent Framework DevUI (Orleans client → IAgent grains)
 samples/
-  Samples/Samples.csproj            -- Orleans silo with ~20 HTTP sample endpoints
+  Samples/Samples.csproj            -- Primary Orleans silo (ports 11111/30000), ~20 HTTP sample endpoints
   IAW.Testing/IAW.Testing.csproj    -- Testing framework: AgentTestV2<T>, AspireAgentTest<T>, ScenarioBuilder
 test/
   Core.Tests/                       -- AgentTestV2<Agent> behavior tests + architecture guards
@@ -82,6 +82,20 @@ Models are registered in `src/Core/AI/Models/` as singletons extending `LLMModel
 - `WithLLMEnvironment()` -- injects `AI__LLM__Models__*` env vars + API key secrets
 
 Multi-silo setup: `samples` on ports 11111/30000, `telegram-bot` on 11112/30001, joined via `PrimarySiloEndpoint` config.
+
+### DevUI (Microsoft Agent Framework)
+
+DevUI provides a web-based chat UI for interacting with Orleans agents. It runs as an **Orleans client** (not a silo) connecting to the `samples` silo via gateway.
+
+**Architecture**: DevUI → `OrleansAgentChatClient : IChatClient` → `IClusterClient.GetGrain<IAgent>(agentId)` → `RespondAsync()` → response.
+
+`OrleansAgentChatClient` bridges `Microsoft.Extensions.AI.IChatClient` to Orleans `IAgent` grains. The `AddAIAgent()` registration passes the grain ID as `instructions`, which the client uses for routing. GenAI telemetry flows through the grain's `UseOpenTelemetry()` pipeline.
+
+Well-known agents are registered in `Program.cs`: `personal-assistant`, `roslyn`, `dotnet`, `nuget`, `github`, `reviewer`, `fs`, `shell`, `git`, `build`, `knowledge`, `user`, `planning`, `notification`.
+
+### MCP Server
+
+`IAW.MCP` runs as an Orleans client connecting to `samples` silo. Exposes 8 orchestration tools via MCP HTTP transport: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`, `agent_trigger_self_improvement`.
 
 ### Orleans Streaming
 
