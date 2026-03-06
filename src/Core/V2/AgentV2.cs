@@ -398,20 +398,19 @@ public abstract class AgentV2(
 
         ct.ThrowIfCancellationRequested();
 
-        var tools = DefineTools();
-        var function = tools.OfType<AIFunction>()
-            .FirstOrDefault(t => string.Equals(t.Name, toolName, StringComparison.OrdinalIgnoreCase));
-
-        if (function is null)
+        IReadOnlyList<AITool> aITools = DefineTools();
+        AIFunction? aIFunction = aITools.OfType<AIFunction>().FirstOrDefault(t => string.Equals(t.Name, toolName, StringComparison.OrdinalIgnoreCase));
+        
+        if (aIFunction is null)
             throw new InvalidOperationException($"Tool '{toolName}' was not found.");
 
         AgentObservability.RecordToolCall();
 
         var rawArgs = arguments is null
-            ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            ? [with(StringComparer.OrdinalIgnoreCase)]
             : arguments.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value, StringComparer.OrdinalIgnoreCase);
 
-        var result = await function.InvokeAsync(new AIFunctionArguments(rawArgs), ct);
+        var result = await aIFunction.InvokeAsync([with(rawArgs)], ct);
         return result?.ToString();
     }
 
