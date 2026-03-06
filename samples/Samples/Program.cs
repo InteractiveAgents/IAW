@@ -1,6 +1,7 @@
 using Core;
 using Core.AI;
 using Core.GitHub;
+using Orleans.Dashboard;
 using Orleans.Journaling;
 using Orleans.Streams;
 using ServiceDefaults;
@@ -22,6 +23,7 @@ builder.Host.UseOrleans(silo =>
         clusterId: clusterId);
     silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
     silo.AddStateMachineStorage();
+    silo.AddDashboard();
 });
 
 builder.AddGitHubClient();
@@ -30,6 +32,7 @@ builder.AddServiceDefaults();
 var app = builder.Build();
 
 app.MapDefaultEndpoints();
+app.MapOrleansDashboard(routePrefix: "/dashboard");
 
 app.MapGet("/samples/github-models", async (IGrainFactory grains, CancellationToken ct) =>
 {

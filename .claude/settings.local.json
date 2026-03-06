@@ -58,7 +58,8 @@
       "Bash(docker ps:*)",
       "Bash(ping:*)",
       "Bash(wc:*)",
-      "mcp__aspire__list_trace_structured_logs"
+      "mcp__aspire__list_trace_structured_logs",
+      "Bash(python3:*)"
     ]
   },
   "enabledMcpjsonServers": [

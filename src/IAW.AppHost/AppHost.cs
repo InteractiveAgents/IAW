@@ -13,7 +13,12 @@ var samples = builder.AddProject<Projects.Samples>("samples")
     .WithReference(iaw)
     .WithLLMEnvironment(builder)
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30000; })
-    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; });
+    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; })
+    .WithUrlForEndpoint("https", ep => new()
+    {
+        Url = "/dashboard",
+        DisplayText = "Orleans Dashboard"
+    });
 
 builder.AddProject<Projects.DevUI>("devui")
     .WithReference(iaw.AsClient())

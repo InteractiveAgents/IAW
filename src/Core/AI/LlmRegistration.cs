@@ -111,7 +111,7 @@ public static class LlmRegistration
         return new ChatClientBuilder(innerClient)
             .UseOpenTelemetry(
                 loggerFactory: services.GetService<ILoggerFactory>(),
-                sourceName: "Core.Agent",
+                sourceName: "IAW",
                 configure: telemetry => telemetry.EnableSensitiveData = true)
             .Build(services);
     }
