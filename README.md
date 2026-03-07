@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-11.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/11.0)
 
-IAW is an Orleans-based multi-agent runtime for .NET. Build intelligent agents that collaborate, remember, and improve.
+IAW is an Orleans-based multi-agent runtime for .NET. Build intelligent agents that collaborate, remember, and improve -- now with V3 typed message system, stream composition, and behavior interfaces.
 
 ## Quick Start
 
@@ -15,27 +15,31 @@ dotnet add package IAW.Core
 Create a minimal agent:
 
 ```csharp
-using Core.V2;
+using Core.V3;
+using Microsoft.Extensions.AI;
+using Orleans.Journaling;
 
-public class GreeterAgent : AgentV2
+public interface IGreeterAgent : IAgent;
+
+public class GreeterAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IGreeterAgent
 {
-    protected override AgentProfile Profile => new()
-    {
-        DisplayName = "Greeter",
-        Instructions = "You are a friendly greeter.",
-        Capabilities = ["chat"]
-    };
-
-    protected override async Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default)
-    {
-        return new AgentReply { Output = $"Hello, {request.Input}!" };
-    }
+    protected override string Instructions => "You are a friendly greeter.";
+    protected override string DisplayName => "Greeter";
 }
 ```
 
 ## Features
 
-- **Durable state** -- Agent messages, memory, events, and notifications survive restarts via Orleans journaled grains
+- **Typed message system** -- V3 agents use strongly-typed messages with compile-time safety
+- **Stream composition** -- Compose agent behaviors via Orleans streams with typed publish/subscribe
+- **Behavior interfaces** -- Agents implement focused behavior interfaces instead of a single flat contract
+- **Durable state** -- Agent state, memory, events, and history survive restarts via Orleans journaled grains
 - **Agent-to-agent communication** -- Pub/sub notifications and Orleans streams for distributed collaboration
 - **LLM integration** -- First-class `Microsoft.Extensions.AI` support with streaming and tool calling
 - **Generic tools** -- Define tools as `AITool` instances; the runtime discovers and invokes them automatically
@@ -46,7 +50,7 @@ public class GreeterAgent : AgentV2
 
 ## Architecture
 
-Agents are Orleans grains extending `AgentV2` with durable journaled state. Each agent exposes a flat `IAgentV2` interface covering profile, respond, messages, memory, events, notifications, scheduling, streaming, and tools. .NET Aspire orchestrates the runtime, LLM providers, and observability.
+Agents are Orleans grains with durable journaled state. V3 agents use a composition model: each agent declares its dependencies via constructor injection (`IDurableDictionary`, `IDurableList`, `IChatClient`) and implements focused behavior interfaces. The `Agent` base class provides core lifecycle, while behaviors like messaging, memory, events, and streaming are composed through dedicated interfaces. .NET Aspire orchestrates the runtime, LLM providers, and observability.
 
 ## Documentation
 
@@ -56,11 +60,11 @@ Full documentation is available at **[interactiveagents.github.io/IAW](https://i
 
 | Package | Purpose |
 |---------|---------|
-| `IAW.Core` | Agent base class (`AgentV2`), contracts, LLM integration |
+| `IAW.Core` | Agent base class, V3 contracts, typed message system, LLM integration |
 | `IAW.Hosting` | Aspire extensions: `AddIAW()`, `WithLLM()` |
 | `IAW.Agents` | Built-in agents (FileSystem, Shell, Git, PersonalAssistant, etc.) |
 | `IAW.Agents.CSharp` | Roslyn-powered C# agents |
-| `IAW.Testing` | `AgentTestV2<T>` + universal behavior tests |
+| `IAW.Testing` | `AgentTestV3<T>` + universal behavior tests |
 | `IAW.Clients` | Orleans client bootstrap |
 | `IAW.MCP` | MCP server bridge |
 
@@ -68,7 +72,8 @@ Full documentation is available at **[interactiveagents.github.io/IAW](https://i
 
 | Path | Description |
 |------|-------------|
-| `src/Core` | Agent base class, grain interfaces, LLM integration, V2 contracts |
+| `src/Core` | Agent base class, grain interfaces, LLM integration, V3 contracts |
+| `src/Core/V3` | V3 agent model with typed messages and behavior interfaces |
 | `src/IAW.AppHost` | .NET Aspire AppHost for local orchestration |
 | `src/IAW.ServiceDefaults` | Shared Aspire service defaults (telemetry, health checks) |
 | `src/Clients.Telegram.Bot` | Telegram bot client integration |

@@ -1,0 +1,18 @@
+name: Publish NuGet
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview
+      - run: dotnet build IAW.slnx -c Release
+      - run: dotnet test IAW.slnx -c Release
+      - run: dotnet pack src/Core/Core.csproj -c Release -o ./nupkgs
+      - run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
