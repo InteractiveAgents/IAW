@@ -1,4 +1,5 @@
 using global::Core.V3;
+using global::Core.V3.Registry;
 using IAW.Testing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -156,5 +157,73 @@ public class AgentV3Tests : IAsyncLifetime
         await foreach (var chunk in agent.GetResponseStream("Hello", CancellationToken.None))
             chunks.Add(chunk);
         Assert.NotNull(chunks);
+    }
+
+    private IAgentRegistryGrain Registry() => _cluster.GrainFactory.GetGrain<IAgentRegistryGrain>("test-registry");
+
+    [Fact]
+    public async Task Registry_RegisterAndGetByType()
+    {
+        var registry = Registry();
+        var reg = new AgentRegistration("TestBot", "Test Bot", "A test agent", AgentKind.Static, [], [], []);
+        await registry.RegisterAsync(reg);
+        var result = await registry.GetByTypeAsync("TestBot");
+        Assert.NotNull(result);
+        Assert.Equal("TestBot", result.AgentType);
+        Assert.Equal("Test Bot", result.DisplayName);
+    }
+
+    [Fact]
+    public async Task Registry_QueryByKind()
+    {
+        var registry = Registry();
+        await registry.RegisterAsync(new AgentRegistration("StaticOne", "Static", "", AgentKind.Static, [], [], []));
+        await registry.RegisterAsync(new AgentRegistration("DynamicOne", "Dynamic", "", AgentKind.Dynamic, [], [], []));
+        var statics = await registry.QueryAsync(new AgentQuery(Kind: AgentKind.Static));
+        Assert.All(statics, r => Assert.Equal(AgentKind.Static, r.Kind));
+        Assert.Contains(statics, r => r.AgentType == "StaticOne");
+        Assert.DoesNotContain(statics, r => r.AgentType == "DynamicOne");
+    }
+
+    [Fact]
+    public async Task Registry_GetAll_ReturnsRegistered()
+    {
+        var registry = Registry();
+        await registry.RegisterAsync(new AgentRegistration("AgentA", "A", "", AgentKind.Static, [], [], []));
+        await registry.RegisterAsync(new AgentRegistration("AgentB", "B", "", AgentKind.Dynamic, [], [], []));
+        var all = await registry.GetAllAsync();
+        Assert.True(all.Count >= 2);
+        Assert.Contains(all, r => r.AgentType == "AgentA");
+        Assert.Contains(all, r => r.AgentType == "AgentB");
+    }
+
+    [Fact]
+    public async Task Registry_Unregister_RemovesAgent()
+    {
+        var registry = Registry();
+        await registry.RegisterAsync(new AgentRegistration("ToRemove", "Remove Me", "", AgentKind.Static, [], [], []));
+        await registry.UnregisterAsync("ToRemove");
+        var result = await registry.GetByTypeAsync("ToRemove");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task Registry_QueryByCapability()
+    {
+        var registry = Registry();
+        await registry.RegisterAsync(new AgentRegistration("CapAgent", "Cap", "", AgentKind.Static, ["code-review", "testing"], [], []));
+        await registry.RegisterAsync(new AgentRegistration("NoCapAgent", "NoCap", "", AgentKind.Static, [], [], []));
+        var results = await registry.QueryAsync(new AgentQuery(Capabilities: ["code-review"]));
+        Assert.Contains(results, r => r.AgentType == "CapAgent");
+        Assert.DoesNotContain(results, r => r.AgentType == "NoCapAgent");
+    }
+
+    [Fact]
+    public async Task Registry_QueryByPublishes()
+    {
+        var registry = Registry();
+        await registry.RegisterAsync(new AgentRegistration("PubAgent", "Pub", "", AgentKind.Static, [], ["BuildCompletedEvent"], []));
+        var results = await registry.QueryAsync(new AgentQuery(Publishes: ["BuildCompletedEvent"]));
+        Assert.Contains(results, r => r.AgentType == "PubAgent");
     }
 }
