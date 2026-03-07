@@ -76,4 +76,19 @@ public abstract partial class Agent(
         await WriteStateAsync(cancellationToken);
         _session = await _agent!.CreateSessionAsync(cancellationToken);
     }
+
+    public virtual Task HandleEventAsync(AgentEvent agentEvent, CancellationToken ct = default)
+        => Task.CompletedTask;
+
+    public Task<IReadOnlyList<AgentEvent>> GetEventLogAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AgentEvent>>(eventLog.ToList());
+
+    public async Task PublishToStreamAsync(AgentEvent evt, CancellationToken ct = default)
+    {
+        eventLog.Add(evt);
+        await WriteStateAsync(ct);
+    }
+
+    public Task<IReadOnlyList<string>> GetActiveSubscriptionsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<string>>(new List<string>());
 }
