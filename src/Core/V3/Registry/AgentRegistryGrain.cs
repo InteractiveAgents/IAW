@@ -2,6 +2,7 @@ using Orleans.Journaling;
 
 namespace Core.V3.Registry;
 
+[GrainType("agent-registry")]
 public class AgentRegistryGrain(
     [Memory("registrations")] IDurableDictionary<string, AgentRegistration> registrations)
     : DurableGrain, IAgentRegistryGrain

@@ -5,7 +5,7 @@ using AiChatRole = Microsoft.Extensions.AI.ChatRole;
 
 namespace Core.V3;
 
-public sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> history) : ChatHistoryProvider
+internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> history) : ChatHistoryProvider
 {
     public override string StateKey => "orleans-durable-history";
 
