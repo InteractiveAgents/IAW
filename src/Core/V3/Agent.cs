@@ -13,7 +13,8 @@ public abstract partial class Agent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history)
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : DurableGrain, IAgent
 {
     private AIAgent? _agent;

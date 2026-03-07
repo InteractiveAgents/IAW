@@ -12,8 +12,9 @@ public class WeatherAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history)
-    : Agent(state, eventLog, chatClient, history), IWeatherAgent
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IWeatherAgent
 {
     protected override string Instructions =>
         "You're a weather assistant. Use the available tools to answer questions about weather conditions, forecasts, and alerts.";
