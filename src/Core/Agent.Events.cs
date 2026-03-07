@@ -14,6 +14,12 @@ public abstract partial class Agent
     public Task<IReadOnlyList<AgentEvent>> GetEventLogAsync(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AgentEvent>>(eventLog.ToList());
 
+    public virtual Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
+        => HandleEventAsync(agentEvent, ct);
+
+    public Task PublishAsync(string eventName, Dictionary<string, object> payload)
+        => PublishAsync(eventName, payload, default);
+
     protected async Task PublishAsync(string eventName, Dictionary<string, object>? payload = null, CancellationToken ct = default)
     {
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish");

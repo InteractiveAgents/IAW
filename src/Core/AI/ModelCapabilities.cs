@@ -1,4 +1,4 @@
-namespace Core.AI;
+namespace IAW.Core.AI;
 
 public sealed record ModelCapabilities(
     bool SupportsTools,

@@ -22,4 +22,14 @@ public abstract partial class Agent
         => state.TryGetValue(WorkspacePathKey, out var entry)
             ? entry.Value.ToString()
             : null;
+
+    protected void ValidatePathWithinWorkspace(string path)
+    {
+        var workspace = GetWorkspacePath();
+        if (workspace is null) return;
+        var fullPath = Path.GetFullPath(path);
+        var fullWorkspace = Path.GetFullPath(workspace);
+        if (!fullPath.StartsWith(fullWorkspace, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Path '{path}' is outside the workspace '{workspace}'.");
+    }
 }

@@ -1,4 +1,4 @@
-namespace Core.AI.Models;
+namespace IAW.Core.AI.Models;
 
 public sealed class GitHubGpt4oMini : LLMModel
 {

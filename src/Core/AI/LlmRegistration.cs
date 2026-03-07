@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using System.ClientModel;
 using OllamaSharp;
 
-namespace Core.AI;
+namespace IAW.Core.AI;
 
 public static class LlmRegistration
 {

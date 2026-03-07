@@ -2,7 +2,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using System.Reflection;
 
-namespace Core.AI;
+namespace IAW.Core.AI;
 
 public sealed class LlmAttributeMapper<TModel>
     : IAttributeToFactoryMapper<LlmAttribute<TModel>>

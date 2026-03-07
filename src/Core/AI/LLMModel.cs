@@ -1,4 +1,4 @@
-namespace Core.AI;
+namespace IAW.Core.AI;
 
 public abstract class LLMModel
 {
