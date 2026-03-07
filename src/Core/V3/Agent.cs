@@ -6,7 +6,9 @@ using Orleans.Journaling;
 namespace Core.V3;
 
 [GrainType("agent-v3")]
-public class Agent(
+public abstract partial class Agent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
     [Memory("v3-history")] IDurableList<ChatMessage> history)
     : DurableGrain, IAgent
@@ -15,8 +17,11 @@ public class Agent(
     private AgentSession? _session;
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
-    protected virtual IList<AITool> Tools => [];
     protected IDurableList<ChatMessage> History => history;
+
+    protected IDurableDictionary<string, StateEntry> State => state;
+
+    protected IDurableList<AgentEvent> EventLog => eventLog;
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -26,17 +31,17 @@ public class Agent(
             ChatOptions = new ChatOptions
             {
                 Instructions = Instructions,
-                Tools = [.. Tools]
+                Tools = [.. GetAllTools()]
             },
             ChatHistoryProvider = new DurableChatHistoryProvider(history)
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);
-
+        
         await base.OnActivateAsync(cancellationToken);
     }
 
-    public async IAsyncEnumerable<string> GetResponse(
+    public async IAsyncEnumerable<string> GetResponseStream(
         string prompt,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -51,14 +56,14 @@ public class Agent(
         await WriteStateAsync(cancellationToken);
     }
 
-    public async Task<string> GetResponseAsync(string prompt, CancellationToken cancellationToken = default)
+    public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
     {
         var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
         await WriteStateAsync(cancellationToken);
         return response.Text ?? string.Empty;
     }
 
-    public Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<ChatMessage> snapshot = [.. history];

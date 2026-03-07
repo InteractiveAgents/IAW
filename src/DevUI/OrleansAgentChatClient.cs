@@ -42,7 +42,7 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
     async Task<ChatResponse> GetV3ResponseAsync(string agentId, string userText, CancellationToken ct)
     {
         var agent = cluster.GetGrain<V3Agent>(agentId);
-        var output = await agent.GetResponseAsync(userText, ct);
+        var output = await agent.GetResponse(userText, ct);
         return new ChatResponse(new ChatMessage(ChatRole.Assistant, output));
     }
 
@@ -81,7 +81,7 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
         if (V3AgentIds.Contains(agentId))
         {
             var agent = cluster.GetGrain<V3Agent>(agentId);
-            await foreach (var chunk in agent.GetResponse(userText, cancellationToken))
+            await foreach (var chunk in agent.GetResponseStream(userText, cancellationToken))
             {
                 yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
             }
