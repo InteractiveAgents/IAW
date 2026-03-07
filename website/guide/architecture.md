@@ -1,171 +1,225 @@
 # Architecture
 
-This page covers the V2 agent class hierarchy, durable state model, the `IAgentV2` interface, LLM integration, and observability infrastructure.
+This page covers the V3 agent class hierarchy, behavior composition via interfaces, the typed message system, stream patterns, and the agent registry.
 
 ## Class Hierarchy
 
 ```
 DurableGrain (Orleans.Journaling)
-  └── AgentV2 (Core.V2)
-        ├── implements IAgentV2
-        └── implements IRemindable
+  +-- Agent (Core.V3) [abstract, partial]
+        implements IAgent
+        implements IRemindable
+        implements ISelfDiagnosable
+
+  Partial files:
+    Agent.cs          -- Conversation (GetResponse, GetResponseStream, history)
+    Agent.Events.cs   -- Event publishing (PublishAsync, PublishTypedAsync)
+    Agent.Streams.cs  -- Stream subscriptions (IStreamConsumer auto-wiring)
+    Agent.Tools.cs    -- Tool registration (built-in + DefineTools)
+    Agent.Tracking.cs -- Tracking items (StartTrackingAsync, OnTrackingDueAsync)
+    Agent.State.cs    -- Workspace and state management
+    Agent.Lifecycle.cs -- Metadata, capabilities, cancellation
+    Agent.Observers.cs -- Observer subscribe/unsubscribe
 ```
 
-`AgentV2` is a single flat base class that extends `DurableGrain` from `Microsoft.Orleans.Journaling`. It implements `IAgentV2` (the grain contract) and `IRemindable` (for scheduled reminders). There are no optional behavior interfaces to compose -- every `AgentV2` grain supports the full API surface.
-
-`DurableGrain` provides journaled, transactional state persistence. All state mutations are committed via `WriteStateAsync()`.
+`Agent` is split across 8 partial files for maintainability. Each file owns a single concern.
 
 ## Durable State
 
-The `AgentV2` constructor accepts six durable state collections, each annotated with `[Memory("name")]`. These are hidden from derived agents -- you never need to declare them yourself:
+The `Agent` constructor accepts five durable state collections. Orleans injects and persists these automatically via journaled grain storage:
 
-| Collection | Type | Storage Key | Purpose |
+| Parameter | Type | Storage Key | Purpose |
 |---|---|---|---|
-| messages | `IDurableList<AgentMessage>` | `v2-messages` | Conversation history (role, content, timestamp, metadata) |
-| memory | `IDurableDictionary<string, string>` | `v2-memory` | Arbitrary key-value state |
-| events | `IDurableList<AgentEvent>` | `v2-events` | Typed events with optional payload and metadata |
-| subscriptions | `IDurableDictionary<string, List<string>>` | `v2-subscriptions` | Topic-to-subscriber mappings |
-| notifications | `IDurableList<NotificationRecord>` | `v2-notifications` | Received notification records |
-| tracking | `IDurableDictionary<string, string>` | `v2-tracking` | Schedule status (serialized JSON) |
+| `state` | `IDurableDictionary<string, StateEntry>` | `agent-state` | General key-value state (workspace path, custom data) |
+| `eventLog` | `IDurableList<AgentEvent>` | `agent-events` | Immutable event audit log |
+| `chatClient` | `IChatClient` | -- | LLM client (not state, injected via DI) |
+| `history` | `IDurableList<ChatMessage>` | `v3-history` | Conversation history (role, content, timestamp) |
+| `trackingItems` | `IDurableDictionary<string, TrackingItem>` | `v3-tracking` | Scheduled tracking items |
 
-All collections are backed by Orleans journaled grain storage, meaning they survive grain deactivation and silo restarts.
+All collections survive grain deactivation and silo restarts. Mutations are committed via `WriteStateAsync()`.
 
-Derived agents have read access to `Messages`, `Memory`, and `Events` via protected properties.
+## Behavior Composition
 
-## The IAgentV2 Interface
+V3 agents compose behaviors by implementing typed interfaces instead of inheriting from deep class hierarchies.
 
-`IAgentV2` extends `IGrainWithStringKey` with a unified API surface:
+```mermaid
+graph LR
+    A[Your Agent] -->|implements| B[IStreamConsumer&lt;T&gt;]
+    A -->|implements| C[IStreamProducer&lt;T&gt;]
+    A -->|implements| D[IBroadcaster&lt;T&gt;]
+    A -->|implements| E[IReceiver&lt;T&gt;]
+    A -->|implements| F[INotifier&lt;T&gt;]
+```
+
+| Interface | Purpose | Auto-wired? |
+|---|---|---|
+| `IStreamConsumer<TEvent>` | Receive events from a stream | Yes -- auto-subscribes on activation |
+| `IStreamProducer<TEvent>` | Publish typed events to a stream | No -- call `PublishTypedAsync` |
+| `IBroadcaster<TMessage>` | Fan-out messages to registered receivers | No -- manage receivers, call `BroadcastAsync` |
+| `IReceiver<TMessage>` | Accept directed messages from other agents | No -- implement `ReceiveAsync` |
+| `INotifier<TNotification>` | Push notifications to observers | No -- manage observers, call `NotifyAsync` |
+
+An agent can implement any combination of these interfaces for different message types.
+
+## Typed Message Hierarchy
+
+All inter-agent messages implement `IAgentMessage`:
+
+```mermaid
+classDiagram
+    class IAgentMessage {
+        +string SourceAgentId
+        +string CorrelationId
+        +DateTimeOffset Timestamp
+    }
+
+    class ICommand
+    class IEvent
+    class INotification
+
+    IAgentMessage <|-- ICommand
+    IAgentMessage <|-- IEvent
+    IAgentMessage <|-- INotification
+
+    ICommand <|-- AssignTaskCommand
+    IEvent <|-- CodeChangedEvent
+    IEvent <|-- BuildCompletedEvent
+    IEvent <|-- TestResultEvent
+    IEvent <|-- DeployCompletedEvent
+    IEvent <|-- HealthCheckEvent
+    IEvent <|-- AgentActivatedEvent
+    IEvent <|-- StateChangedEvent
+    INotification <|-- AlertNotification
+    INotification <|-- ProgressNotification
+    INotification <|-- ReviewRequestNotification
+```
+
+| Category | Interface | Use For |
+|---|---|---|
+| Commands | `ICommand` | Directed requests to a specific agent |
+| Events | `IEvent` | Broadcast via Orleans streams |
+| Notifications | `INotification` | Observer-pattern delivery |
+
+## Stream Patterns
+
+### Pipeline
+
+Events flow through a chain of agents, each consuming one event type and producing another.
+
+```mermaid
+graph LR
+    Dev["Developer"] -->|CodeChangedEvent| CI["CI Pipeline Agent"]
+    CI -->|BuildCompletedEvent| Deploy["Deploy Agent"]
+    Deploy -->|DeployCompletedEvent| Monitor["Monitor Agent"]
+```
+
+Each agent implements `IStreamConsumer<TInput>` and `IStreamProducer<TOutput>`:
 
 ```csharp
-public interface IAgentV2 : IGrainWithStringKey
+public class CIPipelineAgent : Agent,
+    IStreamConsumer<CodeChangedEvent>,
+    IStreamProducer<BuildCompletedEvent>
 {
-    Task<AgentProfile> GetProfileAsync(CancellationToken ct = default);
-
-    Task<AgentReply> RespondAsync(AgentRequest request, CancellationToken ct = default);
-
-    Task AppendMessageAsync(AgentMessage message, CancellationToken ct = default);
-    Task<List<AgentMessage>> QueryMessagesAsync(AgentMessageQuery? query = null, CancellationToken ct = default);
-
-    Task SetMemoryAsync(string key, string value, CancellationToken ct = default);
-    Task<string?> GetMemoryAsync(string key, CancellationToken ct = default);
-
-    Task AppendEventAsync(AgentEvent agentEvent, CancellationToken ct = default);
-    Task<List<AgentEvent>> QueryEventsAsync(AgentEventQuery? query = null, CancellationToken ct = default);
-
-    Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
-    Task NotifyAsync(NotificationEnvelope envelope, CancellationToken ct = default);
-    Task ReceiveNotificationAsync(NotificationEnvelope envelope, CancellationToken ct = default);
-    Task<List<NotificationRecord>> QueryNotificationsAsync(CancellationToken ct = default);
-
-    Task StartScheduleAsync(TimeSpan interval, int? maxTicks = null, CancellationToken ct = default);
-    Task StopScheduleAsync(CancellationToken ct = default);
-    Task<ScheduleStatus> GetScheduleStatusAsync(CancellationToken ct = default);
-
-    Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
-
-    Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default);
+    // OnStreamEventAsync receives CodeChangedEvent
+    // PublishTypedAsync sends BuildCompletedEvent
 }
 ```
 
-### Key Differences from V1
+### Fan-Out (Broadcast)
 
-| V1 (IAgent) | V2 (IAgentV2) |
+One agent broadcasts a message to multiple registered receivers.
+
+```mermaid
+graph LR
+    PA["Personal Assistant"] -->|AssignTaskCommand| A["Agent A"]
+    PA -->|AssignTaskCommand| B["Agent B"]
+    PA -->|AssignTaskCommand| C["Agent C"]
+```
+
+The broadcaster implements `IBroadcaster<T>` and manages a list of receivers:
+
+```csharp
+public class PersonalAssistantAgent : Agent,
+    IBroadcaster<AssignTaskCommand>
+{
+    // BroadcastAsync sends to all registered receivers
+    // RegisterReceiverAsync/UnregisterReceiverAsync manage the list
+}
+```
+
+### Fan-In (Aggregation)
+
+One agent receives messages from multiple sources via `IReceiver<T>`:
+
+```mermaid
+graph LR
+    A["Agent A"] -->|ProgressNotification| PA["Personal Assistant"]
+    B["Agent B"] -->|ProgressNotification| PA
+    C["Agent C"] -->|ProgressNotification| PA
+```
+
+### Stream Name Resolution
+
+Typed events are mapped to Orleans stream names by stripping the suffix and converting to dot.case:
+
+| Type Name | Stream Name |
 |---|---|
-| 8 composed behavior interfaces | Single flat interface |
-| `GetMetadataAsync()` returns `AgentMetadata` | `GetProfileAsync()` returns `AgentProfile` |
-| `AddHistoryAsync(role, content)` | `AppendMessageAsync(AgentMessage)` with metadata |
-| `GetHistoryAsync()` | `QueryMessagesAsync(AgentMessageQuery?)` with filtering |
-| `PublishEventAsync(name, payload)` | `AppendEventAsync(AgentEvent)` with metadata |
-| `GetEventsAsync()` | `QueryEventsAsync(AgentEventQuery?)` with filtering |
-| `GetNotificationsAsync()` | `QueryNotificationsAsync()` |
-| `StartTrackingAsync(interval, maxTicks)` | `StartScheduleAsync(interval, maxTicks?)` |
-| `StopTrackingAsync()` | `StopScheduleAsync()` |
-| `GetTrackingStatusAsync()` | `GetScheduleStatusAsync()` returns `ScheduleStatus` |
-| `SetStateAsync(key, value)` | `SetMemoryAsync(key, value)` |
-| `GetStateValueAsync(key)` | `GetMemoryAsync(key)` |
+| `CodeChangedEvent` | `code.changed` |
+| `BuildCompletedEvent` | `build.completed` |
+| `AssignTaskCommand` | `assign.task` |
+| `AlertNotification` | `alert` |
 
-## LLM Integration
+The conversion is handled by `Agent.EventTypeToStreamName()`.
 
-Models are registered in `src/Core/AI/Models/` as singletons extending `LLMModel`. Each has a provider (Anthropic, OpenAI, GitHub, Ollama) and a `ServiceKey`.
+## AI Integration
 
-### Injection into Grains
+V3 uses `Microsoft.Extensions.AI` for LLM abstraction and `Microsoft.Agents.AI` for the agent framework.
 
-Use `[Llm<TModel>]` on a constructor parameter. Orleans resolves this via `LlmAttributeMapper<TModel>` to a keyed `IChatClient`:
+On activation, the `Agent` base class:
+1. Creates an `AIAgent` from the `IChatClient`
+2. Configures it with `Instructions` as the system prompt
+3. Registers all tools (built-in + custom from `DefineTools()`)
+4. Attaches a `DurableChatHistoryProvider` backed by the durable `history` list
+5. Creates a session for conversation continuity
 
-```csharp
-public class MyAgent(
-    // ... durable state (hidden in AgentV2) ...
-    [Llm<Claude45Haiku>] IChatClient chatClient)
-    : AgentV2
-{
-    // Use chatClient in OnRespondAsync
-}
-```
+`GetResponse` and `GetResponseStream` delegate to the `AIAgent`, which manages tool calling loops, history management, and response generation.
 
-### AppHost Declaration
+## Tools System
 
-```csharp
-var iaw = builder.AddIAW("iaw")
-    .WithLLM<Claude45Haiku>()
-    .WithLLM<Sonnet46>();
-```
+Every agent gets four built-in tool classes:
 
-### Provider Registration
+| Class | Tools | Requires Workspace |
+|---|---|---|
+| `WorkspaceTools` | `SetWorkspace`, `GetWorkspace` | No |
+| `FileTools` | `ReadFileAsync`, `WriteFileAsync`, `ListFiles`, `SearchCode` | Yes |
+| `ShellTools` | `RunDotnetAsync`, `RunShellAsync` | Yes |
+| `WebTools` | `FetchUrlAsync` | No |
 
-`AddLlmProviders(this IHostApplicationBuilder)` in `LlmRegistration.cs` reads `AI:LLM:Models` configuration and registers `IChatClient` per model, wrapped with OpenTelemetry instrumentation.
+`FileTools` and `ShellTools` are only registered when a workspace path is set. `WebTools` blocks requests to localhost and private IPs (SSRF protection).
 
-### RespondWithLlmAsync
+Custom tools are added by overriding `DefineTools()`.
 
-`AgentV2` provides a helper method that builds the full chat history, includes tools from `DefineTools()`, and calls `IChatClient.GetResponseAsync`:
+## Agent Registry
+
+`AgentRegistrationStartupTask` runs as an Orleans `IStartupTask`. It scans all loaded assemblies for concrete `Agent` subclasses and registers each one in the `AgentRegistryGrain`:
 
 ```csharp
-protected async Task<AgentReply> RespondWithLlmAsync(
-    IChatClient chatClient,
-    AgentRequest request,
-    CancellationToken ct = default)
+var registry = grainFactory.GetGrain<IAgentRegistryGrain>("global");
+var allAgents = await registry.GetAllAsync();
+var matches = await registry.QueryAsync(new AgentQuery(
+    Capabilities: ["code-review"],
+    Subscribes: ["CodeChangedEvent"]
+));
 ```
 
-## Aspire Hosting
-
-`IAWExtensions.cs` provides:
-- `AddIAW(name)` -- creates Orleans resource with in-memory storage, streams, and reminders
-- `WithLLM<TModel>()` -- declares which LLM models to use (auto-provisions Ollama containers)
-- `WithOllama(configure)` -- customize Ollama with GPU support, data volumes, and OpenWebUI
-- `WithLLMEnvironment()` -- injects `AI__LLM__Models__*` env vars + API key secrets
-
-### Multi-Silo Topology
-
-IAW supports multiple silos in the same cluster. Each silo uses distinct ports:
-
-```csharp
-// Silo 1: samples on ports 11111/30000
-builder.AddProject<Projects.Samples>("samples")
-    .WithReference(iaw)
-    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; })
-    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30000; });
-
-// Silo 2: telegram-bot on ports 11112/30001
-builder.AddProject<Projects.TelegramBot>("telegram-bot")
-    .WithReference(iaw)
-    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
-    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; });
-```
-
-Non-silo projects (like the MCP server or DevUI) connect as clients:
-
-```csharp
-builder.AddProject<Projects.MCP>("mcp")
-    .WithReference(iaw.AsClient());
-```
+Each `AgentRegistration` includes the agent type name, display name, kind (Static/Dynamic), capabilities, published event types, and subscribed event types.
 
 ## Observability
 
-The `AgentObservability` class provides built-in telemetry:
+The `AgentTelemetry` class provides built-in telemetry under the `"IAW"` source:
 
-- **ActivitySource**: `"Core.Agent"` -- emits distributed traces for `agent.respond` and `agent.llm` operations
-- **Meter**: `"Core.Agent"` -- exposes three counters:
-  - `core.agent.sends` -- total respond operations
-  - `core.agent.tool_calls` -- total tool invocations
-  - `core.agent.failures` -- total failures during respond
+- **ActivitySource**: `"IAW"` -- traces for `agent.activate`, `agent.publish`, `agent.publish_typed`, `agent.handle_stream_event`
+- **Counters**: `agents.events.published`, `agents.events.handled`, `agents.activations`, `agents.messages.sent`, `agents.conversations.errors`
+- **Histograms**: `agents.events.handle_duration`, `agents.conversations.duration`
 
-Activities include `agent.id` and `agent.display_name` tags for filtering. All telemetry follows OpenTelemetry conventions and integrates with the .NET Aspire dashboard.
+All telemetry integrates with the .NET Aspire dashboard via OpenTelemetry.

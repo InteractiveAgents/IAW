@@ -31,7 +31,16 @@ export default defineConfig({
           items: [
             { text: 'Architecture', link: '/guide/architecture' },
             { text: 'Building Agents', link: '/guide/agents' },
-            { text: 'Notifications & Events', link: '/guide/notifications' }
+            { text: 'Message Types', link: '/guide/messages' },
+            { text: 'Events & Streams', link: '/guide/events-streams' }
+          ]
+        },
+        {
+          text: 'Behaviors',
+          items: [
+            { text: 'Conversation', link: '/guide/behaviors/conversation' },
+            { text: 'Tools', link: '/guide/behaviors/tools' },
+            { text: 'Tracking', link: '/guide/behaviors/tracking' }
           ]
         },
         {
@@ -48,6 +57,16 @@ export default defineConfig({
           text: 'Tutorials',
           items: [
             { text: 'Build Your First Agent', link: '/tutorials/first-agent' }
+          ]
+        },
+        {
+          text: 'Use Cases',
+          items: [
+            { text: 'Code Review Bot', link: '/tutorials/use-cases/code-review-bot' },
+            { text: 'Infrastructure Monitor', link: '/tutorials/use-cases/infra-monitor' },
+            { text: 'Personal Assistant', link: '/tutorials/use-cases/personal-assistant' },
+            { text: 'Knowledge Base', link: '/tutorials/use-cases/knowledge-base' },
+            { text: 'CI/CD Pipeline', link: '/tutorials/use-cases/cicd-pipeline' }
           ]
         }
       ],

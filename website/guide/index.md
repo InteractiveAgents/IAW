@@ -1,6 +1,6 @@
 # Getting Started
 
-Interactive Agents (IAW) is an Orleans 10.0-based multi-agent runtime for .NET 11. Agents are durable, observable, LLM-powered grains that communicate through pub/sub notifications and Orleans streams. V2 introduces `AgentV2` -- a single flat base class that hides all durable state plumbing behind clean overrides.
+Interactive Agents (IAW) is an Orleans-based multi-agent runtime for .NET. Agents are durable grains that communicate through typed messages, Orleans streams, and AI-powered conversation. V3 introduces behavior composition via interfaces, a typed message hierarchy, and stream-based event pipelines.
 
 ## Prerequisites
 
@@ -17,35 +17,29 @@ dotnet add package IAW.Core
 
 ## Creating Your First Agent
 
-Every agent extends the `AgentV2` base class. The only required override is `Profile`:
+Every agent extends the `Agent` base class from `Core.V3`. Override `Instructions` and `DisplayName`:
 
 ```csharp
-using Core.V2;
+using Core.V3;
+using Microsoft.Extensions.AI;
+using Orleans.Journaling;
 
-public class Greeter : AgentV2
+public interface IGreeterAgent : IAgent;
+
+public class GreeterAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IGreeterAgent
 {
-    protected override AgentProfile Profile => new()
-    {
-        Id = this.GetPrimaryKeyString(),
-        DisplayName = "Greeter",
-        Instructions = "You are a friendly greeter."
-    };
+    protected override string Instructions => "You are a friendly greeter.";
+    protected override string DisplayName => "Greeter";
 }
 ```
 
-This gives you a fully functional agent with durable messages, memory, events, notifications, scheduling, tools, and streaming -- all inherited from `AgentV2`.
-
-## AgentProfile
-
-The `Profile` property returns an `AgentProfile` that identifies the agent:
-
-| Property | Type | Purpose |
-|---|---|---|
-| `Id` | `string` | Unique agent identifier (typically the grain primary key) |
-| `DisplayName` | `string` | Human-readable name |
-| `Description` | `string?` | Optional description |
-| `Instructions` | `string` | LLM system prompt |
-| `Capabilities` | `List<string>` | Advertised capabilities |
+The constructor takes five durable state parameters that Orleans manages automatically. You never create these yourself -- Orleans injects them when the grain activates.
 
 ## Aspire Integration
 
@@ -58,7 +52,6 @@ using Core.AI.Models;
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    .WithLLM<Claude45Haiku>()
     .WithLLM<Sonnet46>();
 
 builder.AddProject<Projects.MySilo>("silo")
@@ -68,95 +61,87 @@ builder.AddProject<Projects.MySilo>("silo")
 builder.Build().Run();
 ```
 
-`AddIAW` returns an `OrleansService` and configures:
+`AddIAW` configures:
 - Development clustering (cluster ID `"dev"`, service ID `"dev"`)
 - In-memory grain storage for `Default` and `PubSubStore`
 - Memory streaming provider named `"agents"`
 - Memory-based reminders
+- State machine storage for durable collections
 
-`WithLLM<TModel>()` registers an LLM model. `WithLLMEnvironment()` injects environment variables for model IDs, provider types, and API keys (as Aspire secret parameters) into the project resource.
+`WithLLM<TModel>()` registers an LLM model. `WithLLMEnvironment()` injects environment variables for model IDs, provider types, and API keys into the project.
 
 ## Running
 
-Always use the Aspire CLI to start the project:
+Start the project with the Aspire CLI:
 
 ```bash
 aspire run
 ```
 
-This starts the AppHost and all orchestrated resources including silos, the Aspire dashboard, and any container dependencies.
+This starts the AppHost, all orchestrated resources, the Aspire dashboard, and any container dependencies.
 
 ## Interacting with Agents
 
-Once an agent grain is activated, interact with it through the `IAgentV2` grain interface:
+Once an agent grain is activated, interact with it through the `IAgent` grain interface:
 
 ```csharp
-var agent = grainFactory.GetGrain<IAgentV2>("greeter");
+var agent = grainFactory.GetGrain<IAgent>("greeter");
 
-// Read profile
-var profile = await agent.GetProfileAsync();
+// Conversation
+var response = await agent.GetResponse("Hello!", ct);
+var history = await agent.GetHistory(ct);
 
-// Send a request and get a reply
-var reply = await agent.RespondAsync(new AgentRequest { Input = "Hello!" });
-
-// Store and retrieve memory
-await agent.SetMemoryAsync("mood", "happy");
-var mood = await agent.GetMemoryAsync("mood");
-
-// Query conversation messages
-var messages = await agent.QueryMessagesAsync(new AgentMessageQuery { Limit = 10 });
-
-// Append an event
-await agent.AppendEventAsync(new AgentEvent { Type = "greeted", Payload = "{\"user\":\"Alice\"}" });
-
-// Subscribe to notifications
-await agent.SubscribeAsync("updates", "other-agent-id");
-
-// Send a notification
-await agent.NotifyAsync(new NotificationEnvelope { Topic = "updates", Payload = "{\"message\":\"hello\"}" });
-
-// Start periodic scheduling (interval, maxTicks)
-await agent.StartScheduleAsync(TimeSpan.FromMinutes(5), maxTicks: 10);
-
-// Invoke a tool by name
-var result = await agent.InvokeToolAsync("search", new Dictionary<string, string>
+// Streaming response
+await foreach (var chunk in agent.GetResponseStream("Tell me a story", ct))
 {
-    ["query"] = "latest news"
-});
+    Console.Write(chunk);
+}
+
+// State
+await agent.SetWorkspaceAsync("/path/to/project", ct);
+var state = await agent.GetStateAsync(ct);
+
+// Metadata
+var metadata = await agent.GetMetadataAsync(ct);
+var capabilities = await agent.GetCapabilitiesAsync(ct);
+
+// Events
+var eventLog = await agent.GetEventLogAsync(ct);
+
+// Streams
+var subscriptions = await agent.GetActiveSubscriptionsAsync(ct);
 ```
 
 ## LLM Integration
 
-The `AgentV2` base class provides a `RespondWithLlmAsync` helper for derived agents to call an LLM. Inject an `IChatClient` via the `[Llm<TModel>]` attribute and use it in your `OnRespondAsync` override:
+The `Agent` base class takes an `IChatClient` (from `Microsoft.Extensions.AI`) in its constructor. On activation, it creates an `AIAgent` from the Microsoft Agent Framework with durable chat history:
 
 ```csharp
-using Core.AI;
-using Core.AI.Models;
-using Core.V2;
+using Core.V3;
 using Microsoft.Extensions.AI;
+using Orleans.Journaling;
 
-public class Assistant(
-    // ... durable state params inherited from AgentV2 ...
-    [Llm<Claude45Haiku>] IChatClient chatClient)
-    : AgentV2
+public interface IAssistantAgent : IAgent;
+
+public class AssistantAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IAssistantAgent
 {
-    protected override AgentProfile Profile => new()
-    {
-        Id = this.GetPrimaryKeyString(),
-        DisplayName = "Assistant",
-        Instructions = "You are a helpful assistant."
-    };
-
-    protected override Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default)
-        => RespondWithLlmAsync(chatClient, request, ct);
+    protected override string Instructions =>
+        "You are a helpful personal assistant. Be concise and accurate.";
 }
 ```
 
-`RespondWithLlmAsync` builds the full chat history (including system prompt from `Profile.Instructions`), calls `IChatClient.GetResponseAsync`, and returns an `AgentReply` with the output text and model ID.
+`GetResponse` and `GetResponseStream` handle the full flow: building chat history from durable storage, including tools from `DefineTools()`, calling the LLM, and persisting the conversation.
 
 ## Next Steps
 
-- [Architecture](/guide/architecture) -- understand the AgentV2 class hierarchy and durable state model
-- [Building Agents](/guide/agents) -- override Profile, OnRespondAsync, DefineTools, and OnScheduleTickAsync
-- [Notifications & Events](/guide/notifications) -- pub/sub communication between agents
+- [Architecture](/guide/architecture) -- understand the V3 class hierarchy, behavior composition, and stream patterns
+- [Building Agents](/guide/agents) -- constructor params, custom tools, override points
+- [Events & Streams](/guide/events-streams) -- typed events, stream composition, pipeline patterns
+- [Message Types](/guide/messages) -- ICommand, IEvent, INotification
 - [MCP Server](/guide/mcp) -- orchestrate agents from Claude Code via MCP

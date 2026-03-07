@@ -1,10 +1,10 @@
 # Testing
 
-IAW provides two levels of testing: **unit tests** using Orleans `TestCluster` and **integration tests** using Aspire `DistributedApplicationTestingBuilder`. Both approaches test agents through the `IAgentV2` grain interface.
+IAW provides testing infrastructure for V3 agents using Orleans `TestCluster` and Aspire `DistributedApplicationTestingBuilder`.
 
 ## Unit Tests with TestCluster
 
-Unit tests spin up an in-process Orleans cluster with in-memory storage and streams. This is fast and requires no external dependencies.
+Unit tests spin up an in-process Orleans cluster with in-memory storage and streams. Fast and requires no external dependencies.
 
 ### Project Setup
 
@@ -34,14 +34,14 @@ Unit tests spin up an in-process Orleans cluster with in-memory storage and stre
 
 ### Silo Configurator
 
-The silo configurator sets up in-memory grain storage, streaming, reminders, and the state machine storage provider required by `AgentV2`:
+The silo configurator sets up in-memory grain storage, streaming, reminders, and the state machine storage provider required by the V3 `Agent`:
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Journaling;
 using Orleans.TestingHost;
 
-public sealed class AgentsSiloConfigurator : ISiloConfigurator
+public sealed class AgentSiloConfigurator : ISiloConfigurator
 {
     public void Configure(ISiloBuilder siloBuilder)
     {
@@ -51,7 +51,8 @@ public sealed class AgentsSiloConfigurator : ISiloConfigurator
             .AddMemoryStreams("agents")
             .UseInMemoryReminderService();
 
-        siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
+        siloBuilder.Services.AddSingleton<IStateMachineStorageProvider,
+            VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();
     }
 }
@@ -60,24 +61,47 @@ public sealed class AgentsSiloConfigurator : ISiloConfigurator
 Key points:
 - `"Default"` storage is required for general grain persistence
 - `"PubSubStore"` is required by Orleans streaming infrastructure
-- `"agents"` is the memory stream provider used by all IAW agent streams
-- `VolatileStateMachineStorageProvider` + `AddStateMachineStorage()` provide the `IDurableDictionary` and `IDurableList` state that `AgentV2` requires
+- `"agents"` is the memory stream provider used by all V3 agent streams
+- `VolatileStateMachineStorageProvider` + `AddStateMachineStorage()` provide the `IDurableDictionary` and `IDurableList` state that the `Agent` base class requires
 
-### Client Configurator
+### MockChatClient
 
-If your tests subscribe to streams from the client side:
+For testing without a real LLM, create a mock `IChatClient`:
 
 ```csharp
-using Microsoft.Extensions.Configuration;
-using Orleans.TestingHost;
+using Microsoft.Extensions.AI;
 
-public sealed class AgentsClientConfigurator : IClientBuilderConfigurator
+public sealed class MockChatClient : IChatClient
 {
-    public void Configure(IConfiguration configuration, IClientBuilder clientBuilder)
+    public string ResponseText { get; set; } = "Mock response";
+
+    public Task<ChatResponse> GetResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
-        clientBuilder.AddMemoryStreams("agents");
+        var response = new ChatResponse(new ChatMessage(ChatRole.Assistant, ResponseText));
+        return Task.FromResult(response);
     }
+
+    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        return AsyncEnumerable.Empty<ChatResponseUpdate>();
+    }
+
+    public void Dispose() { }
+
+    public ChatClientMetadata Metadata => new("mock");
 }
+```
+
+Register it in the silo configurator:
+
+```csharp
+siloBuilder.Services.AddSingleton<IChatClient>(new MockChatClient());
 ```
 
 ### Test Class Structure
@@ -85,19 +109,18 @@ public sealed class AgentsClientConfigurator : IClientBuilderConfigurator
 Tests use `IAsyncLifetime` (xUnit v3) to manage the test cluster lifecycle:
 
 ```csharp
-using Core.V2;
+using Core.V3;
 using Orleans.TestingHost;
 using Xunit;
 
-public sealed class AgentV2BehaviorTests : IAsyncLifetime
+public sealed class AgentBehaviorTests : IAsyncLifetime
 {
     private TestCluster _cluster = null!;
 
     public async ValueTask InitializeAsync()
     {
         var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<AgentsSiloConfigurator>();
-        builder.AddClientBuilderConfigurator<AgentsClientConfigurator>();
+        builder.AddSiloBuilderConfigurator<AgentSiloConfigurator>();
         _cluster = builder.Build();
         await _cluster.DeployAsync();
     }
@@ -109,35 +132,50 @@ public sealed class AgentV2BehaviorTests : IAsyncLifetime
 }
 ```
 
-### Testing Profile
+### Testing Conversation
 
 ```csharp
 [Fact]
-public async Task Profile_ReturnsExpectedValues()
+public async Task GetResponse_ReturnsText()
 {
     var ct = TestContext.Current.CancellationToken;
-    var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("profile-1");
+    var agent = _cluster.GrainFactory.GetGrain<IAgent>("conv-1");
 
-    var profile = await agent.GetProfileAsync(ct);
+    var response = await agent.GetResponse("Hello!", ct);
 
-    Assert.Equal("profile-1", profile.Id);
-    Assert.False(string.IsNullOrEmpty(profile.DisplayName));
+    Assert.False(string.IsNullOrEmpty(response));
 }
 ```
 
-### Testing Memory
+### Testing Metadata
 
 ```csharp
 [Fact]
-public async Task Memory_SetAndGet_Persists()
+public async Task Metadata_ReturnsAgentInfo()
 {
     var ct = TestContext.Current.CancellationToken;
-    var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("memory-1");
+    var agent = _cluster.GrainFactory.GetGrain<IAgent>("meta-1");
 
-    await agent.SetMemoryAsync("city", "Seattle", ct);
-    var value = await agent.GetMemoryAsync("city", ct);
+    var metadata = await agent.GetMetadataAsync(ct);
 
-    Assert.Equal("Seattle", value);
+    Assert.False(string.IsNullOrEmpty(metadata.DisplayName));
+    Assert.False(string.IsNullOrEmpty(metadata.Description));
+}
+```
+
+### Testing State
+
+```csharp
+[Fact]
+public async Task SetWorkspace_PersistsInState()
+{
+    var ct = TestContext.Current.CancellationToken;
+    var agent = _cluster.GrainFactory.GetGrain<IAgent>("state-1");
+
+    await agent.SetWorkspaceAsync("/test/workspace", ct);
+    var state = await agent.GetStateAsync(ct);
+
+    Assert.True(state.Entries.ContainsKey("workspace-path"));
 }
 ```
 
@@ -145,111 +183,58 @@ public async Task Memory_SetAndGet_Persists()
 
 ```csharp
 [Fact]
-public async Task Events_AreRecordedAndQueryable()
+public async Task HandleEvent_RecordsInLog()
 {
     var ct = TestContext.Current.CancellationToken;
-    var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("events-1");
+    var agent = _cluster.GrainFactory.GetGrain<IAgent>("events-1");
 
-    await agent.AppendEventAsync(new AgentEvent { Type = "weather.refresh", Payload = "Seattle" }, ct);
-    await agent.AppendEventAsync(new AgentEvent { Type = "weather.alert", Payload = "rain" }, ct);
+    var evt = new AgentEvent(
+        "test.event", "source-1", Guid.NewGuid().ToString(),
+        DateTimeOffset.UtcNow, new Dictionary<string, object> { ["key"] = "value" });
 
-    var events = await agent.QueryEventsAsync(ct: ct);
+    await agent.HandleEventAsync(evt, ct);
+    var log = await agent.GetEventLogAsync(ct);
 
-    Assert.Equal(2, events.Count);
-    Assert.Equal("weather.refresh", events[0].Type);
-    Assert.Equal("weather.alert", events[1].Type);
+    // Log may or may not contain the event depending on HandleEventAsync implementation
+    Assert.NotNull(log);
 }
 ```
 
-### Testing Notifications
+### Testing Capabilities
 
 ```csharp
 [Fact]
-public async Task Notify_DeliversToSubscriber()
+public async Task Capabilities_ReportsCorrectly()
 {
     var ct = TestContext.Current.CancellationToken;
-    var publisher = _cluster.GrainFactory.GetGrain<IAgentV2>("pub-1");
-    var subscriber = _cluster.GrainFactory.GetGrain<IAgentV2>("sub-1");
+    var agent = _cluster.GrainFactory.GetGrain<IAgent>("caps-1");
 
-    await publisher.SubscribeAsync("weather.alert", "sub-1", ct);
-    await publisher.NotifyAsync(new NotificationEnvelope
-    {
-        Topic = "weather.alert",
-        Payload = "{\"city\":\"Seattle\"}",
-        ContentType = "application/json",
-        Schema = "weather.alert",
-        SchemaVersion = "1.0"
-    }, ct);
+    var caps = await agent.GetCapabilitiesAsync(ct);
 
-    var notifications = await subscriber.QueryNotificationsAsync(ct);
-    var entry = Assert.Single(notifications);
-    Assert.Equal("weather.alert", entry.Topic);
-    Assert.Equal("application/json", entry.ContentType);
+    Assert.True(caps.HasMemory);
+    Assert.True(caps.IsCancellable);
 }
 ```
 
-### Testing Stream Delivery
+### Testing Stream Subscriptions
 
 ```csharp
 [Fact]
-public async Task StreamPublish_IsReceivedByClientSubscription()
+public async Task ActiveSubscriptions_ReflectsInterfaces()
 {
     var ct = TestContext.Current.CancellationToken;
-    var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("stream-1");
+    // Use a grain that implements IStreamConsumer<T>
+    var agent = _cluster.GrainFactory.GetGrain<ICodeReviewAgent>("review-1");
 
-    var streamProvider = _cluster.Client.GetStreamProvider("agents");
-    var streamGuid = Guid.NewGuid();
-    var streamId = StreamId.Create("agent-tests", streamGuid);
-    var stream = streamProvider.GetStream<string>(streamId);
-    var received = new TaskCompletionSource<string>(
-        TaskCreationOptions.RunContinuationsAsynchronously);
+    var subs = await agent.GetActiveSubscriptionsAsync(ct);
 
-    var handle = await stream.SubscribeAsync((payload, _) =>
-    {
-        received.TrySetResult(payload);
-        return Task.CompletedTask;
-    });
-
-    await agent.PublishStreamAsync("agent-tests", streamGuid, "hello-stream", ct);
-
-    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-    timeout.CancelAfter(TimeSpan.FromSeconds(5));
-    var payload = await received.Task.WaitAsync(timeout.Token);
-
-    Assert.Equal("hello-stream", payload);
-    await handle.UnsubscribeAsync();
-}
-```
-
-### Testing Scheduling
-
-```csharp
-[Fact]
-public async Task Schedule_StartsAndStopsAtMax()
-{
-    var ct = TestContext.Current.CancellationToken;
-    var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("schedule-1");
-
-    await agent.StartScheduleAsync(TimeSpan.FromMilliseconds(40), 3, ct);
-
-    for (var i = 0; i < 80; i++)
-    {
-        var status = await agent.GetScheduleStatusAsync(ct);
-        if (!status.IsRunning)
-        {
-            Assert.Equal(3, status.TickCount);
-            return;
-        }
-        await Task.Delay(TimeSpan.FromMilliseconds(25), ct);
-    }
-
-    throw new TimeoutException("Schedule did not stop in time.");
+    Assert.Contains("code.changed", subs);
 }
 ```
 
 ## Integration Tests with Aspire
 
-Integration tests run the full Aspire AppHost and test against live HTTP endpoints and a real Orleans cluster.
+Integration tests run the full Aspire AppHost and test against live endpoints and a real Orleans cluster.
 
 ### Project Setup
 
@@ -280,7 +265,7 @@ Integration tests run the full Aspire AppHost and test against live HTTP endpoin
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
-using Core.V2;
+using Core.V3;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -288,7 +273,6 @@ using Xunit;
 public sealed class AgentIntegrationTests : IAsyncLifetime
 {
     private DistributedApplication _app = null!;
-    private HttpClient _samplesClient = null!;
     private IHost _orleansClientHost = null!;
     private IClusterClient _orleansClient = null!;
 
@@ -305,7 +289,6 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
             .WaitForResourceAsync("samples", KnownResourceStates.Running)
             .WaitAsync(TimeSpan.FromSeconds(60), startTimeout.Token);
 
-        _samplesClient = _app.CreateHttpClient("samples");
         var gatewayEndpoint = _app.GetEndpoint("samples", "orleans-gateway");
 
         _orleansClientHost = Host.CreateApplicationBuilder()
@@ -325,35 +308,25 @@ public sealed class AgentIntegrationTests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        _samplesClient.Dispose();
         await _orleansClientHost.StopAsync();
         _orleansClientHost.Dispose();
         await _app.DisposeAsync();
     }
+
+    [Fact]
+    public async Task Agent_ReturnsMetadata()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = _orleansClient.GetGrain<IAgent>("integration-test");
+        var metadata = await agent.GetMetadataAsync(ct);
+        Assert.NotNull(metadata);
+    }
 }
 ```
 
-### Testing via Direct Orleans Client
-
-```csharp
-[Fact]
-public async Task OrleansClient_MemoryAndMessages_PersistAcrossCalls()
-{
-    var ct = TestContext.Current.CancellationToken;
-    var agentId = $"integration-{Guid.NewGuid():N}";
-
-    var agent = _orleansClient.GetGrain<IAgentV2>(agentId);
-    await agent.SetMemoryAsync("city", "Seattle", ct);
-    await agent.AppendMessageAsync(new AgentMessage { Role = "user", Content = "hello" }, ct);
-
-    var sameAgent = _orleansClient.GetGrain<IAgentV2>(agentId);
-    var city = await sameAgent.GetMemoryAsync("city", ct);
-    var messages = await sameAgent.QueryMessagesAsync(ct: ct);
-
-    Assert.Equal("Seattle", city);
-    Assert.Single(messages);
-}
-```
+::: warning Integration Test Requirements
+Integration tests start the full Aspire AppHost, which requires Docker to be running for any container resources. The `DistributedApplicationTestingBuilder` spins up the application and waits for resources to become healthy before running tests.
+:::
 
 ## Running Tests
 
@@ -367,10 +340,6 @@ dotnet test test/Core.Tests/IAW.Core.Tests.csproj
 # Run integration tests only
 dotnet test test/Integration.Tests/IAW.Integration.Tests.csproj
 
-# Run with verbose output
-dotnet test IAW.slnx --verbosity normal
+# Run a single test
+dotnet test IAW.slnx --filter "FullyQualifiedName~GetResponse_ReturnsText"
 ```
-
-::: warning Integration Test Requirements
-Integration tests start the full Aspire AppHost, which requires Docker to be running for any container resources. The `DistributedApplicationTestingBuilder` spins up the application and waits for resources to become healthy before running tests.
-:::

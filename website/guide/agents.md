@@ -1,289 +1,293 @@
 # Building Agents
 
-This guide covers creating agents with AgentV2, adding LLM support, defining tools, managing memory, and using the scheduling system.
+This guide covers creating V3 agents: the constructor parameters, override points, custom tools, behavior interfaces, and testing.
 
 ## Minimal Agent
 
-Every agent extends the `AgentV2` base class. The only required override is `Profile`:
+Every agent extends the `Agent` base class and implements a grain interface that extends `IAgent`:
 
 ```csharp
-using Core.V2;
-
-public class MinimalAgent : AgentV2
-{
-    protected override AgentProfile Profile => new()
-    {
-        Id = this.GetPrimaryKeyString(),
-        DisplayName = "Minimal",
-        Instructions = string.Empty
-    };
-}
-```
-
-This gives you a fully functional agent with durable messages, memory, events, notifications, scheduling, tools, and streaming -- all inherited from the base class. No constructor boilerplate is needed.
-
-## Override Points
-
-`AgentV2` exposes four virtual methods:
-
-| Method | Signature | Default |
-|---|---|---|
-| `Profile` | `abstract AgentProfile { get; }` | (required) |
-| `OnRespondAsync` | `virtual Task<AgentReply>` | Returns `"Not implemented"` |
-| `DefineTools` | `virtual IReadOnlyList<AITool>` | Empty list |
-| `OnScheduleTickAsync` | `virtual Task` | No-op |
-
-## Adding LLM Support
-
-Inject an `IChatClient` using the `[Llm<TModel>]` attribute and override `OnRespondAsync` to use the `RespondWithLlmAsync` helper:
-
-```csharp
-using Core.AI;
-using Core.AI.Models;
-using Core.V2;
+using Core.V3;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-public class AssistantAgent(
-    [Memory("v2-messages")] IDurableList<AgentMessage> messages,
-    [Memory("v2-memory")] IDurableDictionary<string, string> memory,
-    [Memory("v2-events")] IDurableList<AgentEvent> events,
-    [Memory("v2-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("v2-notifications")] IDurableList<NotificationRecord> notifications,
-    [Memory("v2-tracking")] IDurableDictionary<string, string> tracking,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
-    : AgentV2(messages, memory, events, subscriptions, notifications, tracking)
-{
-    protected override AgentProfile Profile => new()
-    {
-        Id = this.GetPrimaryKeyString(),
-        DisplayName = "Assistant",
-        Instructions = "You are a helpful personal assistant. Be concise and accurate."
-    };
+public interface IMinimalAgent : IAgent;
 
-    protected override Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default)
-        => RespondWithLlmAsync(chatClient, request, ct);
+public class MinimalAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IMinimalAgent
+{
+    protected override string Instructions => "You are a minimal agent.";
 }
 ```
 
-`RespondWithLlmAsync` handles the full flow:
-1. Builds a `ChatMessage` list from `Profile.Instructions` and the durable message history
-2. Includes tools from `DefineTools()` in the `ChatOptions`
-3. Calls `IChatClient.GetResponseAsync`
-4. Returns an `AgentReply` with the output text and model ID
+This gives you a fully functional agent with durable conversation history, state management, event publishing, tracking, and built-in tools.
 
-## Defining Tools
+## Constructor Parameters
 
-Override `DefineTools()` to expose tools the LLM can call:
+The five constructor parameters are injected by Orleans:
+
+| Parameter | Type | Purpose |
+|---|---|---|
+| `state` | `IDurableDictionary<string, StateEntry>` | Key-value state store (workspace path, custom data) |
+| `eventLog` | `IDurableList<AgentEvent>` | Append-only event log |
+| `chatClient` | `IChatClient` | LLM provider from Microsoft.Extensions.AI |
+| `history` | `IDurableList<ChatMessage>` | Conversation history |
+| `trackingItems` | `IDurableDictionary<string, TrackingItem>` | Scheduled tracking items |
+
+::: tip
+You never instantiate these yourself. Orleans resolves the `[Memory]`-annotated parameters from journaled grain storage and the `IChatClient` from dependency injection.
+:::
+
+## Override Points
+
+`Agent` exposes four virtual members:
+
+| Member | Default | Purpose |
+|---|---|---|
+| `Instructions` | `"You are a helpful AI assistant..."` | LLM system prompt |
+| `DisplayName` | `GetType().Name` | Human-readable name for metadata |
+| `DefineTools()` | Empty list | Custom AI tools for the LLM |
+| `OnTrackingDueAsync()` | LLM-powered check | Handle tracking item due events |
+
+### Instructions
+
+The system prompt sent to the LLM on every conversation turn:
 
 ```csharp
+protected override string Instructions =>
+    "You are a code review expert. Analyze code for bugs, security issues, and style.";
+```
+
+### DisplayName
+
+Used in metadata and the agent registry:
+
+```csharp
+protected override string DisplayName => "Code Review Bot";
+```
+
+### DefineTools
+
+Override to add custom tools the LLM can call. Use `AIFunctionFactory.Create()`:
+
+```csharp
+using System.ComponentModel;
 using Microsoft.Extensions.AI;
 
 protected override IReadOnlyList<AITool> DefineTools() =>
 [
-    AIFunctionFactory.Create(SearchKnowledgeBase, "search",
-        "Search the knowledge base for relevant information"),
-    AIFunctionFactory.Create(CreateReminder, "create_reminder",
-        "Create a reminder for a future date")
+    AIFunctionFactory.Create(SearchKnowledgeBase),
+    AIFunctionFactory.Create(CreateReminder)
 ];
 
-private async Task<string> SearchKnowledgeBase(string query)
+[Description("Search the knowledge base for relevant information")]
+private async Task<string> SearchKnowledgeBase(
+    [Description("Search query")] string query)
 {
     return $"Results for: {query}";
 }
 
-private async Task<string> CreateReminder(string text, DateTime dueDate)
+[Description("Create a reminder for a future date")]
+private async Task<string> CreateReminder(
+    [Description("Reminder text")] string text,
+    [Description("Due date")] DateTime dueDate)
 {
-    await SetMemoryAsync($"reminder-{Guid.NewGuid():N}", text);
+    State[$"reminder-{Guid.NewGuid():N}"] = new StateEntry("reminder", text);
+    await WriteStateAsync(AgentCancellation);
     return $"Reminder set for {dueDate:g}";
 }
 ```
 
-Tools are discoverable via `InvokeToolAsync`, which finds the matching `AIFunction` by name:
+::: warning
+Tool methods must have a `[Description]` attribute. Without it, the method won't be discovered by the tool registration system.
+:::
+
+## Conversation
+
+The agent provides two conversation methods:
 
 ```csharp
-var result = await agent.InvokeToolAsync("search", new Dictionary<string, string>
+// Single response
+var response = await agent.GetResponse("What's the weather?", ct);
+
+// Streaming response
+await foreach (var chunk in agent.GetResponseStream("Tell me a story", ct))
 {
-    ["query"] = "project status"
-});
-```
-
-## Memory
-
-The agent's key-value memory is stored in `IDurableDictionary<string, string>`. All mutations are persisted via `WriteStateAsync()`.
-
-### Set and get values
-
-```csharp
-await agent.SetMemoryAsync("user-name", "Alice");
-var name = await agent.GetMemoryAsync("user-name");
-```
-
-## Messages
-
-Conversation messages are stored as a durable list of `AgentMessage` records. Messages are automatically managed by `RespondAsync`, but you can also add entries manually:
-
-```csharp
-await agent.AppendMessageAsync(new AgentMessage
-{
-    Role = "system",
-    Content = "Agent initialized at startup"
-});
-
-var messages = await agent.QueryMessagesAsync(new AgentMessageQuery
-{
-    Role = "user",
-    Limit = 10,
-    Descending = true
-});
-
-foreach (var msg in messages)
-{
-    Console.WriteLine($"[{msg.TimestampUtc:u}] {msg.Role}: {msg.Content}");
+    Console.Write(chunk);
 }
 ```
 
-### AgentMessageQuery
+Conversation history is persisted in the durable `history` list via `DurableChatHistoryProvider`. Clear it with:
 
-Filter messages with these optional parameters:
+```csharp
+await agent.ClearHistoryAsync(ct);
+```
 
-| Property | Type | Purpose |
-|---|---|---|
-| `Limit` | `int?` | Maximum number of messages to return |
-| `SinceUtc` | `DateTimeOffset?` | Only messages after this timestamp |
-| `Role` | `string?` | Filter by role (e.g. `"user"`, `"assistant"`) |
-| `Descending` | `bool` | Reverse chronological order |
+## State Management
 
-Each message is also published to the `"agent-history"` Orleans stream for real-time subscribers.
+The agent's state is a durable dictionary of `StateEntry` records:
+
+```csharp
+// Set workspace (enables FileTools and ShellTools)
+await agent.SetWorkspaceAsync("/path/to/project", ct);
+
+// Read all state
+var state = await agent.GetStateAsync(ct);
+foreach (var entry in state.Entries)
+{
+    Console.WriteLine($"{entry.Key} = {entry.Value.Value}");
+}
+```
+
+Inside the agent class, access state directly:
+
+```csharp
+State["my-key"] = new StateEntry("my-key", "my-value");
+await WriteStateAsync(AgentCancellation);
+```
 
 ## Events
 
-Record typed events with optional payloads and metadata:
+Publish events to the event log and Orleans streams:
 
 ```csharp
-await agent.AppendEventAsync(new AgentEvent
+// Untyped event
+await PublishAsync("task.completed", new Dictionary<string, object>
 {
-    Type = "task-completed",
-    Payload = "{\"taskId\":\"abc\",\"duration\":42}"
-});
+    ["taskId"] = "abc",
+    ["duration"] = 42
+}, ct);
 
-var events = await agent.QueryEventsAsync(new AgentEventQuery
-{
-    Type = "task-completed",
-    Limit = 5,
-    Descending = true
-});
+// Typed event (uses IEvent interface)
+await PublishTypedAsync(new BuildCompletedEvent(
+    SourceAgentId: this.GetPrimaryKeyString(),
+    CorrelationId: Guid.NewGuid().ToString(),
+    Timestamp: DateTimeOffset.UtcNow,
+    Success: true,
+    CommitSha: "abc123",
+    Output: "Build succeeded"), ct);
 ```
 
-### AgentEventQuery
+## Behavior Interfaces
 
-| Property | Type | Purpose |
-|---|---|---|
-| `Limit` | `int?` | Maximum events to return |
-| `SinceUtc` | `DateTimeOffset?` | Only events after this timestamp |
-| `Type` | `string?` | Filter by event type |
-| `Descending` | `bool` | Reverse chronological order |
-
-Events are persisted durably and published to the `"agent-events"` Orleans stream.
-
-## Scheduling
-
-The scheduling system runs periodic ticks for monitoring or polling tasks. It uses Orleans reminders for intervals >= 1 minute (silo-crash-safe) and grain timers for shorter intervals.
+Add communication capabilities by implementing typed interfaces:
 
 ```csharp
-// Tick every 5 minutes, stop after 10 ticks
-await agent.StartScheduleAsync(TimeSpan.FromMinutes(5), maxTicks: 10);
-
-// Check schedule state
-var status = await agent.GetScheduleStatusAsync();
-Console.WriteLine($"Running: {status.IsRunning}, Ticks: {status.TickCount}/{status.MaxTicks}");
-
-// Stop early
-await agent.StopScheduleAsync();
-```
-
-Override `OnScheduleTickAsync` in your agent to handle each tick:
-
-```csharp
-protected override async Task OnScheduleTickAsync(int tickCount, CancellationToken ct = default)
+public class MyAgent : Agent,
+    IStreamConsumer<CodeChangedEvent>,    // auto-subscribes to code.changed stream
+    IStreamProducer<BuildCompletedEvent>, // can publish build.completed events
+    IReceiver<AssignTaskCommand>,         // can receive directed commands
+    IBroadcaster<AlertNotification>       // can broadcast to registered receivers
 {
-    await AppendEventAsync(new AgentEvent
+    // IStreamConsumer callback -- called automatically
+    public async Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
     {
-        Type = "monitor.tick",
-        Payload = $"{{\"tick\":{tickCount}}}"
-    }, ct);
+        var review = await GetResponse($"Review: {string.Join(", ", evt.FilePaths)}", AgentCancellation);
+    }
+
+    // IReceiver -- accept directed messages
+    public async Task<MessageReceipt> ReceiveAsync(AssignTaskCommand cmd, CancellationToken ct)
+    {
+        await GetResponse($"Task: {cmd.Description}", ct);
+        return new MessageReceipt(true, this.GetPrimaryKeyString(), DateTimeOffset.UtcNow, null);
+    }
+
+    public Task<bool> CanReceiveAsync(CancellationToken ct) => Task.FromResult(true);
 }
 ```
 
-The `ScheduleStatus` record:
+See [Events & Streams](/guide/events-streams) for detailed patterns.
 
-| Property | Type | Description |
-|---|---|---|
-| `IsRunning` | `bool` | Whether the schedule is active |
-| `Interval` | `TimeSpan` | Time between ticks |
-| `TickCount` | `int` | Ticks completed so far |
-| `MaxTicks` | `int?` | Maximum ticks before auto-stop (null = unlimited) |
+## Metadata and Capabilities
 
-On grain reactivation, `OnActivateAsync` resumes the schedule if it should still be running.
-
-## Streams
-
-Publish messages to Orleans streams for real-time communication:
+The agent automatically reports its metadata based on implemented interfaces and attributes:
 
 ```csharp
-await agent.PublishStreamAsync("my-namespace", streamId, "Hello from agent!");
+var metadata = await agent.GetMetadataAsync(ct);
+// metadata.AgentType = "MyAgent"
+// metadata.DisplayName = "My Agent"
+// metadata.Publishes = ["BuildCompletedEvent", "AlertNotification"]
+// metadata.Subscribes = ["CodeChangedEvent", "AssignTaskCommand"]
+
+var caps = await agent.GetCapabilitiesAsync(ct);
+// caps.HasMemory = true
+// caps.HasEvents = true (because it implements IStreamConsumer/IStreamProducer)
+// caps.HasTools = true
 ```
 
-The agent uses the `"agents"` stream provider configured by `AddIAW()` in the Aspire AppHost.
-
-## Complete Example: Weather Monitor Agent
+Add custom capabilities with attributes:
 
 ```csharp
-using Core.AI;
-using Core.AI.Models;
-using Core.V2;
+using Core.V3.Attributes;
+
+[Capability("code-review")]
+[Publishes("review.completed")]
+[Subscribes("code.changed")]
+public class CodeReviewAgent : Agent { ... }
+```
+
+## Cancellation
+
+Every agent has a cancellation token accessible via `AgentCancellation`. Cancel an agent externally:
+
+```csharp
+await agent.CancelAsync(ct);
+```
+
+This cancels the current token and creates a new one, stopping any in-progress LLM calls or tool executions.
+
+## Complete Example: Weather Agent
+
+```csharp
+using System.ComponentModel;
+using Core.V3;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-public class WeatherMonitor(
-    [Memory("v2-messages")] IDurableList<AgentMessage> messages,
-    [Memory("v2-memory")] IDurableDictionary<string, string> memory,
-    [Memory("v2-events")] IDurableList<AgentEvent> events,
-    [Memory("v2-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("v2-notifications")] IDurableList<NotificationRecord> notifications,
-    [Memory("v2-tracking")] IDurableDictionary<string, string> tracking,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
-    : AgentV2(messages, memory, events, subscriptions, notifications, tracking)
-{
-    protected override AgentProfile Profile => new()
-    {
-        Id = this.GetPrimaryKeyString(),
-        DisplayName = "Weather Monitor",
-        Instructions = "You monitor weather conditions and alert subscribers.",
-        Capabilities = ["weather", "monitoring"]
-    };
+public interface IWeatherAgent : IAgent;
 
-    protected override Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default)
-        => RespondWithLlmAsync(chatClient, request, ct);
+public class WeatherAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("v3-history")] IDurableList<ChatMessage> history,
+    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IWeatherAgent
+{
+    protected override string Instructions =>
+        "You're a weather assistant. Use the available tools to answer questions about weather.";
 
     protected override IReadOnlyList<AITool> DefineTools() =>
     [
-        AIFunctionFactory.Create(GetWeather, "get_weather", "Get current weather for a city")
+        AIFunctionFactory.Create(GetCurrentWeather),
+        AIFunctionFactory.Create(GetForecast)
     ];
 
-    protected override async Task OnScheduleTickAsync(int tickCount, CancellationToken ct = default)
-    {
-        var city = await GetMemoryAsync("monitored-city", ct) ?? "Seattle";
-        var weather = await GetWeather(city);
+    [Description("Gets the current weather for a given city")]
+    static WeatherInfo GetCurrentWeather(string city) => new(
+        City: city,
+        TemperatureCelsius: Random.Shared.Next(-10, 40),
+        Condition: PickRandom("Sunny", "Cloudy", "Rainy", "Snowy"),
+        Humidity: Random.Shared.Next(20, 100));
 
-        await AppendEventAsync(new AgentEvent
-        {
-            Type = "weather.check",
-            Payload = weather
-        }, ct);
-    }
+    [Description("Gets a 3-day weather forecast for a given city")]
+    static List<ForecastDay> GetForecast(string city) =>
+    [.. Enumerable.Range(1, 3)
+        .Select(i => new ForecastDay(
+            Date: DateOnly.FromDateTime(DateTime.Now.AddDays(i)),
+            HighCelsius: Random.Shared.Next(15, 40),
+            LowCelsius: Random.Shared.Next(-5, 15),
+            Condition: PickRandom("Sunny", "Cloudy", "Rainy")))];
 
-    private Task<string> GetWeather(string city)
-        => Task.FromResult($"{{\"city\":\"{city}\",\"temp\":18,\"condition\":\"cloudy\"}}");
+    static string PickRandom(params string[] options) =>
+        options[Random.Shared.Next(options.Length)];
 }
+
+public record WeatherInfo(string City, int TemperatureCelsius, string Condition, int Humidity);
+public record ForecastDay(DateOnly Date, int HighCelsius, int LowCelsius, string Condition);
 ```
