@@ -1,20 +1,24 @@
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace Core.V3;
 
 public interface IWeatherAgent : IAgent;
 
 public class WeatherAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
     [Memory("v3-history")] IDurableList<ChatMessage> history)
-    : Agent(chatClient, history), IWeatherAgent
+    : Agent(state, eventLog, chatClient, history), IWeatherAgent
 {
     protected override string Instructions =>
         "You're a weather assistant. Use the available tools to answer questions about weather conditions, forecasts, and alerts.";
 
-    protected override IList<AITool> Tools =>
+    protected override IReadOnlyList<AITool> DefineTools() =>
     [
         AIFunctionFactory.Create(GetCurrentWeather),
         AIFunctionFactory.Create(GetForecast),
