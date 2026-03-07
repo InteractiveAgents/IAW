@@ -1,8 +1,7 @@
 using System.Runtime.CompilerServices;
-using Core;
-using Core.V2;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using V3Agent = Core.V3.IAgent;
+using V3Agent = IAW.Core.IAgent;
 
 namespace DevUI;
 

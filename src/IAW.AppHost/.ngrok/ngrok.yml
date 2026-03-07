@@ -6,4 +6,4 @@ agent:
 endpoints:
   - name: telegram-bot-http
     upstream:
-      url: http://host.docker.internal:5200
+      url: http://host.docker.internal:59377

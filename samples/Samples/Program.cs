@@ -1,4 +1,4 @@
-using Core;
+using IAW.Core;
 using Core.AI;
 using Core.GitHub;
 using Orleans.Dashboard;

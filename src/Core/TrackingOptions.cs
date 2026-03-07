@@ -1,4 +1,4 @@
-namespace Core;
+namespace IAW.Core;
 
 public sealed record TrackingOptions
 {

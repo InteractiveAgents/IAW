@@ -1,7 +1,6 @@
-using Core;
+using IAW.Core;
 using Core.AI;
 using Core.AI.Models;
-using Core.V2;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
