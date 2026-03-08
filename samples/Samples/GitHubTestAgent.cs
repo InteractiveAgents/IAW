@@ -1,30 +1,22 @@
-using IAW.Core;
 using Core.AI;
 using Core.AI.Models;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
-using Core;
 
 namespace Samples;
 
 public interface IGitHubTestAgent : IAgent;
 
 public sealed class GitHubTestAgent(
-    [Memory("v2-messages")] IDurableList<AgentMessage> messages,
-    [Memory("v2-memory")] IDurableDictionary<string, string> memory,
-    [Memory("v2-events")] IDurableList<AgentEvent> events,
-    [Memory("v2-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("v2-notifications")] IDurableList<NotificationRecord> notifications,
-    [Memory("v2-tracking")] IDurableDictionary<string, string> tracking,
-    [Llm<GitHubGpt4oMini>] IChatClient chatClient)
-    : Agent(messages, memory, events, subscriptions, notifications, tracking), IGitHubTestAgent
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [Llm<GitHubGpt4oMini>] IChatClient chatClient,
+    [Memory("history")] IDurableList<Core.Contracts.ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IGitHubTestAgent
 {
-    public override string DisplayName => "GitHub Test Agent";
-    public override string SystemPrompt => "You are a helpful test agent. Keep responses under 50 words.";
-
-    public override async Task OnActivateAsync(CancellationToken cancellationToken)
-    {
-        await base.OnActivateAsync(cancellationToken);
-        Activate(chatClient);
-    }
+    protected override string Instructions => "You are a helpful test agent. Keep responses under 50 words.";
+    protected override string DisplayName => "GitHub Test Agent";
 }
