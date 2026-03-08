@@ -1,3 +1,5 @@
+using IAW.Core;
+
 namespace IAW.Core.Registry;
 
 [GenerateSerializer]

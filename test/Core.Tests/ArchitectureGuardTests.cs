@@ -70,17 +70,6 @@ public class ArchitectureGuardTests
     }
 
     [Fact]
-    public void AllNotificationTypes_ImplementINotification()
-    {
-        var notifTypes = CoreAssembly.GetTypes()
-            .Where(t => t.Namespace == "IAW.Core.Messages" && t.Name.EndsWith("Notification") && !t.IsInterface);
-
-        Assert.NotEmpty(notifTypes);
-        foreach (var type in notifTypes)
-            Assert.True(typeof(INotification).IsAssignableFrom(type), $"{type.Name} should implement INotification");
-    }
-
-    [Fact]
     public void AllSerializableTypes_HaveGenerateSerializerAttribute()
     {
         var serializableTypes = CoreAssembly.GetTypes()

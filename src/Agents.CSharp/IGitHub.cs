@@ -1,4 +1,5 @@
 using IAW.Core;
+using IAW.Agents.CSharp.Models;
 
 namespace IAW.Agents.CSharp;
 

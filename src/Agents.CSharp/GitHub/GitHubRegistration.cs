@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace IAW.Core.GitHub;
+namespace IAW.Agents.CSharp.GitHub;
 
 public static class GitHubRegistration
 {

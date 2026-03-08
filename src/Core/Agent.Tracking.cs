@@ -13,15 +13,28 @@ public abstract partial class Agent : IRemindable
     {
         trackingItems[name] = item;
         await WriteStateAsync(ct);
+        await this.RegisterOrUpdateReminder(name, TimeSpan.Zero, interval);
     }
 
     public async Task StopTrackingAsync(string name, CancellationToken ct = default)
     {
         trackingItems.Remove(name);
         await WriteStateAsync(ct);
+        var reminder = await this.GetReminder(name);
+        if (reminder is not null)
+            await this.UnregisterReminder(reminder);
     }
 
-    public virtual Task ReceiveReminder(string reminderName, TickStatus status) => Task.CompletedTask;
+    public virtual async Task ReceiveReminder(string reminderName, TickStatus status)
+    {
+        if (trackingItems.TryGetValue(reminderName, out var item))
+        {
+            var updated = item with { LastCheckAt = DateTimeOffset.UtcNow };
+            trackingItems[reminderName] = updated;
+            await OnTrackingDueAsync(updated, AgentCancellation);
+            await WriteStateAsync(AgentCancellation);
+        }
+    }
 
     protected virtual async Task OnTrackingDueAsync(TrackingItem item, CancellationToken ct)
     {

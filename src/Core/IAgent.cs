@@ -8,24 +8,24 @@ public interface IAgent : IGrainWithStringKey
     IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
     Task<string> GetResponse(string prompt, CancellationToken ct);
     Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken ct);
-    Task ClearHistoryAsync(CancellationToken ct);
+    Task ClearHistory(CancellationToken ct);
 
     // State
-    Task<AgentState> GetStateAsync(CancellationToken ct);
-    Task SetWorkspaceAsync(string path, CancellationToken ct);
+    Task<AgentState> GetState(CancellationToken ct);
+    Task SetWorkspace(string path, CancellationToken ct);
 
     // Metadata
-    Task<AgentMetadata> GetMetadataAsync(CancellationToken ct);
-    Task<AgentCapabilities> GetCapabilitiesAsync(CancellationToken ct);
+    Task<AgentMetadata> GetMetadata(CancellationToken ct);
+    Task<AgentCapabilities> GetCapabilities(CancellationToken ct);
 
     // Events
-    Task HandleEventAsync(AgentEvent agentEvent, CancellationToken ct);
-    Task<IReadOnlyList<AgentEvent>> GetEventLogAsync(CancellationToken ct);
+    Task HandleEvent(AgentEvent agentEvent, CancellationToken ct);
+    Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct);
 
     // Streams
-    Task PublishToStreamAsync(AgentEvent evt, CancellationToken ct);
-    Task<IReadOnlyList<string>> GetActiveSubscriptionsAsync(CancellationToken ct);
+    Task PublishToStream(AgentEvent evt, CancellationToken ct);
+    Task<IReadOnlyList<string>> GetActiveSubscriptions(CancellationToken ct);
 
     // Lifecycle
-    Task CancelAsync(CancellationToken ct);
+    Task Cancel(CancellationToken ct);
 }

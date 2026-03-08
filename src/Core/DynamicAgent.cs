@@ -1,3 +1,4 @@
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
@@ -33,7 +34,7 @@ public class DynamicAgent(
         if (config.ToolNames is not null)
             State["config-tool-names"] = new StateEntry("config-tool-names", string.Join(",", config.ToolNames));
         if (config.WorkspacePath is not null)
-            await SetWorkspaceAsync(config.WorkspacePath, ct);
+            await SetWorkspace(config.WorkspacePath, ct);
         await WriteStateAsync(ct);
     }
 }

@@ -49,6 +49,9 @@ public abstract partial class Agent(
 
         await SubscribeToStreamConsumerInterfaces();
 
+        foreach (var kvp in trackingItems)
+            await this.RegisterOrUpdateReminder(kvp.Key, TimeSpan.Zero, kvp.Value.Interval);
+
         await base.OnActivateAsync(cancellationToken);
     }
 
@@ -83,7 +86,7 @@ public abstract partial class Agent(
         return Task.FromResult(snapshot);
     }
 
-    public async Task ClearHistoryAsync(CancellationToken cancellationToken = default)
+    public async Task ClearHistory(CancellationToken cancellationToken = default)
     {
         history.Clear();
         await WriteStateAsync(cancellationToken);

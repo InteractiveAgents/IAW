@@ -1,6 +1,6 @@
 using Octokit;
 
-namespace IAW.Core.GitHub;
+namespace IAW.Agents.CSharp.GitHub;
 
 public interface IGitHub
 {

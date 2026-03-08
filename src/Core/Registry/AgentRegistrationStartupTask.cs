@@ -6,12 +6,6 @@ namespace IAW.Core.Registry;
 
 public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartupTask
 {
-    private static readonly HashSet<Type> ExcludedInterfaces =
-    [
-        typeof(IAgent), typeof(IDynamicAgent), typeof(IEventDrivenAgent),
-        typeof(IStreamingAgent), typeof(ITrackableAgent), typeof(IObservableAgent)
-    ];
-
     public async Task Execute(CancellationToken ct)
     {
         var registry = grainFactory.GetGrain<IAgentRegistryGrain>("global");

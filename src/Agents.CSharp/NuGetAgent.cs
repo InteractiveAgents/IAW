@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Xml.Linq;
 using IAW.Core;
-using IAW.Core.AI;
 using IAW.Core.AI.Models;
+using IAW.Agents.CSharp.Models;
+using IAW.Core.AI;
 using IAW.Core.Attributes;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
@@ -14,7 +15,7 @@ public class NuGetAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<IAW.Core.ChatMessage> history,
+    [Memory("history")] IDurableList<Core.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IHttpClientFactory httpClientFactory)
     : Agent(state, eventLog, chatClient, history, trackingItems), INuGet

@@ -2,7 +2,7 @@ using IAW.Core.AI;
 using Microsoft.Extensions.Configuration;
 using Octokit;
 
-namespace IAW.Core.GitHub;
+namespace IAW.Agents.CSharp.GitHub;
 
 public class GitHubService : IGitHub
 {

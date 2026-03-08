@@ -154,7 +154,7 @@ public class PersonalAssistantAgent(
             try
             {
                 var agent = resolve();
-                var agentState = await agent.GetStateAsync(default);
+                var agentState = await agent.GetState(default);
                 sb.AppendLine($"- {name}: {agentState.Entries.Count} state entries");
             }
             catch

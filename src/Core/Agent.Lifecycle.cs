@@ -1,19 +1,18 @@
 using System.Reflection;
 using IAW.Core.Attributes;
 using IAW.Core.Communication;
-using IAW.Core.Diagnostics;
 using IAW.Core.Observability;
 
 namespace IAW.Core;
 
-public abstract partial class Agent : ISelfDiagnosable
+public abstract partial class Agent
 {
     private CancellationTokenSource _cts = new();
     protected CancellationToken AgentCancellation => _cts.Token;
     protected virtual string DisplayName => GetType().Name;
     protected virtual AgentKind AgentKindValue => AgentKind.Static;
 
-    public Task<AgentMetadata> GetMetadataAsync(CancellationToken ct = default)
+    public Task<AgentMetadata> GetMetadata(CancellationToken ct = default)
     {
         var type = GetType();
         var publishedFromInterfaces = DiscoverPublishedMessageTypes(type);
@@ -31,7 +30,7 @@ public abstract partial class Agent : ISelfDiagnosable
             capabilities, publishes, subscribes));
     }
 
-    public Task<AgentCapabilities> GetCapabilitiesAsync(CancellationToken ct = default)
+    public Task<AgentCapabilities> GetCapabilities(CancellationToken ct = default)
     {
         var type = GetType();
         var attributeCaps = type.GetCustomAttributes<CapabilityAttribute>()
@@ -48,7 +47,7 @@ public abstract partial class Agent : ISelfDiagnosable
             IsSecure: attributeCaps.Contains("Secure")));
     }
 
-    public Task CancelAsync(CancellationToken ct = default)
+    public Task Cancel(CancellationToken ct)
     {
         var old = _cts;
         _cts = new CancellationTokenSource();
@@ -56,9 +55,6 @@ public abstract partial class Agent : ISelfDiagnosable
         old.Dispose();
         return Task.CompletedTask;
     }
-
-    public virtual Task<DiagnosticReport> DiagnoseAsync(CancellationToken ct = default)
-        => Task.FromResult(new DiagnosticReport(GetType().Name, DateTimeOffset.UtcNow, true, 0, 0, TimeSpan.Zero, []));
 
     private static string[] DiscoverPublishedMessageTypes(Type type) =>
     [
