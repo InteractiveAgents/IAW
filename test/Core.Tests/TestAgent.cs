@@ -153,3 +153,23 @@ public class ProducerTestAgent(
     public async Task PublishCodeChanged(CodeChangedEvent evt, CancellationToken ct = default)
         => await PublishToStreamAsync(evt, ct);
 }
+
+// test agent with custom DefineTools for tool discovery tests
+public interface IToolTestAgent : IAgent;
+
+public class ToolTestAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IToolTestAgent
+{
+    protected override string Instructions => "Tool test agent.";
+    protected override string DisplayName => "Tool Test";
+
+    protected override IReadOnlyList<AITool> DefineTools() =>
+    [
+        AIFunctionFactory.Create(() => "pong", "Ping", "Returns pong")
+    ];
+}

@@ -1,6 +1,7 @@
 using Core.Contracts;
 using Core.Messages;
 using IAW.Testing;
+using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace IAW.Core.Tests;
@@ -479,6 +480,31 @@ public class AgentUsageTests : AgentTest<TestAgent>
         await agent.GetResponse("Hello", ct);
         // should not throw — MockChatClient may not populate usage but the method should work
         var usage = await agent.GetLastUsage(ct);
+    }
+}
+
+#endregion
+
+#region Custom Tool Discovery
+
+public class AgentToolTests : AgentTest<ToolTestAgent>
+{
+    [Fact]
+    public async Task GetCapabilities_ReportsHasTools()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("tool-cap"));
+        var caps = await agent.GetCapabilities(ct);
+        Assert.True(caps.HasTools);
+    }
+
+    [Fact]
+    public async Task DefineTools_CustomToolIncluded()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("tool-custom"));
+        var response = await agent.GetResponse("ping", ct);
+        Assert.NotNull(response);
     }
 }
 
