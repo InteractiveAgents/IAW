@@ -51,5 +51,7 @@
     <PackageVersion Include="Concentus.Oggfile" Version="1.0.6" />
     <PackageVersion Include="NAudio" Version="2.2.1" />
     <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0-2.final" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0-preview.1.26104.118" />
   </ItemGroup>
 </Project>

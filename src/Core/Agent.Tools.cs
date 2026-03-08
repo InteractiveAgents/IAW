@@ -31,7 +31,7 @@ public abstract partial class Agent
         return tools;
     }
 
-    private static void RegisterToolMethods(List<AITool> tools, object toolSource)
+    protected static void RegisterToolMethods(List<AITool> tools, object toolSource)
     {
         var methods = toolSource.GetType().GetMethods(
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);

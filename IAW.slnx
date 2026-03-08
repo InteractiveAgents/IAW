@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Agents/Agents.csproj" />
+    <Project Path="src/Agents.CSharp/Agents.CSharp.csproj" />
     <Project Path="src/IAW.Testing/IAW.Testing.csproj" />
   </Folder>
   <Project Path="samples/Samples/Samples.csproj" />
