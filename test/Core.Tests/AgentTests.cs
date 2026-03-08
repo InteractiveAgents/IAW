@@ -108,6 +108,15 @@ public class AgentBasicTests : AgentTest<TestAgent>
         var response = await agent.GetResponse("After cancel", ct);
         Assert.Equal("mock-response", response);
     }
+
+    [Fact]
+    public async Task Agent_WithNoStreamInterfaces_HasEmptySubscriptions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("no-streams"));
+        var subs = await agent.GetActiveSubscriptions(ct);
+        Assert.Empty(subs);
+    }
 }
 
 #endregion
@@ -346,6 +355,36 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
 
         var state = await agent.GetState(ct);
         Assert.True(state.Entries.Count > 0, "Agent should have handled stream event");
+    }
+
+    [Fact]
+    public async Task StreamPublish_MultipleConsumers_AllReceive()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var id1 = UniqueId("mc1");
+        var id2 = UniqueId("mc2");
+        var agent1 = Agent(id1);
+        var agent2 = Agent(id2);
+
+        // activate both so OnActivateAsync subscribes to streams
+        await agent1.GetMetadata(ct);
+        await agent2.GetMetadata(ct);
+        await Task.Delay(200, ct);
+
+        var evt = new AgentEvent("code.changed", "publisher", Guid.NewGuid().ToString(),
+            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["file"] = "multi.cs" });
+
+        var streamProvider = Cluster.Client.GetStreamProvider("agents");
+        var streamId = StreamId.Create("agents", "code.changed");
+        var stream = streamProvider.GetStream<AgentEvent>(streamId);
+        await stream.OnNextAsync(evt);
+
+        await Task.Delay(1000, ct);
+
+        var state1 = await agent1.GetState(ct);
+        var state2 = await agent2.GetState(ct);
+        Assert.True(state1.Entries.Count > 0, "Agent 1 should have handled event");
+        Assert.True(state2.Entries.Count > 0, "Agent 2 should have handled event");
     }
 }
 

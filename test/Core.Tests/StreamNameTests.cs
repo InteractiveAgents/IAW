@@ -1,5 +1,4 @@
-using IAW.Core.Messages;
-using IAW.Core;
+using Core.Messages;
 using Xunit;
 
 namespace IAW.Core.Tests;
@@ -18,5 +17,8 @@ public class StreamNameTests
     {
         { typeof(CodeChangedEvent), "code.changed" },
         { typeof(AssignTaskCommand), "assign.task" },
+        { typeof(IAW.Agents.Messages.BuildMetricsCollectedEvent), "build.metrics.collected" },
+        { typeof(IAW.Agents.Messages.SpecReadyEvent), "spec.ready" },
+        { typeof(IAW.Agents.Messages.TestsPassedEvent), "tests.passed" },
     };
 }
