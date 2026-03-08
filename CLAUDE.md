@@ -63,14 +63,15 @@ Central package management via `Directory.Packages.props` -- all package version
 **Agent** (durable, distributed): Extends `DurableGrain` (Orleans Journaling). All state (`messages`, `memory`, `events`, `subscriptions`, `notifications`, `tracking`) is managed internally by the base class. Derived agents pass `[Memory]` constructor parameters and override `Instructions`, `DisplayName`, and optionally `DefineTools()`.
 
 **IAgent** -- flat interface (no composed behavior interfaces):
-- `GetMetadataAsync` -- agent identity, capabilities
+- `GetMetadata` -- agent identity, capabilities
 - `GetResponse` / `GetResponseStream` -- conversation
-- `GetHistory` / `ClearHistoryAsync` -- conversation history
-- `GetStateAsync` / `SetWorkspaceAsync` -- state management
-- `GetCapabilitiesAsync` -- agent capabilities
-- `HandleEventAsync` -- event handling
-- `GetEventLogAsync` -- event log
-- `CancelAsync` -- lifecycle
+- `GetHistory` / `ClearHistory` -- conversation history
+- `GetState` / `SetWorkspace` -- state management
+- `GetCapabilities` -- agent capabilities
+- `HandleEvent` -- event handling
+- `GetEventLog` -- event log
+- `PublishToStream` / `GetActiveSubscriptions` -- streaming
+- `Cancel` -- lifecycle
 
 ### LLM Integration
 

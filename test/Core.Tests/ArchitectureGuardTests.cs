@@ -161,11 +161,13 @@ public class ArchitectureGuardTests
     public void AllAgentsInIAWAgents_ExtendAgent()
     {
         var agentsAssembly = typeof(IAW.Agents.Infrastructure.FileSystemAgent).Assembly;
-        var agentTypes = agentsAssembly.GetTypes()
-            .Where(t => !t.IsAbstract && !t.IsInterface && typeof(Agent).IsAssignableFrom(t));
+        var concreteGrains = agentsAssembly.GetTypes()
+            .Where(t => !t.IsAbstract && !t.IsInterface
+                && t.Name.EndsWith("Agent")
+                && typeof(IGrain).IsAssignableFrom(t));
 
-        Assert.NotEmpty(agentTypes);
-        foreach (var type in agentTypes)
+        Assert.NotEmpty(concreteGrains);
+        foreach (var type in concreteGrains)
             Assert.True(typeof(Agent).IsAssignableFrom(type), $"{type.FullName} should extend Agent");
     }
 
