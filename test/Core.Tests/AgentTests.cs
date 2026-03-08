@@ -299,6 +299,42 @@ public class AgentReceiverTests : AgentTest<ReceiverTestAgent>
 
 #endregion
 
+#region Communication — IReceiver<T> Rejection
+
+public class AgentRejectingReceiverTests : AgentTest<RejectingReceiverAgent>
+{
+    [Fact]
+    public async Task CanReceive_ReturnsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var grain = Cluster.GrainFactory.GetGrain<IRejectingReceiverAgent>(UniqueId("rej-can"));
+        var canReceive = await grain.CanReceiveTestMessage(ct);
+        Assert.False(canReceive);
+    }
+
+    [Fact]
+    public async Task Receive_ReturnsRejectionWithReason()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var grain = Cluster.GrainFactory.GetGrain<IRejectingReceiverAgent>(UniqueId("rej-recv"));
+        var msg = new TestTaskMessage("task-rej", "Rejected task") { SourceAgentId = "test" };
+        var receipt = await grain.ReceiveTestMessage(msg, ct);
+        Assert.False(receipt.Accepted);
+        Assert.Equal("Agent is busy", receipt.RejectionReason);
+    }
+
+    [Fact]
+    public async Task Receive_StillReportsP2PCapability()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("rej-cap"));
+        var caps = await agent.GetCapabilities(ct);
+        Assert.True(caps.HasP2P);
+    }
+}
+
+#endregion
+
 #region Communication — Streams (IStreamConsumer<T>)
 
 public class AgentStreamTests : AgentTest<StreamTestAgent>

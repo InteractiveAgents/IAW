@@ -169,6 +169,38 @@ public class ProducerTestAgent(
         => await PublishToStreamAsync(evt, ct);
 }
 
+// test agent that rejects P2P messages with a reason
+public interface IRejectingReceiverAgent : IAgent
+{
+    Task<MessageReceipt> ReceiveTestMessage(TestTaskMessage message, CancellationToken ct = default);
+    Task<bool> CanReceiveTestMessage(CancellationToken ct = default);
+}
+
+public class RejectingReceiverAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems),
+      IRejectingReceiverAgent,
+      IReceiver<TestTaskMessage>
+{
+    protected override string Instructions => "Rejecting receiver.";
+    protected override string DisplayName => "Rejecting Receiver";
+
+    public Task<MessageReceipt> ReceiveAsync(TestTaskMessage message, CancellationToken ct = default)
+        => ReceiveTestMessage(message, ct);
+
+    public Task<bool> CanReceiveAsync(CancellationToken ct = default)
+        => CanReceiveTestMessage(ct);
+
+    public Task<MessageReceipt> ReceiveTestMessage(TestTaskMessage message, CancellationToken ct = default)
+        => Task.FromResult(new MessageReceipt(false, Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, "Agent is busy"));
+
+    public Task<bool> CanReceiveTestMessage(CancellationToken ct = default) => Task.FromResult(false);
+}
+
 // test agent with custom DefineTools for tool discovery tests
 public interface IToolTestAgent : IAgent;
 
