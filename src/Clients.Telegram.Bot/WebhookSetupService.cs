@@ -1,5 +1,4 @@
 using System.Text.Json;
-using IAW.Core;
 using Microsoft.Extensions.Options;
 
 namespace TelegramBot;

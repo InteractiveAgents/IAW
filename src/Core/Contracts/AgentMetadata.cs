@@ -1,4 +1,4 @@
-namespace IAW.Core;
+namespace Core.Contracts;
 
 [GenerateSerializer]
 public record AgentMetadata(

@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
-namespace IAW.Core.Tools;
+namespace Core.Tools;
 
 // git-aware file enumeration + token-efficient comparison
 public static class WorkspaceFiles

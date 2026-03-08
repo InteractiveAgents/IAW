@@ -1,6 +1,6 @@
-using IAW.Core.Messages;
+using Core.Messages;
 
-namespace IAW.Core.Communication;
+namespace Core.Communication;
 
 public interface IStreamProducer<TEvent> where TEvent : IEvent
 {

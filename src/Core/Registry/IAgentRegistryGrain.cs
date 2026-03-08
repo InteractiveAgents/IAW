@@ -1,4 +1,4 @@
-namespace IAW.Core.Registry;
+namespace Core.Registry;
 
 public interface IAgentRegistryGrain : IGrainWithStringKey
 {

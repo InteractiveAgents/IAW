@@ -3,7 +3,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <IsPackable>true</IsPackable>
     <PackageId>IAW.Testing</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.1.0</Version>
     <Description>Testing framework for IAW agents -- one-line test inheritance</Description>
   </PropertyGroup>
 
@@ -11,16 +11,7 @@
     <ProjectReference Include="..\Core\Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="AspireAgentTest.cs" />
-    <Compile Remove="AgentTestV2.cs" />
-    <Compile Remove="AgentTestConfigurator.cs" />
-    <Compile Remove="WaitHelpers.cs" />
-    <Compile Remove="WaitHelpersV2.cs" />
-    <Compile Remove="Scenario\**" />
-  </ItemGroup>
-
-  <ItemGroup>
+<ItemGroup>
     <PackageReference Include="Microsoft.Orleans.Journaling" />
     <PackageReference Include="Microsoft.Orleans.Persistence.Memory" />
     <PackageReference Include="Microsoft.Orleans.Reminders" />

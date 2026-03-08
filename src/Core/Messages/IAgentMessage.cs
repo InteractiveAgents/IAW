@@ -1,4 +1,4 @@
-namespace IAW.Core.Messages;
+namespace Core.Messages;
 
 public interface IAgentMessage
 {

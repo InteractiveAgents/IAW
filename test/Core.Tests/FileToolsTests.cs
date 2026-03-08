@@ -1,4 +1,4 @@
-using IAW.Core.Tools;
+using Core.Tools;
 using Xunit;
 
 namespace IAW.Core.Tests;

@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace IAW.Core.Tools;
+namespace Core.Tools;
 
 public class WorkspaceTools(Func<string> getWorkspacePath, Action<string> setWorkspacePath)
 {

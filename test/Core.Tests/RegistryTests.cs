@@ -1,5 +1,5 @@
-using IAW.Core;
-using IAW.Core.Registry;
+using Core.Contracts;
+using Core.Registry;
 using IAW.Testing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;

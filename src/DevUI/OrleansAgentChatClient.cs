@@ -1,17 +1,17 @@
+using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using Core;
+using System.Text.RegularExpressions;
+using Core.Contracts;
 using Microsoft.Extensions.AI;
-using V3Agent = Core.IAgent;
+using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
+using IAgent = Core.Contracts.IAgent;
 
 namespace DevUI;
 
-sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgentChatClient> logger) : IChatClient
+sealed partial class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgentChatClient> logger) : IChatClient
 {
-    // V3 agents registered here get routed via Core.V3.IAgent.GetResponseAsync
-    static readonly HashSet<string> V3AgentIds = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "weather"
-    };
+    // Cache: grain ID → grain interface type (built once from loaded assemblies)
+    private static readonly ConcurrentDictionary<string, Type> GrainInterfaceMap = BuildGrainInterfaceMap();
 
     public ChatClientMetadata Metadata { get; } = new("OrleansAgentChatClient");
 
@@ -24,10 +24,22 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
 
         try
         {
-            if (V3AgentIds.Contains(agentId))
-                return await GetV3ResponseAsync(agentId, userText, cancellationToken);
+            var agent = ResolveAgent(agentId);
+            var output = await agent.GetResponse(userText, cancellationToken);
+            var response = new ChatResponse(new ChatMessage(ChatRole.Assistant, output));
 
-            return await GetV2ResponseAsync(agentId, userText, cancellationToken);
+            var usage = await agent.GetLastUsage(cancellationToken);
+            if (usage is not null)
+            {
+                response.Usage = new UsageDetails
+                {
+                    InputTokenCount = usage.InputTokens,
+                    OutputTokenCount = usage.OutputTokens,
+                    TotalTokenCount = usage.TotalTokens
+                };
+            }
+
+            return response;
         }
         catch (Exception ex)
         {
@@ -38,38 +50,6 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
         }
     }
 
-    async Task<ChatResponse> GetV3ResponseAsync(string agentId, string userText, CancellationToken ct)
-    {
-        var agent = cluster.GetGrain<V3Agent>(agentId);
-        var output = await agent.GetResponse(userText, ct);
-        return new ChatResponse(new ChatMessage(ChatRole.Assistant, output));
-    }
-
-    async Task<ChatResponse> GetV2ResponseAsync(string agentId, string userText, CancellationToken ct)
-    {
-        var agent = cluster.GetGrain<IAgent>(agentId, grainClassNamePrefix: "Samples.SmartAgent");
-        var reply = await agent.RespondAsync(
-            new AgentRequest { Input = userText },
-            ct);
-
-        var response = new ChatResponse(new ChatMessage(ChatRole.Assistant, reply.Output))
-        {
-            ModelId = reply.ModelId
-        };
-
-        if (reply.InputTokens.HasValue || reply.OutputTokens.HasValue || reply.TotalTokens.HasValue)
-        {
-            response.Usage = new UsageDetails
-            {
-                InputTokenCount = reply.InputTokens,
-                OutputTokenCount = reply.OutputTokens,
-                TotalTokenCount = reply.TotalTokens
-            };
-        }
-
-        return response;
-    }
-
     public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<ChatMessage> chatMessages,
         ChatOptions? options = null,
@@ -77,45 +57,90 @@ sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgent
     {
         var (agentId, userText) = ExtractAgentAndMessage(chatMessages, options);
 
-        if (V3AgentIds.Contains(agentId))
+        var agent = ResolveAgent(agentId);
+        await foreach (var chunk in agent.GetResponseStream(userText, cancellationToken))
         {
-            var agent = cluster.GetGrain<V3Agent>(agentId);
-            await foreach (var chunk in agent.GetResponseStream(userText, cancellationToken))
-            {
-                yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
-            }
-            yield break;
+            yield return new ChatResponseUpdate(ChatRole.Assistant, chunk);
         }
-
-        var response = await GetResponseAsync(chatMessages, options, cancellationToken);
-        var text = response.Messages.FirstOrDefault()?.Text ?? string.Empty;
-        yield return new ChatResponseUpdate(ChatRole.Assistant, text);
     }
 
     public object? GetService(Type serviceType, object? serviceKey = null) => null;
 
     public void Dispose() { }
 
+    private IAgent ResolveAgent(string agentId)
+    {
+        if (GrainInterfaceMap.TryGetValue(agentId, out var interfaceType))
+            return (IAgent)cluster.GetGrain(interfaceType, agentId);
+
+        // Fallback for dynamic agents
+        if (agentId.StartsWith("dynamic-"))
+            return cluster.GetGrain<IDynamicAgent>(agentId);
+
+        // Last resort: try first registered interface (personal-assistant)
+        logger.LogWarning("Unknown agent ID '{AgentId}', falling back to dynamic agent", agentId);
+        return cluster.GetGrain<IDynamicAgent>(agentId);
+    }
+
+    // Build a map of grain ID → grain interface type from loaded assemblies.
+    // Uses the same kebab-case convention as AgentDiscovery.
+    private static ConcurrentDictionary<string, Type> BuildGrainInterfaceMap()
+    {
+        var map = new ConcurrentDictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+
+        var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+            .Where(t => t.IsInterface
+                         && t != typeof(IAgent)
+                         && t != typeof(IDynamicAgent)
+                         && typeof(IAgent).IsAssignableFrom(t)
+                         && !t.IsGenericType);
+
+        foreach (var iface in agentInterfaces)
+        {
+            var name = iface.Name;
+            if (name.StartsWith('I') && name.Length > 1 && char.IsUpper(name[1]))
+                name = name[1..];
+
+            var grainId = ToKebabCase(name);
+            map.TryAdd(grainId, iface);
+        }
+
+        return map;
+    }
+
+    private static string ToKebabCase(string pascalCase)
+    {
+        var kebab = KebabRegex().Replace(pascalCase, "-$1").ToLowerInvariant();
+        return kebab.TrimStart('-');
+    }
+
+    [GeneratedRegex("(?<!^)([A-Z])")]
+    private static partial Regex KebabRegex();
+
+    // First line of instructions = agent grain ID for routing.
     static (string AgentId, string UserText) ExtractAgentAndMessage(
         IEnumerable<ChatMessage> messages, ChatOptions? options)
     {
-        var agentId = options?.Instructions?.Trim();
+        var raw = options?.Instructions?.Trim();
 
-        if (string.IsNullOrEmpty(agentId))
+        if (!string.IsNullOrEmpty(raw))
         {
-            var messageList = messages.ToList();
-            var systemMsg = messageList.FirstOrDefault(m => m.Role == ChatRole.System);
-            agentId = systemMsg?.Text?.Trim();
-
-            if (string.IsNullOrEmpty(agentId))
-                throw new InvalidOperationException(
-                    "Cannot determine agent ID — no Instructions or system message provided.");
-
-            var userMsg = messageList.LastOrDefault(m => m.Role == ChatRole.User);
-            return (agentId, userMsg?.Text ?? string.Empty);
+            var agentId = raw.Contains('\n') ? raw[..raw.IndexOf('\n')].Trim() : raw;
+            var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User);
+            return (agentId, userMessage?.Text ?? string.Empty);
         }
 
-        var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User);
-        return (agentId, userMessage?.Text ?? string.Empty);
+        var messageList = messages.ToList();
+        var systemMsg = messageList.FirstOrDefault(m => m.Role == ChatRole.System);
+        var sysText = systemMsg?.Text?.Trim();
+
+        if (string.IsNullOrEmpty(sysText))
+            throw new InvalidOperationException(
+                "Cannot determine agent ID — no Instructions or system message provided.");
+
+        var sysAgentId = sysText.Contains('\n') ? sysText[..sysText.IndexOf('\n')].Trim() : sysText;
+        var userMsg = messageList.LastOrDefault(m => m.Role == ChatRole.User);
+        return (sysAgentId, userMsg?.Text ?? string.Empty);
     }
 }

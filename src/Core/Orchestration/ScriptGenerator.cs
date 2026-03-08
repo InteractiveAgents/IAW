@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace IAW.Core.Orchestration;
+namespace Core.Orchestration;
 
 public static class ScriptGenerator
 {

@@ -1,4 +1,6 @@
-namespace IAW.Core.Registry;
+using Core.Contracts;
+
+namespace Core.Registry;
 
 [GenerateSerializer]
 public record AgentQuery(

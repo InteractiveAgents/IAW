@@ -1,6 +1,4 @@
-using Microsoft.Extensions.AI;
-
-namespace IAW.Core;
+namespace Core.Contracts;
 
 public interface IAgent : IGrainWithStringKey
 {
@@ -25,6 +23,9 @@ public interface IAgent : IGrainWithStringKey
     // Streams
     Task PublishToStream(AgentEvent evt, CancellationToken ct);
     Task<IReadOnlyList<string>> GetActiveSubscriptions(CancellationToken ct);
+
+    // Usage
+    Task<AgentUsage?> GetLastUsage(CancellationToken ct);
 
     // Lifecycle
     Task Cancel(CancellationToken ct);

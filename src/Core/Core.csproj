@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
     <PackageId>IAW.Core</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.1.0</Version>
     <Authors>IAW Contributors</Authors>
     <Description>Orleans-based multi-agent runtime with typed message system, streaming behaviors, and AI integration</Description>
     <PackageTags>orleans;agents;ai;distributed;streaming</PackageTags>

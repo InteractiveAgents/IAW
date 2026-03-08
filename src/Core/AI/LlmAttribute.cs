@@ -1,4 +1,4 @@
-namespace IAW.Core.AI;
+namespace Core.AI;
 
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Parameter)]
 public abstract class LlmAttributeBase : Attribute, IFacetMetadata

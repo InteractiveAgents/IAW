@@ -1,4 +1,4 @@
-namespace IAW.Core.Routing;
+namespace Core.Routing;
 
 public interface IAgentRouter : IGrainWithStringKey
 {

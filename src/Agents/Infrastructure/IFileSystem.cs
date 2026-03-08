@@ -1,5 +1,5 @@
-using IAW.Core;
-using IAW.Core.Tools;
+using Core.Contracts;
+using Core.Tools;
 
 namespace IAW.Agents.Infrastructure;
 

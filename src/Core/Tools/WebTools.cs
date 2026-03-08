@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Net;
 using System.Net.Sockets;
 
-namespace IAW.Core.Tools;
+namespace Core.Tools;
 
 public class WebTools(HttpClient httpClient)
 {

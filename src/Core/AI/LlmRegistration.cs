@@ -5,8 +5,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.ClientModel;
 using OllamaSharp;
+using Core.Observability;
 
-namespace IAW.Core.AI;
+namespace Core.AI;
 
 public static class LlmRegistration
 {
@@ -20,6 +21,10 @@ public static class LlmRegistration
             ? declaredModels
             : [.. LLMModel.All.Where(m => IsProviderConfigured(config, m.Provider))];
 
+        // Register attribute mappers for ALL known models so Orleans can construct grains
+        foreach (var model in LLMModel.All)
+            RegisterAttributeMapper(builder.Services, model);
+
         foreach (var model in modelsToRegister)
         {
             if (!IsProviderConfigured(config, model.Provider))
@@ -27,8 +32,6 @@ public static class LlmRegistration
 
             builder.Services.AddKeyedSingleton<IChatClient>(model.ServiceKey,
                 (sp, key) => CreateChatClient(sp, config, model));
-
-            RegisterAttributeMapper(builder.Services, model);
         }
 
         var firstConfigured = modelsToRegister
@@ -109,9 +112,9 @@ public static class LlmRegistration
         };
 
         return new ChatClientBuilder(innerClient)
+            .UseStreamingUsage()
             .UseOpenTelemetry(
                 loggerFactory: services.GetService<ILoggerFactory>(),
-                sourceName: "IAW",
                 configure: telemetry => telemetry.EnableSensitiveData = true)
             .Build(services);
     }

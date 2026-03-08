@@ -1,6 +1,6 @@
-using IAW.Core;
-using IAW.Core.Communication;
-using IAW.Core.Communication.Messages;
+using Core.Communication;
+using Core.Communication.Messages;
+using Core.Contracts;
 
 namespace IAW.Agents.CSharp;
 

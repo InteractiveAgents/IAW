@@ -1,4 +1,4 @@
-using IAW.Core;
+using Core.Contracts;
 
 namespace IAW.Agents.Review;
 

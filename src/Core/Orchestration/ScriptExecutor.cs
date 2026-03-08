@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace IAW.Core.Orchestration;
+namespace Core.Orchestration;
 
 public class ScriptExecutor
 {
@@ -13,9 +13,9 @@ public class ScriptExecutor
         var runDir = Path.Combine(workingDirectory, $"orchestration-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}");
         Directory.CreateDirectory(runDir);
 
-        var scaffoldResult = await RunProcessAsync("dotnet", "new console --name Script --force", runDir, ct);
-        if (scaffoldResult.ExitCode != 0)
-            return new ScriptResult(scaffoldResult.ExitCode, $"Scaffold failed: {scaffoldResult.Output}");
+        var (ExitCode, Output) = await RunProcessAsync("dotnet", "new console --name Script --force", runDir, ct);
+        if (ExitCode != 0)
+            return new ScriptResult(ExitCode, $"Scaffold failed: {Output}");
 
         var projectDir = Path.Combine(runDir, "Script");
         var programPath = Path.Combine(projectDir, "Program.cs");

@@ -1,4 +1,4 @@
-using IAW.Core.Messages;
+using Core.Messages;
 
 namespace IAW.Agents.Messages;
 

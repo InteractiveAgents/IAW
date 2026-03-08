@@ -1,29 +1,46 @@
-using Core;
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text.Json;
+using Core.Contracts;
 
-internal sealed class AgentTools(IClusterClient orleans)
+internal sealed partial class AgentTools(IClusterClient orleans)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    private static readonly string[] WellKnownAgentIds =
-    [
-        "personal-assistant", "roslyn", "dotnet", "nuget", "github",
-        "reviewer", "self-improvement", "fs", "shell", "git",
-        "build", "knowledge", "user", "planning", "notification"
-    ];
+    // Cache: grain ID → grain interface type (built once from loaded assemblies)
+    private static readonly ConcurrentDictionary<string, Type> GrainInterfaceMap = BuildGrainInterfaceMap();
+
+    private IAgent ResolveAgent(string agentId)
+    {
+        if (GrainInterfaceMap.TryGetValue(agentId, out var interfaceType))
+            return (IAgent)orleans.GetGrain(interfaceType, agentId);
+
+        if (agentId.StartsWith("dynamic-"))
+            return orleans.GetGrain<IDynamicAgent>(agentId);
+
+        throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {string.Join(", ", GrainInterfaceMap.Keys)}");
+    }
 
     [McpServerTool(Name = "agent_list_all")]
-    [Description("List all registered agents with their profile and capabilities.")]
+    [Description("List all registered agents with their metadata and capabilities.")]
     public async Task<string> AgentListAll(CancellationToken ct)
     {
-        var results = new List<AgentProfile>();
-        foreach (var id in WellKnownAgentIds)
+        var results = new List<object>();
+        foreach (var (id, _) in GrainInterfaceMap)
         {
-            var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:id);
-            var profile = await agent.GetProfileAsync(ct);
-            results.Add(profile);
+            try
+            {
+                var agent = ResolveAgent(id);
+                var metadata = await agent.GetMetadata(ct);
+                var capabilities = await agent.GetCapabilities(ct);
+                results.Add(new { id, metadata, capabilities });
+            }
+            catch
+            {
+                results.Add(new { id, error = "Agent not available" });
+            }
         }
         return JsonSerializer.Serialize(results, JsonOptions);
     }
@@ -34,37 +51,35 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("The message to send to the assistant")] string message,
         CancellationToken ct)
     {
-        var assistant = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"personal-assistant");
-        var request = new AgentRequest { Input = message };
-        var reply = await assistant.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { reply.Output, reply.ModelId, reply.TimestampUtc }, JsonOptions);
+        var assistant = ResolveAgent("personal-assistant");
+        var response = await assistant.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { agentId = "personal-assistant", response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_send_message")]
     [Description("Send a message to any agent by ID and get a response.")]
     public async Task<string> AgentSendMessage(
-        [Description("The agent grain ID (e.g. 'roslyn', 'shell', 'github')")] string agentId,
+        [Description("The agent grain ID (e.g. 'roslyn', 'shell', 'git-hub')")] string agentId,
         [Description("The message to send")] string message,
         CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var request = new AgentRequest { Input = message };
-        var reply = await agent.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { agentId, reply.Output, reply.ModelId, reply.TimestampUtc }, JsonOptions);
+        var agent = ResolveAgent(agentId);
+        var response = await agent.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { agentId, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_get_status")]
-    [Description("Get an agent's profile and recent activity.")]
+    [Description("Get an agent's metadata, capabilities, and recent events.")]
     public async Task<string> AgentGetStatus(
         [Description("The agent grain ID")] string agentId,
         CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var profile = await agent.GetProfileAsync(ct);
-        var recentMessages = await agent.QueryMessagesAsync(
-            new AgentMessageQuery { Limit = 5, Descending = true }, ct);
-        var schedule = await agent.GetScheduleStatusAsync(ct);
-        return JsonSerializer.Serialize(new { profile, recentMessages, schedule }, JsonOptions);
+        var agent = ResolveAgent(agentId);
+        var metadata = await agent.GetMetadata(ct);
+        var capabilities = await agent.GetCapabilities(ct);
+        var allEvents = await agent.GetEventLog(ct);
+        var recentEvents = allEvents.TakeLast(5).ToList();
+        return JsonSerializer.Serialize(new { metadata, capabilities, recentEvents }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_assign_task")]
@@ -74,14 +89,10 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Priority: low, medium, high")] string priority = "medium",
         CancellationToken ct = default)
     {
-        var pa = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"personal-assistant");
-        var request = new AgentRequest
-        {
-            Input = task,
-            Metadata = new() { ["priority"] = priority, ["type"] = "task" }
-        };
-        var reply = await pa.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { task, priority, reply.Output }, JsonOptions);
+        var assistant = ResolveAgent("personal-assistant");
+        var prompt = $"[TASK] Priority: {priority}\n\n{task}";
+        var response = await assistant.GetResponse(prompt, ct);
+        return JsonSerializer.Serialize(new { task, priority, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_get_events")]
@@ -91,26 +102,27 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Maximum number of events to return")] int limit = 20,
         CancellationToken ct = default)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var events = await agent.QueryEventsAsync(
-            new AgentEventQuery { Limit = limit, Descending = true }, ct);
+        var agent = ResolveAgent(agentId);
+        var allEvents = await agent.GetEventLog(ct);
+        var events = allEvents.TakeLast(limit).ToList();
         return JsonSerializer.Serialize(events, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_get_metrics")]
-    [Description("Get agent performance metrics including message count, event count, and schedule status.")]
+    [Description("Get agent performance metrics including metadata, event count, history count, and capabilities.")]
     public async Task<string> AgentGetMetrics(
         [Description("The agent grain ID")] string agentId,
         CancellationToken ct = default)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var profile = await agent.GetProfileAsync(ct);
-        var messageCount = (await agent.QueryMessagesAsync(ct: ct)).Count;
-        var eventCount = (await agent.QueryEventsAsync(ct: ct)).Count;
-        var schedule = await agent.GetScheduleStatusAsync(ct);
+        var agent = ResolveAgent(agentId);
+        var metadata = await agent.GetMetadata(ct);
+        var capabilities = await agent.GetCapabilities(ct);
+        var eventCount = (await agent.GetEventLog(ct)).Count;
+        var historyCount = (await agent.GetHistory(ct)).Count;
         return JsonSerializer.Serialize(new
         {
-            profile.Id, profile.DisplayName, messageCount, eventCount, schedule
+            metadata.AgentType, metadata.DisplayName, metadata.Description,
+            eventCount, historyCount, capabilities
         }, JsonOptions);
     }
 
@@ -118,12 +130,43 @@ internal sealed class AgentTools(IClusterClient orleans)
     [Description("Trigger self-improvement analysis across the agent team.")]
     public async Task<string> AgentTriggerSelfImprovement(CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"self-improvement");
-        var request = new AgentRequest
-        {
-            Input = "Analyze recent agent interactions and propose improvements"
-        };
-        var reply = await agent.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { reply.Output, reply.TimestampUtc }, JsonOptions);
+        var agent = ResolveAgent("self-improvement");
+        var response = await agent.GetResponse(
+            "Analyze recent agent interactions and propose improvements", ct);
+        return JsonSerializer.Serialize(new { response }, JsonOptions);
     }
+
+    private static ConcurrentDictionary<string, Type> BuildGrainInterfaceMap()
+    {
+        var map = new ConcurrentDictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+
+        var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+            .Where(t => t.IsInterface
+                         && t != typeof(IAgent)
+                         && t != typeof(IDynamicAgent)
+                         && typeof(IAgent).IsAssignableFrom(t)
+                         && !t.IsGenericType);
+
+        foreach (var iface in agentInterfaces)
+        {
+            var name = iface.Name;
+            if (name.StartsWith('I') && name.Length > 1 && char.IsUpper(name[1]))
+                name = name[1..];
+
+            var grainId = ToKebabCase(name);
+            map.TryAdd(grainId, iface);
+        }
+
+        return map;
+    }
+
+    private static string ToKebabCase(string pascalCase)
+    {
+        var kebab = KebabRegex().Replace(pascalCase, "-$1").ToLowerInvariant();
+        return kebab.TrimStart('-');
+    }
+
+    [GeneratedRegex("(?<!^)([A-Z])")]
+    private static partial Regex KebabRegex();
 }

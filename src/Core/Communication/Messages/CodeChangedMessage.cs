@@ -1,6 +1,6 @@
-using IAW.Core.Messages;
+using Core.Messages;
 
-namespace IAW.Core.Communication.Messages;
+namespace Core.Communication.Messages;
 
 [GenerateSerializer]
 public record CodeChangedMessage(

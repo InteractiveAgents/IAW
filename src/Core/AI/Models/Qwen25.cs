@@ -1,4 +1,4 @@
-namespace IAW.Core.AI.Models;
+namespace Core.AI.Models;
 
 public sealed class Qwen25 : LLMModel
 {

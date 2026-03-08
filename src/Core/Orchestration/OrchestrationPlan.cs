@@ -1,4 +1,4 @@
-namespace IAW.Core.Orchestration;
+namespace Core.Orchestration;
 
 [GenerateSerializer]
 public record OrchestrationPlan(

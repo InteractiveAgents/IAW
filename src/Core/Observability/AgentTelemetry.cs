@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
-namespace IAW.Core.Observability;
+namespace Core.Observability;
 
 public static class AgentTelemetry
 {
@@ -21,4 +21,8 @@ public static class AgentTelemetry
         "agents.messages.sent", "{message}", "Messages processed by agents");
     public static readonly Histogram<double> EventHandleDuration = Meter.CreateHistogram<double>(
         "agents.events.handle_duration", "s", "Event handling duration");
+    public static readonly Counter<long> ConversationErrors = Meter.CreateCounter<long>(
+        "agents.conversations.errors", "{error}", "Conversation errors");
+    public static readonly Histogram<double> ConversationDuration = Meter.CreateHistogram<double>(
+        "agents.conversations.duration", "s", "Agent conversation turn duration");
 }

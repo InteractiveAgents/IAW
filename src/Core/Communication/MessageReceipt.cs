@@ -1,4 +1,4 @@
-namespace IAW.Core.Communication;
+namespace Core.Communication;
 
 [GenerateSerializer]
 public record MessageReceipt(

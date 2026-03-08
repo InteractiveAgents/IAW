@@ -1,4 +1,4 @@
-using IAW.Core.AI;
+using Core.AI;
 using Microsoft.Extensions.Configuration;
 using Octokit;
 

@@ -14,5 +14,9 @@ jobs:
           dotnet-quality: preview
       - run: dotnet build IAW.slnx -c Release
       - run: dotnet test IAW.slnx -c Release
-      - run: dotnet pack src/Core/Core.csproj -c Release -o ./nupkgs
+      - run: |
+          dotnet pack src/Core/Core.csproj -c Release -o ./nupkgs
+          dotnet pack src/Agents/Agents.csproj -c Release -o ./nupkgs
+          dotnet pack src/Agents.CSharp/Agents.CSharp.csproj -c Release -o ./nupkgs
+          dotnet pack src/IAW.Testing/IAW.Testing.csproj -c Release -o ./nupkgs
       - run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}

@@ -5,6 +5,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
+    .WithLLM<Sonnet46>()
     .WithLLM<GitHubGpt4oMini>()
     .WithLLM<Qwen25>()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
@@ -26,28 +27,30 @@ builder.AddProject<Projects.DevUI>("devui")
     .WithEnvironment("Orleans__PrimaryGateway", samples.GetEndpoint("orleans-gateway"))
     .WaitFor(samples);
 
-var ngrokAuthToken = builder.AddParameter("ngrok-auth-token", secret: true);
-var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
+// TODO: Re-enable after TelegramBot is migrated to V3 API
+// var ngrokAuthToken = builder.AddParameter("ngrok-auth-token", secret: true);
+// var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
+//
+// var qdrant = builder.AddQdrant("qdrant")
+//     .WithLifetime(ContainerLifetime.Persistent);
+//
+// var botToken = builder.AddParameter("bot-token", secret: true);
+// var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
+//     .WithReference(iaw)
+//     .WithReference(qdrant)
+//     .WithLLMEnvironment(builder)
+//     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; })
+//     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
+//     .WithEnvironment("Telegram__BotToken", botToken)
+//     .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
+//     .WaitFor(qdrant);
+//
+// ngrok.WithTunnelEndpoint(telegramBot, "http");
 
-var qdrant = builder.AddQdrant("qdrant")
-    .WithLifetime(ContainerLifetime.Persistent);
-
-var botToken = builder.AddParameter("bot-token", secret: true);
-var telegramBot = builder.AddProject<Projects.TelegramBot>("telegram-bot")
-    .WithReference(iaw)
-    .WithReference(qdrant)
-    .WithLLMEnvironment(builder)
-    .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30001; })
-    .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11112; })
-    .WithEnvironment("Telegram__BotToken", botToken)
-    .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
-    .WaitFor(qdrant);
-
-ngrok.WithTunnelEndpoint(telegramBot, "http");
-
-builder.AddViteApp("website", "../../website")
-    .WithNpm()
-    .WithExternalHttpEndpoints();
+// TODO: Re-enable when website directory exists
+// builder.AddViteApp("website", "../../website")
+//     .WithNpm()
+//     .WithExternalHttpEndpoints();
 
 builder.AddProject<Projects.MCP>("mcp")
     .WithReference(iaw.AsClient())

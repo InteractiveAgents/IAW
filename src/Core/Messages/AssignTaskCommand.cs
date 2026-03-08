@@ -1,4 +1,4 @@
-namespace IAW.Core.Messages;
+namespace Core.Messages;
 
 [GenerateSerializer]
 public record AssignTaskCommand(

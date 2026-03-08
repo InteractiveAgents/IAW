@@ -7,6 +7,7 @@
     <UserSecretsId>b0a0e2e3-5dd4-416c-b19d-7461e3168bcd</UserSecretsId>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
     <DockerfileContext>..\..</DockerfileContext>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,8 +22,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
+    <ProjectReference Include="..\..\src\Agents\Agents.csproj" />
+    <ProjectReference Include="..\..\src\Agents.CSharp\Agents.CSharp.csproj" />
     <ProjectReference Include="..\..\src\IAW.ServiceDefaults\ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>
-

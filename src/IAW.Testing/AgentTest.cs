@@ -1,6 +1,7 @@
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
 using IAW.Core;
-using IAW.Core.AI;
-using IAW.Core.AI.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

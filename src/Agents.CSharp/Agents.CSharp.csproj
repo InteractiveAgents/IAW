@@ -7,7 +7,7 @@
     <LangVersion>preview</LangVersion>
     <RootNamespace>IAW.Agents.CSharp</RootNamespace>
     <PackageId>IAW.Agents.CSharp</PackageId>
-    <Version>0.0.1</Version>
+    <Version>0.1.0</Version>
     <Description>C# development agents (Roslyn, DotNet, NuGet, GitHub) for IAW</Description>
     <NoWarn>$(NoWarn);NU1603</NoWarn>
   </PropertyGroup>

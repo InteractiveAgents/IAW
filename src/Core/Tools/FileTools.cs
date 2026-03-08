@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Text.RegularExpressions;
 
-namespace IAW.Core.Tools;
+namespace Core.Tools;
 
 public class FileTools(Func<string> getWorkspacePath)
 {

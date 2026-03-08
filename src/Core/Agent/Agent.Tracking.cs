@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using Core.Contracts;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 

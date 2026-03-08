@@ -1,6 +1,6 @@
-using IAW.Core;
+using Core.Contracts;
 
-namespace IAW.Core.Registry;
+namespace Core.Registry;
 
 [GenerateSerializer]
 public record AgentRegistration(

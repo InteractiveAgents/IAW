@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
-namespace IAW.Core.Tools;
+namespace Core.Tools;
 
 public class ShellTools(Func<string> getWorkspacePath)
 {

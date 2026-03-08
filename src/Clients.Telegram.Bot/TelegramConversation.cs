@@ -1,7 +1,4 @@
 using IAW.Core;
-using Core.AI;
-using Core.AI.Models;
-using Core.Routing;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 using System.Diagnostics;
@@ -15,7 +12,6 @@ using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
 using Telegram.BotAPI.UpdatingMessages;
 using TelegramBot.Services;
-using Core;
 
 namespace TelegramBot;
 

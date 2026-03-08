@@ -1,5 +1,5 @@
-using IAW.Core;
 using IAW.Agents.CSharp.Models;
+using Core.Contracts;
 
 namespace IAW.Agents.CSharp;
 

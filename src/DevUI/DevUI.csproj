@@ -4,6 +4,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
     <UserSecretsId>f5a0e82c-0c66-43cc-8b0e-a36b06f4976a</UserSecretsId>
   </PropertyGroup>
 
@@ -19,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Agents\Agents.csproj" />
+    <ProjectReference Include="..\Agents.CSharp\Agents.CSharp.csproj" />
     <ProjectReference Include="..\IAW.ServiceDefaults\ServiceDefaults.csproj" />
   </ItemGroup>
 
