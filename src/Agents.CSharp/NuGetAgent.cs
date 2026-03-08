@@ -52,7 +52,11 @@ public class NuGetAgent(
 
     public override async Task ReceiveReminder(string reminderName, TickStatus status)
     {
-        if (reminderName != "check-packages") return;
+        if (reminderName != "check-packages")
+        {
+            await base.ReceiveReminder(reminderName, status);
+            return;
+        }
 
         if (!State.TryGetValue("props-path", out var pathEntry))
             return;

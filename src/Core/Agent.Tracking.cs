@@ -78,8 +78,8 @@ public abstract partial class Agent : IRemindable
     {
         var id = Guid.NewGuid().ToString("N")[..8];
         var interval = TimeSpan.FromMinutes(intervalMinutes);
-        trackingItems[id] = new TrackingItem(id, description, interval, DateTimeOffset.UtcNow, null, null);
-        await WriteStateAsync(AgentCancellation);
+        var item = new TrackingItem(id, description, interval, DateTimeOffset.UtcNow, null, null);
+        await StartTrackingAsync(id, item, interval, AgentCancellation);
         return $"Tracking started with ID: {id} — checking every {intervalMinutes} minutes";
     }
 
@@ -87,8 +87,7 @@ public abstract partial class Agent : IRemindable
     private async Task<string> StopTracking([Description("Tracking ID to stop")] string trackingId)
     {
         if (!trackingItems.ContainsKey(trackingId)) return $"Tracking '{trackingId}' not found";
-        trackingItems.Remove(trackingId);
-        await WriteStateAsync(AgentCancellation);
+        await StopTrackingAsync(trackingId, AgentCancellation);
         return $"Tracking '{trackingId}' stopped";
     }
 

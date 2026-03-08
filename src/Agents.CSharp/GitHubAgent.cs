@@ -65,7 +65,11 @@ public class GitHubAgent(
 
     public override async Task ReceiveReminder(string reminderName, TickStatus status)
     {
-        if (reminderName != "check-releases") return;
+        if (reminderName != "check-releases")
+        {
+            await base.ReceiveReminder(reminderName, status);
+            return;
+        }
 
         if (!State.TryGetValue("repo", out var repoEntry))
             return;

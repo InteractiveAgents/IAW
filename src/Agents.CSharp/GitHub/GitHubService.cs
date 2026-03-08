@@ -4,7 +4,7 @@ using Octokit;
 
 namespace IAW.Agents.CSharp.GitHub;
 
-public class GitHubService : IGitHub
+public class GitHubService : IGitHubService
 {
     public IGitHubClient Client { get; }
     public bool IsConfigured { get; }
