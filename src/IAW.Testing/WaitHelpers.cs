@@ -1,4 +1,4 @@
-using Core;
+using IAW.Core;
 
 namespace IAW.Testing;
 

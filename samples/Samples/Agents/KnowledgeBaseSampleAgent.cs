@@ -1,18 +1,19 @@
 using System.ComponentModel;
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-namespace IAW.Core.Samples;
+namespace IAW.Samples.Agents;
 
-public interface IKnowledgeBaseAgent : IAgent;
+public interface IKnowledgeBaseSampleAgent : IAgent;
 
-public class KnowledgeBaseAgent(
+public class KnowledgeBaseSampleAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
     [Memory("history")] IDurableList<ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IKnowledgeBaseAgent
+    : Agent(state, eventLog, chatClient, history, trackingItems), IKnowledgeBaseSampleAgent
 {
     protected override string Instructions =>
         "You are a knowledge base agent. Answer questions using the indexed documents available through your tools.";

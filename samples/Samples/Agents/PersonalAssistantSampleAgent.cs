@@ -1,20 +1,21 @@
+using IAW.Core;
 using IAW.Core.Communication;
 using IAW.Core.Messages;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-namespace IAW.Core.Samples;
+namespace IAW.Samples.Agents;
 
-public interface IPersonalAssistantAgent : IAgent;
+public interface IPersonalAssistantSampleAgent : IAgent;
 
-public class PersonalAssistantAgent(
+public class PersonalAssistantSampleAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
     [Memory("history")] IDurableList<ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems),
-      IPersonalAssistantAgent,
+      IPersonalAssistantSampleAgent,
       IReceiver<ProgressNotification>,
       IBroadcaster<AssignTaskCommand>
 {

@@ -1,11 +1,12 @@
+using IAW.Core;
 using IAW.Core.Communication;
 using IAW.Core.Messages;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-namespace IAW.Core.Samples;
+namespace IAW.Samples.Agents;
 
-public interface IInfraMonitorAgent : IAgent, ITrackableAgent;
+public interface IInfraMonitorAgent : IAgent;
 
 public class InfraMonitorAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
@@ -25,17 +26,5 @@ public class InfraMonitorAgent(
     public async Task PublishToStreamAsync(HealthCheckEvent evt, CancellationToken ct = default)
     {
         await PublishTypedAsync(evt, ct);
-    }
-
-    protected override async Task OnTrackingDueAsync(TrackingItem item, CancellationToken ct)
-    {
-        await base.OnTrackingDueAsync(item, ct);
-        await PublishToStreamAsync(new HealthCheckEvent(
-            this.GetPrimaryKeyString(),
-            Guid.NewGuid().ToString(),
-            DateTimeOffset.UtcNow,
-            item.Description,
-            true,
-            null), ct);
     }
 }

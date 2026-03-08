@@ -8,7 +8,7 @@ namespace IAW.Core.Tests;
 
 public class ArchitectureGuardTests
 {
-    private static readonly Assembly V3Assembly = typeof(Agent).Assembly;
+    private static readonly Assembly CoreAssembly = typeof(Agent).Assembly;
 
     [Fact]
     public void Agent_ExtendsDurableGrain()
@@ -39,8 +39,8 @@ public class ArchitectureGuardTests
     [Fact]
     public void AllMessageTypes_ImplementIAgentMessage()
     {
-        var messageTypes = V3Assembly.GetTypes()
-            .Where(t => t.Namespace == "Core.V3.Messages" && !t.IsInterface && !t.IsAbstract);
+        var messageTypes = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace == "IAW.Core.Messages" && !t.IsInterface && !t.IsAbstract);
 
         Assert.NotEmpty(messageTypes);
         foreach (var type in messageTypes)
@@ -50,8 +50,8 @@ public class ArchitectureGuardTests
     [Fact]
     public void AllEventTypes_ImplementIEvent()
     {
-        var eventTypes = V3Assembly.GetTypes()
-            .Where(t => t.Namespace == "Core.V3.Messages" && t.Name.EndsWith("Event") && !t.IsInterface);
+        var eventTypes = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace == "IAW.Core.Messages" && t.Name.EndsWith("Event") && !t.IsInterface);
 
         Assert.NotEmpty(eventTypes);
         foreach (var type in eventTypes)
@@ -61,8 +61,8 @@ public class ArchitectureGuardTests
     [Fact]
     public void AllCommandTypes_ImplementICommand()
     {
-        var commandTypes = V3Assembly.GetTypes()
-            .Where(t => t.Namespace == "Core.V3.Messages" && t.Name.EndsWith("Command") && !t.IsInterface);
+        var commandTypes = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace == "IAW.Core.Messages" && t.Name.EndsWith("Command") && !t.IsInterface);
 
         Assert.NotEmpty(commandTypes);
         foreach (var type in commandTypes)
@@ -72,8 +72,8 @@ public class ArchitectureGuardTests
     [Fact]
     public void AllNotificationTypes_ImplementINotification()
     {
-        var notifTypes = V3Assembly.GetTypes()
-            .Where(t => t.Namespace == "Core.V3.Messages" && t.Name.EndsWith("Notification") && !t.IsInterface);
+        var notifTypes = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace == "IAW.Core.Messages" && t.Name.EndsWith("Notification") && !t.IsInterface);
 
         Assert.NotEmpty(notifTypes);
         foreach (var type in notifTypes)
@@ -83,16 +83,15 @@ public class ArchitectureGuardTests
     [Fact]
     public void AllSerializableTypes_HaveGenerateSerializerAttribute()
     {
-        var serializableTypes = V3Assembly.GetTypes()
-            .Where(t => t.Namespace is not null && t.Namespace.StartsWith("Core.V3"))
+        var serializableTypes = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace is not null && t.Namespace.StartsWith("IAW.Core"))
             .Where(t => !t.IsInterface && !t.IsAbstract && !t.IsEnum)
             .Where(t => t.GetCustomAttribute<GenerateSerializerAttribute>() is not null);
 
         Assert.NotEmpty(serializableTypes);
 
-        // All record types in Messages namespace must have it
-        var messageRecords = V3Assembly.GetTypes()
-            .Where(t => t.Namespace == "Core.V3.Messages" && !t.IsInterface && !t.IsAbstract);
+        var messageRecords = CoreAssembly.GetTypes()
+            .Where(t => t.Namespace == "IAW.Core.Messages" && !t.IsInterface && !t.IsAbstract);
 
         foreach (var type in messageRecords)
             Assert.NotNull(type.GetCustomAttribute<GenerateSerializerAttribute>());
@@ -132,28 +131,60 @@ public class ArchitectureGuardTests
     }
 
     [Fact]
-    public void NoV3SourceFiles_ContainXmlDocSummary()
+    public void NoCoreSourceFiles_ContainXmlDocSummary()
     {
-        var v3Root = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "src", "Core", "V3");
-        v3Root = Path.GetFullPath(v3Root);
+        var coreRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "src", "Core");
+        coreRoot = Path.GetFullPath(coreRoot);
 
-        if (!Directory.Exists(v3Root))
-        {
-            // Running from a different location; skip gracefully
+        if (!Directory.Exists(coreRoot))
             return;
-        }
 
         var violations = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(v3Root, "*.cs", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(coreRoot, "*.cs", SearchOption.AllDirectories))
         {
+            if (file.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar)
+                || file.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+                continue;
+
             var lines = File.ReadAllLines(file);
             for (var i = 0; i < lines.Length; i++)
             {
                 if (lines[i].TrimStart().StartsWith("/// <summary>"))
-                    violations.Add($"{Path.GetRelativePath(v3Root, file)}:{i + 1}");
+                    violations.Add($"{Path.GetRelativePath(coreRoot, file)}:{i + 1}");
             }
         }
 
         Assert.True(violations.Count == 0, $"XML doc comments found in:\n{string.Join("\n", violations)}");
+    }
+
+    [Fact]
+    public void AllAgentsInIAWAgents_ExtendAgent()
+    {
+        var agentsAssembly = typeof(IAW.Agents.Infrastructure.FileSystemAgent).Assembly;
+        var agentTypes = agentsAssembly.GetTypes()
+            .Where(t => !t.IsAbstract && !t.IsInterface && typeof(Agent).IsAssignableFrom(t));
+
+        Assert.NotEmpty(agentTypes);
+        foreach (var type in agentTypes)
+            Assert.True(typeof(Agent).IsAssignableFrom(type), $"{type.FullName} should extend Agent");
+    }
+
+    [Fact]
+    public void NoV1OrV2TypesExist()
+    {
+        var allAssemblies = new[]
+        {
+            typeof(Agent).Assembly,
+            typeof(IAW.Agents.Infrastructure.FileSystemAgent).Assembly
+        };
+
+        foreach (var assembly in allAssemblies)
+        {
+            var legacyTypes = assembly.GetTypes()
+                .Where(t => t.Namespace is not null
+                    && (t.Namespace.Contains(".V1") || t.Namespace.Contains(".V2")));
+
+            Assert.Empty(legacyTypes);
+        }
     }
 }

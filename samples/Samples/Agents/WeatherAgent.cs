@@ -1,10 +1,9 @@
 using System.ComponentModel;
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
-using System.Linq;
-using System.Collections.Generic;
 
-namespace IAW.Core;
+namespace IAW.Samples.Agents;
 
 public interface IWeatherAgent : IAgent;
 
@@ -34,7 +33,7 @@ public class WeatherAgent(
         Humidity: Random.Shared.Next(20, 100));
 
     [Description("Gets a 3-day weather forecast for a given city")]
-    static List<ForecastDay> GetForecast(string city) => 
+    static List<ForecastDay> GetForecast(string city) =>
     [.. Enumerable.Range(1, 3)
         .Select(i => new ForecastDay(
             Date: DateOnly.FromDateTime(DateTime.Now.AddDays(i)),

@@ -1,10 +1,11 @@
+using IAW.Core;
 using IAW.Core.Communication;
 using IAW.Core.Messages;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 using Orleans.Streams;
 
-namespace IAW.Core.Samples;
+namespace IAW.Samples.Agents;
 
 public interface ICIPipelineAgent : IAgent;
 

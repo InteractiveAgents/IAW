@@ -8,14 +8,11 @@ namespace IAW.Core;
 
 public abstract partial class Agent
 {
-    public virtual Task HandleEventAsync(AgentEvent agentEvent, CancellationToken ct = default)
+    public virtual Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
         => Task.CompletedTask;
 
-    public Task<IReadOnlyList<AgentEvent>> GetEventLogAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AgentEvent>>(eventLog.ToList());
-
-    public virtual Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-        => HandleEventAsync(agentEvent, ct);
 
     public Task PublishAsync(string eventName, Dictionary<string, object> payload)
         => PublishAsync(eventName, payload, default);

@@ -1,4 +1,6 @@
 using IAW.Core;
+using IAW.Core.AI;
+using IAW.Core.AI.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,7 +23,33 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();
 
-        siloBuilder.Services.AddSingleton<IChatClient>(new MockChatClient().ReturnsText("mock-response"));
+        LLMModel.EnsureAllModelsLoaded();
+        var mockClient = new MockChatClient().ReturnsText("mock-response");
+
+        siloBuilder.Services.AddSingleton<IChatClient>(mockClient);
+        siloBuilder.Services.AddHttpClient();
+        siloBuilder.Services.AddSingleton<Octokit.IGitHubClient>(
+            new Octokit.GitHubClient(new Octokit.ProductHeaderValue("iaw-test")));
+
+        RegisterLlmMapper<Claude45Haiku>(siloBuilder, mockClient);
+        RegisterLlmMapper<Sonnet46>(siloBuilder, mockClient);
+        RegisterLlmMapper<Gpt4o>(siloBuilder, mockClient);
+        RegisterLlmMapper<Gpt4oMini>(siloBuilder, mockClient);
+        RegisterLlmMapper<GitHubGpt4oMini>(siloBuilder, mockClient);
+        RegisterLlmMapper<GitHubGpt4o>(siloBuilder, mockClient);
+        RegisterLlmMapper<Llama32>(siloBuilder, mockClient);
+        RegisterLlmMapper<Qwen25>(siloBuilder, mockClient);
+    }
+
+    static void RegisterLlmMapper<TModel>(ISiloBuilder siloBuilder, IChatClient mockClient)
+        where TModel : LLMModel
+    {
+        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<LlmAttribute<TModel>>,
+            LlmAttributeMapper<TModel>>();
+
+        var model = LLMModel.All.FirstOrDefault(m => m is TModel);
+        if (model is not null)
+            siloBuilder.Services.AddKeyedSingleton<IChatClient>(model.ServiceKey, mockClient);
     }
 }
 
@@ -104,7 +132,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     {
         var agent = Agent(UniqueId("v3-clear"));
         await agent.GetResponse("Hello", CancellationToken.None);
-        await agent.ClearHistoryAsync(CancellationToken.None);
+        await agent.ClearHistory(CancellationToken.None);
         var history = await agent.GetHistory(CancellationToken.None);
         Assert.Empty(history);
     }
@@ -125,8 +153,8 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_State_SetWorkspace_PersistsInState()
     {
         var agent = Agent(UniqueId("v3-ws"));
-        await agent.SetWorkspaceAsync("/tmp/test", CancellationToken.None);
-        var agentState = await agent.GetStateAsync(CancellationToken.None);
+        await agent.SetWorkspace("/tmp/test", CancellationToken.None);
+        var agentState = await agent.GetState(CancellationToken.None);
         Assert.True(agentState.Entries.ContainsKey("workspace-path"));
         Assert.Equal("/tmp/test", agentState.Entries["workspace-path"].Value);
     }
@@ -135,7 +163,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_State_GetState_InitiallyEmpty()
     {
         var agent = Agent(UniqueId("v3-state-empty"));
-        var agentState = await agent.GetStateAsync(CancellationToken.None);
+        var agentState = await agent.GetState(CancellationToken.None);
         Assert.NotNull(agentState);
     }
 
@@ -143,9 +171,9 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_State_MultipleUpdates_LastValueWins()
     {
         var agent = Agent(UniqueId("v3-state-multi"));
-        await agent.SetWorkspaceAsync("/first", CancellationToken.None);
-        await agent.SetWorkspaceAsync("/second", CancellationToken.None);
-        var agentState = await agent.GetStateAsync(CancellationToken.None);
+        await agent.SetWorkspace("/first", CancellationToken.None);
+        await agent.SetWorkspace("/second", CancellationToken.None);
+        var agentState = await agent.GetState(CancellationToken.None);
         Assert.Equal("/second", agentState.Entries["workspace-path"].Value);
     }
 
@@ -155,7 +183,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Metadata_AgentType_IsNotEmpty()
     {
         var agent = Agent(UniqueId("v3-type"));
-        var metadata = await agent.GetMetadataAsync(CancellationToken.None);
+        var metadata = await agent.GetMetadata(CancellationToken.None);
         Assert.False(string.IsNullOrWhiteSpace(metadata.AgentType));
     }
 
@@ -163,7 +191,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Metadata_DisplayName_IsNotEmpty()
     {
         var agent = Agent(UniqueId("v3-display"));
-        var metadata = await agent.GetMetadataAsync(CancellationToken.None);
+        var metadata = await agent.GetMetadata(CancellationToken.None);
         Assert.False(string.IsNullOrWhiteSpace(metadata.DisplayName));
     }
 
@@ -171,7 +199,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Metadata_Kind_IsValid()
     {
         var agent = Agent(UniqueId("v3-kind"));
-        var metadata = await agent.GetMetadataAsync(CancellationToken.None);
+        var metadata = await agent.GetMetadata(CancellationToken.None);
         Assert.True(Enum.IsDefined(metadata.Kind));
     }
 
@@ -181,7 +209,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Capabilities_HasMemory_IsTrue()
     {
         var agent = Agent(UniqueId("v3-cap-mem"));
-        var caps = await agent.GetCapabilitiesAsync(CancellationToken.None);
+        var caps = await agent.GetCapabilities(CancellationToken.None);
         Assert.True(caps.HasMemory);
     }
 
@@ -189,7 +217,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Capabilities_IsCancellable_IsTrue()
     {
         var agent = Agent(UniqueId("v3-cap-cancel"));
-        var caps = await agent.GetCapabilitiesAsync(CancellationToken.None);
+        var caps = await agent.GetCapabilities(CancellationToken.None);
         Assert.True(caps.IsCancellable);
     }
 
@@ -197,7 +225,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Capabilities_HasTimers_IsTrue()
     {
         var agent = Agent(UniqueId("v3-cap-timer"));
-        var caps = await agent.GetCapabilitiesAsync(CancellationToken.None);
+        var caps = await agent.GetCapabilities(CancellationToken.None);
         Assert.True(caps.HasTimers);
     }
 
@@ -207,7 +235,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Lifecycle_Cancel_DoesNotThrow()
     {
         var agent = Agent(UniqueId("v3-cancel"));
-        var ex = await Record.ExceptionAsync(() => agent.CancelAsync(CancellationToken.None));
+        var ex = await Record.ExceptionAsync(() => agent.Cancel(CancellationToken.None));
         Assert.Null(ex);
     }
 
@@ -215,7 +243,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Lifecycle_Cancel_AgentStillResponds()
     {
         var agent = Agent(UniqueId("v3-cancel-resp"));
-        await agent.CancelAsync(CancellationToken.None);
+        await agent.Cancel(CancellationToken.None);
         var response = await agent.GetResponse("After cancel", CancellationToken.None);
         Assert.NotNull(response);
     }
@@ -226,7 +254,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     public async Task Behavior_Events_EventLogInitiallyEmpty()
     {
         var agent = Agent(UniqueId("v3-evtlog"));
-        var log = await agent.GetEventLogAsync(CancellationToken.None);
+        var log = await agent.GetEventLog(CancellationToken.None);
         Assert.Empty(log);
     }
 
@@ -235,7 +263,7 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     {
         var agent = Agent(UniqueId("v3-handle"));
         var evt = new AgentEvent("test", "src", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, new());
-        var ex = await Record.ExceptionAsync(() => agent.HandleEventAsync(evt, CancellationToken.None));
+        var ex = await Record.ExceptionAsync(() => agent.HandleEvent(evt, CancellationToken.None));
         Assert.Null(ex);
     }
 
@@ -246,10 +274,10 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
     {
         var a1 = Agent(UniqueId("v3-iso1"));
         var a2 = Agent(UniqueId("v3-iso2"));
-        await a1.SetWorkspaceAsync("/ws1", CancellationToken.None);
-        await a2.SetWorkspaceAsync("/ws2", CancellationToken.None);
-        var s1 = await a1.GetStateAsync(CancellationToken.None);
-        var s2 = await a2.GetStateAsync(CancellationToken.None);
+        await a1.SetWorkspace("/ws1", CancellationToken.None);
+        await a2.SetWorkspace("/ws2", CancellationToken.None);
+        var s1 = await a1.GetState(CancellationToken.None);
+        var s2 = await a2.GetState(CancellationToken.None);
         Assert.Equal("/ws1", s1.Entries["workspace-path"].Value);
         Assert.Equal("/ws2", s2.Entries["workspace-path"].Value);
     }
