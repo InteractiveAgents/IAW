@@ -103,7 +103,11 @@ public class StreamTestAgent(
 }
 
 // test agent that overrides OnTrackingDueAsync for tracking tests
-public interface ITrackingTestAgent : IAgent;
+public interface ITrackingTestAgent : IAgent
+{
+    Task StartTestTracking(string name, string description, TimeSpan interval, CancellationToken ct = default);
+    Task StopTestTracking(string name, CancellationToken ct = default);
+}
 
 public class TrackingTestAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
@@ -118,6 +122,17 @@ public class TrackingTestAgent(
 
     public int TrackingCheckCount { get; private set; }
     public TrackingItem? LastCheckedItem { get; private set; }
+
+    public async Task StartTestTracking(string name, string description, TimeSpan interval, CancellationToken ct = default)
+    {
+        var item = new TrackingItem(name, description, interval, DateTimeOffset.UtcNow, null, null);
+        await StartTrackingAsync(name, item, interval, ct);
+    }
+
+    public async Task StopTestTracking(string name, CancellationToken ct = default)
+    {
+        await StopTrackingAsync(name, ct);
+    }
 
     protected override Task OnTrackingDueAsync(TrackingItem item, CancellationToken ct)
     {

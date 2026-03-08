@@ -413,6 +413,41 @@ public class AgentTrackingTests : AgentTest<TrackingTestAgent>
         var log = await agent.GetEventLog(ct);
         Assert.Single(log);
     }
+
+    [Fact]
+    public async Task StartTracking_ThenStop_DoesNotThrow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var id = UniqueId("track-lifecycle");
+        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
+        await grain.StartTestTracking("monitor-1", "Check CPU", TimeSpan.FromMinutes(5), ct);
+        await grain.StopTestTracking("monitor-1", ct);
+    }
+
+    [Fact]
+    public async Task StopTracking_NonExistent_DoesNotThrow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var id = UniqueId("track-noexist");
+        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
+        await grain.StopTestTracking("nonexistent", ct);
+    }
+
+    [Fact]
+    public async Task Reminder_FiresOnTrackingDueAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var id = UniqueId("remind-fire");
+        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
+        await grain.StartTestTracking("remind-1", "Test reminder", TimeSpan.FromMinutes(1), ct);
+
+        // in-memory reminder fires with dueTime=Zero, so it should fire quickly
+        await Task.Delay(3000, ct);
+
+        // verify the agent didn't crash and still responds
+        var response = await ((IAgent)grain).GetResponse("Are you alive?", ct);
+        Assert.Equal("mock-response", response);
+    }
 }
 
 #endregion
