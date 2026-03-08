@@ -41,7 +41,7 @@ public class ArchitectureGuardTests
     public void AllMessageTypes_ImplementIAgentMessage()
     {
         var messageTypes = CoreAssembly.GetTypes()
-            .Where(t => t.Namespace == "IAW.Core.Messages" && !t.IsInterface && !t.IsAbstract);
+            .Where(t => t.Namespace == "Core.Messages" && !t.IsInterface && !t.IsAbstract);
 
         Assert.NotEmpty(messageTypes);
         foreach (var type in messageTypes)
@@ -52,7 +52,7 @@ public class ArchitectureGuardTests
     public void AllEventTypes_ImplementIEvent()
     {
         var eventTypes = CoreAssembly.GetTypes()
-            .Where(t => t.Namespace == "IAW.Core.Messages" && t.Name.EndsWith("Event") && !t.IsInterface);
+            .Where(t => t.Namespace == "Core.Messages" && t.Name.EndsWith("Event") && !t.IsInterface);
 
         Assert.NotEmpty(eventTypes);
         foreach (var type in eventTypes)
@@ -63,7 +63,7 @@ public class ArchitectureGuardTests
     public void AllCommandTypes_ImplementICommand()
     {
         var commandTypes = CoreAssembly.GetTypes()
-            .Where(t => t.Namespace == "IAW.Core.Messages" && t.Name.EndsWith("Command") && !t.IsInterface);
+            .Where(t => t.Namespace == "Core.Messages" && t.Name.EndsWith("Command") && !t.IsInterface);
 
         Assert.NotEmpty(commandTypes);
         foreach (var type in commandTypes)
@@ -74,14 +74,14 @@ public class ArchitectureGuardTests
     public void AllSerializableTypes_HaveGenerateSerializerAttribute()
     {
         var serializableTypes = CoreAssembly.GetTypes()
-            .Where(t => t.Namespace is not null && t.Namespace.StartsWith("IAW.Core"))
+            .Where(t => t.Namespace is not null && (t.Namespace.StartsWith("Core.") || t.Namespace == "IAW.Core"))
             .Where(t => !t.IsInterface && !t.IsAbstract && !t.IsEnum)
             .Where(t => t.GetCustomAttribute<GenerateSerializerAttribute>() is not null);
 
         Assert.NotEmpty(serializableTypes);
 
         var messageRecords = CoreAssembly.GetTypes()
-            .Where(t => t.Namespace == "IAW.Core.Messages" && !t.IsInterface && !t.IsAbstract);
+            .Where(t => t.Namespace == "Core.Messages" && !t.IsInterface && !t.IsAbstract);
 
         foreach (var type in messageRecords)
             Assert.NotNull(type.GetCustomAttribute<GenerateSerializerAttribute>());
