@@ -8,15 +8,24 @@ namespace IAW.Core;
 
 public abstract partial class Agent
 {
+    private IReadOnlyList<AITool>? _cachedTools;
+
     protected virtual IReadOnlyList<AITool> DefineTools() => [];
 
     private IReadOnlyList<AITool> GetAllTools()
     {
+        if (_cachedTools is not null)
+            return _cachedTools;
+
         var tools = new List<AITool>();
 
         var workspaceTools = new WorkspaceTools(
             () => GetWorkspacePath() ?? ".",
-            path => state[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path));
+            path =>
+            {
+                state[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path);
+                _cachedTools = null;
+            });
         RegisterToolMethods(tools, workspaceTools);
 
         var workspacePath = GetWorkspacePath();
@@ -29,7 +38,8 @@ public abstract partial class Agent
         RegisterToolMethods(tools, new WebTools(new HttpClient()));
 
         tools.AddRange(DefineTools());
-        return tools;
+        _cachedTools = tools;
+        return _cachedTools;
     }
 
     protected static void RegisterToolMethods(List<AITool> tools, object toolSource)
