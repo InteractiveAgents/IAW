@@ -127,3 +127,29 @@ public class TrackingTestAgent(
         return Task.CompletedTask;
     }
 }
+
+// test agent with IStreamProducer<CodeChangedEvent> for publish discovery tests
+public interface IProducerTestAgent : IAgent
+{
+    Task PublishCodeChanged(CodeChangedEvent evt, CancellationToken ct = default);
+}
+
+public class ProducerTestAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems),
+      IProducerTestAgent,
+      IStreamProducer<CodeChangedEvent>
+{
+    protected override string Instructions => "Producer test agent.";
+    protected override string DisplayName => "Producer Test";
+
+    public async Task PublishToStreamAsync(CodeChangedEvent evt, CancellationToken ct = default)
+        => await PublishTypedAsync(evt, ct);
+
+    public async Task PublishCodeChanged(CodeChangedEvent evt, CancellationToken ct = default)
+        => await PublishToStreamAsync(evt, ct);
+}

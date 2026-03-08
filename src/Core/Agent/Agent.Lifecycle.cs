@@ -1,5 +1,5 @@
-using IAW.Core.Communication;
-using IAW.Core.Observability;
+using Core.Communication;
+using Core.Contracts;
 
 namespace IAW.Core;
 
@@ -48,6 +48,9 @@ public abstract partial class Agent
             .Select(i => i.GetGenericArguments()[0].Name),
         .. type.GetInterfaces()
             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INotifier<>))
+            .Select(i => i.GetGenericArguments()[0].Name),
+        .. type.GetInterfaces()
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamProducer<>))
             .Select(i => i.GetGenericArguments()[0].Name),
     ];
 

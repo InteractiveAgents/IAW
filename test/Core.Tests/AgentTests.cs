@@ -397,3 +397,19 @@ public class AgentHistoryTests : AgentTest<TestAgent>
 }
 
 #endregion
+
+#region Communication — IStreamProducer<T>
+
+public class AgentProducerTests : AgentTest<ProducerTestAgent>
+{
+    [Fact]
+    public async Task GetMetadata_ReportsPublishedStreamTypes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("prod"));
+        var meta = await agent.GetMetadata(ct);
+        Assert.Contains("CodeChangedEvent", meta.Publishes);
+    }
+}
+
+#endregion
