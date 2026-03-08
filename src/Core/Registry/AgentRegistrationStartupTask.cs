@@ -26,7 +26,7 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
     private static AgentRegistration BuildRegistration(Type type)
     {
         var pubs = type.GetInterfaces()
-            .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IBroadcaster<>) || i.GetGenericTypeDefinition() == typeof(INotifier<>)))
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamProducer<>))
             .Select(i => i.GetGenericArguments()[0].Name)
             .Distinct().ToArray();
         var subs = type.GetInterfaces()

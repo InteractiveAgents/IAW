@@ -44,12 +44,6 @@ public abstract partial class Agent
     private static string[] DiscoverPublishedMessageTypes(Type type) =>
     [
         .. type.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IBroadcaster<>))
-            .Select(i => i.GetGenericArguments()[0].Name),
-        .. type.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INotifier<>))
-            .Select(i => i.GetGenericArguments()[0].Name),
-        .. type.GetInterfaces()
             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamProducer<>))
             .Select(i => i.GetGenericArguments()[0].Name),
     ];

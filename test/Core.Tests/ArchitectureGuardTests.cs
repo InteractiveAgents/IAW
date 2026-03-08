@@ -102,13 +102,6 @@ public class ArchitectureGuardTests
     }
 
     [Fact]
-    public void IBroadcaster_GenericConstraint_RequiresIAgentMessage()
-    {
-        var constraint = typeof(IBroadcaster<>).GetGenericArguments()[0].GetGenericParameterConstraints();
-        Assert.Contains(typeof(IAgentMessage), constraint);
-    }
-
-    [Fact]
     public void DynamicAgent_IsNotAbstract()
     {
         Assert.False(typeof(DynamicAgent).IsAbstract);
