@@ -134,6 +134,37 @@ public class AgentStateTests : AgentTest<TestAgent>
         var state = await agent.GetState(ct);
         Assert.Empty(state.Entries);
     }
+
+    [Fact]
+    public async Task SetState_StringValue_RoundTrips()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("str-state"));
+        await agent.SetWorkspace("/test/path", ct);
+        var state = await agent.GetState(ct);
+        Assert.Equal("/test/path", state.Entries["workspace-path"].Value.ToString());
+    }
+
+    [Fact]
+    public async Task GetState_AfterMultipleWrites_ReturnsLatest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("multi-ws"));
+        await agent.SetWorkspace("/first", ct);
+        await agent.SetWorkspace("/second", ct);
+        var state = await agent.GetState(ct);
+        Assert.Equal("/second", state.Entries["workspace-path"].Value.ToString());
+    }
+
+    [Fact]
+    public async Task SetWorkspace_ThenGetState_ContainsWorkspacePath()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("ws-state"));
+        await agent.SetWorkspace("/tmp/iaw-test", ct);
+        var state = await agent.GetState(ct);
+        Assert.True(state.Entries.ContainsKey("workspace-path"));
+    }
 }
 
 #endregion
