@@ -222,6 +222,19 @@ public class AgentEventTests : AgentTest<TestAgent>
         var evt = new AgentEvent("some.event", "source", "corr", DateTimeOffset.UtcNow, []);
         await agent.HandleEvent(evt, ct);
     }
+
+    [Fact]
+    public async Task PublishToStream_PreservesCorrelationId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("corr"));
+        var correlationId = "test-correlation-123";
+        var evt = new AgentEvent("corr.test", "source", correlationId, DateTimeOffset.UtcNow, []);
+        await agent.PublishToStream(evt, ct);
+
+        var log = await agent.GetEventLog(ct);
+        Assert.Equal(correlationId, log[0].CorrelationId);
+    }
 }
 
 #endregion
@@ -454,6 +467,41 @@ public class AgentProducerTests : AgentTest<ProducerTestAgent>
         var agent = Agent(UniqueId("prod"));
         var meta = await agent.GetMetadata(ct);
         Assert.Contains("CodeChangedEvent", meta.Publishes);
+    }
+}
+
+#endregion
+
+#region Typed Event Publishing
+
+public class AgentTypedEventTests : AgentTest<ProducerTestAgent>
+{
+    [Fact]
+    public async Task PublishTypedEvent_LogsInEventLog()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var id = UniqueId("typed-evt");
+        var grain = Cluster.GrainFactory.GetGrain<IProducerTestAgent>(id);
+        var evt = new CodeChangedEvent("test-src", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, ["file.cs"]);
+        await grain.PublishCodeChanged(evt, ct);
+
+        var agent = (IAgent)grain;
+        var log = await agent.GetEventLog(ct);
+        Assert.Single(log);
+        Assert.Equal("code.changed", log[0].EventName);
+    }
+
+    [Fact]
+    public async Task PublishTypedEvent_PreservesSourceAgentId()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var grain = Cluster.GrainFactory.GetGrain<IProducerTestAgent>(UniqueId("typed-src"));
+        var evt = new CodeChangedEvent("my-agent", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, ["a.cs"]);
+        await grain.PublishCodeChanged(evt, ct);
+
+        var agent = (IAgent)grain;
+        var log = await agent.GetEventLog(ct);
+        Assert.Equal("my-agent", log[0].SourceAgentId);
     }
 }
 
