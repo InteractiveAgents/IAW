@@ -4,15 +4,11 @@ using System.Text.Json;
 using IAW.Core;
 using IAW.Core.AI;
 using IAW.Core.AI.Models;
-using IAW.Core.Attributes;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
 namespace IAW.Agents.Knowledge;
 
-[Capability("project-knowledge")]
-[Capability("knowledge-management")]
-[DevVisible("Project knowledge and conventions")]
 public class KnowledgeAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,

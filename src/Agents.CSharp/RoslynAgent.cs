@@ -7,7 +7,6 @@ using IAW.Core.Communication;
 using IAW.Core.Communication.Messages;
 using IAW.Core.Tools;
 using IAW.Core.AI;
-using IAW.Core.Attributes;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -16,7 +15,6 @@ using Orleans.Journaling;
 
 namespace IAW.Agents.CSharp;
 
-[DevVisible("C# code intelligence -- types, patterns, architecture, syntax trees")]
 public class RoslynAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,

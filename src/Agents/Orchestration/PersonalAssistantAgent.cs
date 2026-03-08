@@ -5,7 +5,6 @@ using IAW.Agents.Review;
 using IAW.Core;
 using IAW.Core.AI;
 using IAW.Core.AI.Models;
-using IAW.Core.Attributes;
 using IAW.Core.Communication;
 using IAW.Core.Registry;
 using Microsoft.Extensions.AI;
@@ -17,7 +16,6 @@ using System.Text.Json;
 
 namespace IAW.Agents.Orchestration;
 
-[DevVisible("Orchestrator -- decomposes tasks, delegates to team")]
 public class PersonalAssistantAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
@@ -131,8 +129,6 @@ public class PersonalAssistantAgent(
         foreach (var reg in registrations.OrderBy(r => r.AgentType))
         {
             sb.AppendLine($"- {reg.DisplayName} [{reg.Kind}]: {reg.Description}");
-            if (reg.Capabilities.Length > 0)
-                sb.AppendLine($"  Capabilities: {string.Join(", ", reg.Capabilities)}");
         }
 
         var knownAgents = new (string Id, string Name, Func<IAgent> Resolve)[]

@@ -3,6 +3,7 @@ using Core.AI;
 using Core.AI.Models;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
+using Core;
 
 namespace Samples;
 

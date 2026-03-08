@@ -50,8 +50,6 @@ public class PlanningAgent(
             sb.AppendLine($"- {agent.AgentType}: {agent.DisplayName}");
             if (!string.IsNullOrWhiteSpace(agent.Description))
                 sb.AppendLine($"  Description: {agent.Description}");
-            if (agent.Capabilities.Length > 0)
-                sb.AppendLine($"  Capabilities: {string.Join(", ", agent.Capabilities)}");
             if (agent.Publishes.Length > 0)
                 sb.AppendLine($"  Publishes: {string.Join(", ", agent.Publishes)}");
             if (agent.Subscribes.Length > 0)

@@ -5,13 +5,11 @@ using IAW.Core.AI.Models;
 using IAW.Core.Communication;
 using IAW.Core.Communication.Messages;
 using IAW.Core.AI;
-using IAW.Core.Attributes;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
 namespace IAW.Agents.CSharp;
 
-[DevVisible(".NET toolchain -- build, test, format, pack")]
 public partial class DotNetAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,

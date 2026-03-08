@@ -1,6 +1,7 @@
+using Core;
 using Orleans.Concurrency;
 
-namespace Core;
+namespace TelegramBot;
 
 public interface ITelegramConversation : IAgent
 {

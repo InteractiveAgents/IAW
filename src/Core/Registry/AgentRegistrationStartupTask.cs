@@ -1,5 +1,3 @@
-using System.Reflection;
-using IAW.Core.Attributes;
 using IAW.Core.Communication;
 
 namespace IAW.Core.Registry;
@@ -25,16 +23,13 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
 
     private static AgentRegistration BuildRegistration(Type type)
     {
-        var caps = type.GetCustomAttributes<CapabilityAttribute>().Select(a => a.Capability).ToArray();
-        var pubs = type.GetCustomAttributes<PublishesAttribute>().Select(a => a.EventName)
-            .Concat(type.GetInterfaces()
-                .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IBroadcaster<>) || i.GetGenericTypeDefinition() == typeof(INotifier<>)))
-                .Select(i => i.GetGenericArguments()[0].Name))
+        var pubs = type.GetInterfaces()
+            .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IBroadcaster<>) || i.GetGenericTypeDefinition() == typeof(INotifier<>)))
+            .Select(i => i.GetGenericArguments()[0].Name)
             .Distinct().ToArray();
-        var subs = type.GetCustomAttributes<SubscribesAttribute>().Select(a => a.EventName)
-            .Concat(type.GetInterfaces()
-                .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IReceiver<>) || i.GetGenericTypeDefinition() == typeof(IStreamConsumer<>)))
-                .Select(i => i.GetGenericArguments()[0].Name))
+        var subs = type.GetInterfaces()
+            .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IReceiver<>) || i.GetGenericTypeDefinition() == typeof(IStreamConsumer<>)))
+            .Select(i => i.GetGenericArguments()[0].Name)
             .Distinct().ToArray();
 
         return new AgentRegistration(
@@ -42,7 +37,7 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
             GetAgentShortName(type.Name),
             "",
             type.IsSubclassOf(typeof(DynamicAgent)) ? AgentKind.Dynamic : AgentKind.Static,
-            caps, pubs, subs);
+            pubs, subs);
     }
 
     private static string GetAgentShortName(string typeName)

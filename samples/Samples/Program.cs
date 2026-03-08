@@ -1,4 +1,3 @@
-using IAW.Core;
 using Core.AI;
 using Core.GitHub;
 using Orleans.Dashboard;
@@ -6,6 +5,7 @@ using Orleans.Journaling;
 using Orleans.Streams;
 using ServiceDefaults;
 using System.Text.Json;
+using Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,7 +37,7 @@ app.MapOrleansDashboard(routePrefix: "/dashboard");
 app.MapGet("/samples/github-models", async (IGrainFactory grains, CancellationToken ct) =>
 {
     var agent = grains.GetGrain<Samples.IGitHubTestAgent>($"github-test-{Guid.NewGuid():N}");
-    var metadata = await agent.GetMetadataAsync(ct);
+    var metadata = await agent.GetMetadata(ct);
 
     return Results.Ok(new
     {
@@ -63,7 +63,7 @@ app.MapGet("/samples/orleans-agent/state", async (
     await agent.SetStateAsync("city", resolvedCity, ct);
     var visit1 = await agent.IncrementAsync("visits", ct);
     var visit2 = await agent.IncrementAsync("visits", ct);
-    var snapshot = await agent.GetStateAsync(ct);
+    var snapshot = await agent.GetState(ct);
 
     var hasCity = snapshot.TryGetValue("city", out var cityValue);
 
@@ -87,8 +87,8 @@ app.MapGet("/samples/orleans-agent/state-isolation", async (IGrainFactory grains
     await alpha.SetStateAsync("mode", "alpha", ct);
     await beta.SetStateAsync("mode", "beta", ct);
 
-    var alphaState = await alpha.GetStateAsync(ct);
-    var betaState = await beta.GetStateAsync(ct);
+    var alphaState = await alpha.GetState(ct);
+    var betaState = await beta.GetState(ct);
 
     return Results.Ok(new
     {
@@ -103,7 +103,7 @@ app.MapGet("/samples/orleans-agent/state-isolation", async (IGrainFactory grains
 app.MapGet("/samples/orleans-agent/metadata", async (IGrainFactory grains, CancellationToken ct) =>
 {
     var agent = grains.GetGrain<IAgent>($"sample-meta-{Guid.NewGuid():N}");
-    var metadata = await agent.GetMetadataAsync(ct);
+    var metadata = await agent.GetMetadata(ct);
     return Results.Ok(metadata);
 });
 
@@ -354,7 +354,7 @@ app.MapGet("/samples/orleans-agent/stream", async (
 app.MapGet("/samples/agent/identity", async (IGrainFactory grains, CancellationToken ct) =>
 {
     var agent = grains.GetGrain<IAgent>($"sample-legacy-identity-{Guid.NewGuid():N}");
-    var metadata = await agent.GetMetadataAsync(ct);
+    var metadata = await agent.GetMetadata(ct);
     return Results.Ok(new
     {
         id = metadata.Id,
@@ -422,7 +422,7 @@ app.MapGet("/samples/agent/state", async (IGrainFactory grains, CancellationToke
     await agent.SetStateAsync("temperatureC", "21", ct);
     await agent.SetStateAsync("isRaining", "true", ct);
 
-    var snapshot = await agent.GetStateAsync(ct);
+    var snapshot = await agent.GetState(ct);
     var city = snapshot.TryGetValue("city", out var cityRaw) ? cityRaw : "unknown";
     var temperatureC = snapshot.TryGetValue("temperatureC", out var temperatureRaw) &&
                        int.TryParse(temperatureRaw, out var parsedTemperature)
@@ -456,10 +456,10 @@ app.MapGet("/samples/agent/metadata", async (IGrainFactory grains, CancellationT
     var tooledGrain = grains.GetGrain<IAgent>("sample-legacy-metadata-tooled");
     var eventAwareGrain = grains.GetGrain<IAgent>("sample-legacy-metadata-eventaware");
 
-    var weatherMetadata = await weatherGrain.GetMetadataAsync(ct);
-    var promptedMetadata = await promptedGrain.GetMetadataAsync(ct);
-    var tooledMetadata = await tooledGrain.GetMetadataAsync(ct);
-    var eventAwareMetadata = await eventAwareGrain.GetMetadataAsync(ct);
+    var weatherMetadata = await weatherGrain.GetMetadata(ct);
+    var promptedMetadata = await promptedGrain.GetMetadata(ct);
+    var tooledMetadata = await tooledGrain.GetMetadata(ct);
+    var eventAwareMetadata = await eventAwareGrain.GetMetadata(ct);
 
     return Results.Ok(new
     {

@@ -7,6 +7,4 @@ public record AgentCapabilities(
     [property: Id(2)] bool HasEvents,
     [property: Id(3)] bool HasTimers,
     [property: Id(4)] bool IsCancellable,
-    [property: Id(5)] bool IsMultiState,
-    [property: Id(6)] bool HasTools,
-    [property: Id(7)] bool IsSecure);
+    [property: Id(5)] bool HasTools);

@@ -1,5 +1,3 @@
-using System.Reflection;
-using IAW.Core.Attributes;
 using IAW.Core.Communication;
 using IAW.Core.Observability;
 
@@ -15,36 +13,23 @@ public abstract partial class Agent
     public Task<AgentMetadata> GetMetadata(CancellationToken ct = default)
     {
         var type = GetType();
-        var publishedFromInterfaces = DiscoverPublishedMessageTypes(type);
-        var publishedFromAttributes = type.GetCustomAttributes<PublishesAttribute>().Select(a => a.EventName);
-        var publishes = publishedFromInterfaces.Concat(publishedFromAttributes).Distinct().ToArray();
-
-        var subscribedFromInterfaces = DiscoverReceivedMessageTypes(type);
-        var subscribedFromAttributes = type.GetCustomAttributes<SubscribesAttribute>().Select(a => a.EventName);
-        var subscribes = subscribedFromInterfaces.Concat(subscribedFromAttributes).Distinct().ToArray();
-
-        var capabilities = type.GetCustomAttributes<CapabilityAttribute>().Select(a => a.Capability).ToArray();
 
         return Task.FromResult(new AgentMetadata(
             type.Name, DisplayName, Instructions, AgentKindValue,
-            capabilities, publishes, subscribes));
+            DiscoverPublishedMessageTypes(type), DiscoverReceivedMessageTypes(type)));
     }
 
     public Task<AgentCapabilities> GetCapabilities(CancellationToken ct = default)
     {
         var type = GetType();
-        var attributeCaps = type.GetCustomAttributes<CapabilityAttribute>()
-            .Select(a => a.Capability).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return Task.FromResult(new AgentCapabilities(
             HasMemory: true,
-            HasP2P: HasInterface(type, typeof(IReceiver<>)) || attributeCaps.Contains("P2P"),
-            HasEvents: HasInterface(type, typeof(IStreamConsumer<>)) || HasInterface(type, typeof(IStreamProducer<>)) || attributeCaps.Contains("Events"),
+            HasP2P: HasInterface(type, typeof(IReceiver<>)),
+            HasEvents: HasInterface(type, typeof(IStreamConsumer<>)) || HasInterface(type, typeof(IStreamProducer<>)),
             HasTimers: true,
             IsCancellable: true,
-            IsMultiState: attributeCaps.Contains("Multi-state"),
-            HasTools: GetAllTools().Count > 0,
-            IsSecure: attributeCaps.Contains("Secure")));
+            HasTools: GetAllTools().Count > 0));
     }
 
     public Task Cancel(CancellationToken ct)

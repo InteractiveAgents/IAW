@@ -96,7 +96,7 @@ app.MapPost("/webhook", async (
         TraceSampled = currentActivity?.Recorded ?? false
     };
 
-    var conversation = grains.GetGrain<Core.ITelegramConversation>($"conversation-{chatId}");
+    var conversation = grains.GetGrain<ITelegramConversation>($"conversation-{chatId}");
     _ = conversation.HandleUpdate(botUpdate, ct);
 
     return Results.Ok();

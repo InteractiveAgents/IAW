@@ -1,9 +1,10 @@
 using System.ComponentModel;
+using Core;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-namespace IAW.Samples.Agents;
+namespace Samples.Agents;
 
 public interface IWeatherAgent : IAgent;
 

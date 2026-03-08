@@ -1,10 +1,11 @@
+using Core;
+using Core.Communication;
+using Core.Messages;
 using IAW.Core;
-using IAW.Core.Communication;
-using IAW.Core.Messages;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
-namespace IAW.Samples.Agents;
+namespace Samples.Agents;
 
 public interface IPersonalAssistantSampleAgent : IAgent;
 

@@ -4,13 +4,11 @@ using IAW.Core;
 using IAW.Core.AI.Models;
 using IAW.Agents.CSharp.Models;
 using IAW.Core.AI;
-using IAW.Core.Attributes;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
 namespace IAW.Agents.CSharp;
 
-[DevVisible("NuGet package monitoring -- watches Directory.Packages.props for outdated packages")]
 public class NuGetAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,

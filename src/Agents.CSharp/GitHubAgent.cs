@@ -2,14 +2,12 @@ using IAW.Core;
 using IAW.Core.AI.Models;
 using IAW.Agents.CSharp.Models;
 using IAW.Core.AI;
-using IAW.Core.Attributes;
 using Microsoft.Extensions.AI;
 using Octokit;
 using Orleans.Journaling;
 
 namespace IAW.Agents.CSharp;
 
-[DevVisible("GitHub integration -- release monitoring, issue creation, repository management")]
 public class GitHubAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,

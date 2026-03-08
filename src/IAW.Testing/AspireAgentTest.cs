@@ -3,7 +3,7 @@ using System.Net.Sockets;
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
-using Core;
+using IAW.Core;
 using IAW.Testing.Scenario;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

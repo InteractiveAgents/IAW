@@ -15,6 +15,7 @@ using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
 using Telegram.BotAPI.UpdatingMessages;
 using TelegramBot.Services;
+using Core;
 
 namespace TelegramBot;
 
@@ -32,7 +33,7 @@ public sealed class TelegramConversation(
     IVoiceTranscriptionService transcriptionService,
     ILogger<TelegramConversation> logger)
     : Agent(messages, memory, events, subscriptions, notifications, tracking),
-      Core.ITelegramConversation
+      ITelegramConversation
 {
     private const string TopicRegistryStateKey = "telegram:topic-registry";
     private const string MonitorRegistryStateKey = "telegram:monitor-registry";
@@ -502,7 +503,7 @@ public sealed class TelegramConversation(
         var route = await router.RouteAsync(update.Text!, ct);
 
         var targetAgent = GrainFactory.GetGrain<IAgent>(route.AgentId);
-        var agentMeta = await targetAgent.GetMetadataAsync(ct);
+        var agentMeta = await targetAgent.GetMetadata(ct);
 
         logger.LogInformation("Routed message to {AgentId} (confidence: {Confidence}, escalated: {Escalated})",
             route.AgentId, route.Confidence, route.Escalated);

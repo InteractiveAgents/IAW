@@ -1,4 +1,4 @@
-using IAW.Core;
+using Core;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;

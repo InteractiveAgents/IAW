@@ -3,7 +3,6 @@ using IAW.Agents.Messages;
 using IAW.Core;
 using IAW.Core.AI;
 using IAW.Core.AI.Models;
-using IAW.Core.Attributes;
 using IAW.Core.Communication;
 using Microsoft.Extensions.AI;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
@@ -12,7 +11,6 @@ using Orleans.Streams;
 
 namespace IAW.Agents.Review;
 
-[DevVisible("Code review and quality checks")]
 public class ReviewerAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,

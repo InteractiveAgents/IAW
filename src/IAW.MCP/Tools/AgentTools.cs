@@ -1,4 +1,4 @@
-using IAW.Core;
+using Core;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text.Json;
