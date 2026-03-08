@@ -425,6 +425,19 @@ public class AgentHistoryTests : AgentTest<TestAgent>
         var history = await agent.GetHistory(ct);
         Assert.True(history.Count <= 2);
     }
+
+    [Fact]
+    public async Task ThreeResponses_HistoryContainsAllTurns()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("3turn"));
+        await agent.GetResponse("First", ct);
+        await agent.GetResponse("Second", ct);
+        await agent.GetResponse("Third", ct);
+        var history = await agent.GetHistory(ct);
+        // each turn = user message + assistant response = 2 messages, 3 turns = 6
+        Assert.True(history.Count >= 6, $"Expected >= 6 history entries, got {history.Count}");
+    }
 }
 
 #endregion
@@ -440,6 +453,50 @@ public class AgentProducerTests : AgentTest<ProducerTestAgent>
         var agent = Agent(UniqueId("prod"));
         var meta = await agent.GetMetadata(ct);
         Assert.Contains("CodeChangedEvent", meta.Publishes);
+    }
+}
+
+#endregion
+
+#region Usage Capture
+
+public class AgentUsageTests : AgentTest<TestAgent>
+{
+    [Fact]
+    public async Task GetLastUsage_BeforeAnyResponse_ReturnsNull()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("no-usage"));
+        var usage = await agent.GetLastUsage(ct);
+        Assert.Null(usage);
+    }
+
+    [Fact]
+    public async Task GetLastUsage_AfterResponse_DoesNotThrow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("with-usage"));
+        await agent.GetResponse("Hello", ct);
+        // should not throw — MockChatClient may not populate usage but the method should work
+        var usage = await agent.GetLastUsage(ct);
+    }
+}
+
+#endregion
+
+#region Conversation Regression
+
+public class AgentConversationTests : AgentTest<TestAgent>
+{
+    [Fact]
+    public async Task MultipleResponses_ToolsStillWork()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("tools-cache"));
+        await agent.GetResponse("First", ct);
+        await agent.GetResponse("Second", ct);
+        var caps = await agent.GetCapabilities(ct);
+        Assert.True(caps.HasTools);
     }
 }
 
