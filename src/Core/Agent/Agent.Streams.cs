@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using IAW.Core;
-using IAW.Core.Communication;
-using IAW.Core.Observability;
+using Core.Communication;
+using Core.Contracts;
+using Core.Observability;
 using Orleans.Streams;
 
 namespace IAW.Core;
@@ -30,7 +30,11 @@ public abstract partial class Agent
     private async Task SubscribeToStreamConsumerInterfaces()
     {
         var consumerInterfaces = GetType().GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamConsumer<>));
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamConsumer<>))
+            .ToList();
+
+        if (consumerInterfaces.Count == 0)
+            return;
 
         foreach (var iface in consumerInterfaces)
         {
