@@ -1,3 +1,4 @@
+using Core.Contracts;
 using Microsoft.Agents.AI;
 using Orleans.Journaling;
 using AiChatMessage = Microsoft.Extensions.AI.ChatMessage;

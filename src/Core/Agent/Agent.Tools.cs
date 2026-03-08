@@ -1,7 +1,8 @@
 using System.ComponentModel;
 using System.Reflection;
+using Core.Contracts;
+using Core.Tools;
 using Microsoft.Extensions.AI;
-using IAW.Core.Tools;
 
 namespace IAW.Core;
 

@@ -1,13 +1,14 @@
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Messages;
 using IAW.Core;
-using IAW.Core.AI;
-using IAW.Core.AI.Models;
-using IAW.Core.Communication;
 using Microsoft.Extensions.AI;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using Orleans.Journaling;
 using Orleans.Streams;
+using Core.Contracts;
+using Core.AI;
+using Core.AI.Models;
+using Core.Communication;
 
 namespace IAW.Agents.Review;
 
@@ -15,7 +16,7 @@ public class ReviewerAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Sonnet46>] IChatClient chatClient,
-    [Memory("history")] IDurableList<IAW.Core.ChatMessage> history,
+    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems),
       IReviewer,

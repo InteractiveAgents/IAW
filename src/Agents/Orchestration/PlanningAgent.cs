@@ -1,11 +1,12 @@
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using Core.Orchestration;
+using Core.Registry;
 using IAW.Core;
-using IAW.Core.AI;
-using IAW.Core.AI.Models;
-using IAW.Core.Orchestration;
-using IAW.Core.Registry;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
@@ -15,7 +16,7 @@ public class PlanningAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<IAW.Core.ChatMessage> history,
+    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IGrainFactory grainFactory)
     : Agent(state, eventLog, chatClient, history, trackingItems), IPlanning

@@ -1,12 +1,13 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using IAW.Core;
-using IAW.Core.AI.Models;
-using IAW.Core.Communication;
-using IAW.Core.Communication.Messages;
-using IAW.Core.AI;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
+using Core.Contracts;
+using Core.AI;
+using Core.AI.Models;
+using Core.Communication;
+using Core.Communication.Messages;
 
 namespace IAW.Agents.CSharp;
 
@@ -14,7 +15,7 @@ public partial class DotNetAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<Core.ChatMessage> history,
+    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IHttpClientFactory httpClientFactory)
     : Agent(state, eventLog, chatClient, history, trackingItems), IDotNet

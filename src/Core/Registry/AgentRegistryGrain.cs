@@ -1,6 +1,7 @@
+using Core.Contracts;
 using Orleans.Journaling;
 
-namespace IAW.Core.Registry;
+namespace Core.Registry;
 
 [GrainType("agent-registry")]
 public class AgentRegistryGrain(

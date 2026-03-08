@@ -1,8 +1,9 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
 using IAW.Core;
-using IAW.Core.AI;
-using IAW.Core.AI.Models;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
@@ -12,7 +13,7 @@ public partial class BuildAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<IAW.Core.ChatMessage> history,
+    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems), IBuild
 {

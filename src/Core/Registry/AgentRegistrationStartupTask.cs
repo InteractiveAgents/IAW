@@ -1,6 +1,8 @@
-using IAW.Core.Communication;
+using IAW.Core;
+using Core.Communication;
+using Core.Contracts;
 
-namespace IAW.Core.Registry;
+namespace Core.Registry;
 
 public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartupTask
 {

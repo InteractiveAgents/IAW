@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using IAW.Core.Observability;
+using Core.AI;
+using Core.Contracts;
+using ChatMessage = Core.Contracts.ChatMessage;
+using Core.Observability;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
@@ -17,6 +20,7 @@ public abstract partial class Agent(
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : DurableGrain, IAgent
 {
+    private readonly UsageCaptureChatClient _usageCapture = new(chatClient);
     private AIAgent? _agent;
     private AgentSession? _session;
 
@@ -34,7 +38,7 @@ public abstract partial class Agent(
         activity?.SetTag("agent.id", this.GetPrimaryKeyString());
         AgentTelemetry.Activations.Add(1, new TagList { { "agent.type", GetType().Name } });
 
-        _agent = chatClient.AsAIAgent(new ChatClientAgentOptions
+        _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
             Name = this.GetPrimaryKeyString(),
             ChatOptions = new ChatOptions
@@ -92,6 +96,9 @@ public abstract partial class Agent(
         await WriteStateAsync(cancellationToken);
         _session = await _agent!.CreateSessionAsync(cancellationToken);
     }
+
+    public Task<AgentUsage?> GetLastUsage(CancellationToken ct = default)
+        => Task.FromResult(_usageCapture.LastUsage);
 
     protected static string BuildSafeErrorMessage(Exception ex)
         => $"An error occurred: {ex.GetType().Name} — {ex.Message}";

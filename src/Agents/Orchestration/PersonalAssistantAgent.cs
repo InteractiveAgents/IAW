@@ -1,16 +1,16 @@
+using Core.AI;
+using Core.AI.Models;
+using Core.Communication;
+using Core.Contracts;
+using Core.Registry;
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Knowledge;
 using IAW.Agents.Messages;
 using IAW.Agents.Review;
 using IAW.Core;
-using IAW.Core.AI;
-using IAW.Core.AI.Models;
-using IAW.Core.Communication;
-using IAW.Core.Registry;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 using System.ComponentModel;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 
@@ -20,7 +20,7 @@ public class PersonalAssistantAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Sonnet46>] IChatClient chatClient,
-    [Memory("history")] IDurableList<IAW.Core.ChatMessage> history,
+    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems),
       IPersonalAssistant,

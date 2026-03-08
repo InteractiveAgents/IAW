@@ -2,16 +2,17 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using IAW.Core;
-using IAW.Core.AI.Models;
-using IAW.Core.Communication;
-using IAW.Core.Communication.Messages;
-using IAW.Core.Tools;
-using IAW.Core.AI;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
+using Core.Tools;
+using Core.Contracts;
+using Core.Communication;
+using Core.AI;
+using Core.AI.Models;
+using Core.Communication.Messages;
 
 namespace IAW.Agents.CSharp;
 
@@ -19,7 +20,7 @@ public class RoslynAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<Core.ChatMessage> history,
+    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems), IRoslyn, IReceiver<TestResultMessage>
 {

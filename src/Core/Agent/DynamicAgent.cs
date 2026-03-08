@@ -1,4 +1,5 @@
-using IAW.Core;
+using Core.Contracts;
+using ChatMessage = Core.Contracts.ChatMessage;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
