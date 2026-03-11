@@ -34,8 +34,13 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
 
         RegisterLlmMapper<Claude45Haiku>(siloBuilder, mockClient);
         RegisterLlmMapper<Sonnet46>(siloBuilder, mockClient);
+        RegisterLlmMapper<Opus46>(siloBuilder, mockClient);
         RegisterLlmMapper<Gpt4o>(siloBuilder, mockClient);
         RegisterLlmMapper<Gpt4oMini>(siloBuilder, mockClient);
+        RegisterLlmMapper<Gpt52>(siloBuilder, mockClient);
+        RegisterLlmMapper<Gpt53>(siloBuilder, mockClient);
+        RegisterLlmMapper<Gemini31>(siloBuilder, mockClient);
+        RegisterLlmMapper<GrokLatest>(siloBuilder, mockClient);
         RegisterLlmMapper<GitHubGpt4oMini>(siloBuilder, mockClient);
         RegisterLlmMapper<GitHubGpt4o>(siloBuilder, mockClient);
         RegisterLlmMapper<Llama32>(siloBuilder, mockClient);

@@ -37,8 +37,13 @@ public abstract class LLMModel
     {
         _ = Models.Claude45Haiku.Instance;
         _ = Models.Sonnet46.Instance;
+        _ = Models.Opus46.Instance;
         _ = Models.Gpt4o.Instance;
         _ = Models.Gpt4oMini.Instance;
+        _ = Models.Gpt52.Instance;
+        _ = Models.Gpt53.Instance;
+        _ = Models.Gemini31.Instance;
+        _ = Models.GrokLatest.Instance;
         _ = Models.Llama32.Instance;
         _ = Models.Qwen25.Instance;
         _ = Models.GitHubGpt4oMini.Instance;
