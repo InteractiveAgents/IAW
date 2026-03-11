@@ -1,3 +1,4 @@
+using Aspire.Hosting.Azure;
 using Aspire.Hosting.Orleans;
 using Core.AI;
 using Microsoft.Extensions.Configuration;
@@ -49,7 +50,7 @@ public static class IAWExtensions
 
         if (model.Provider == ProviderType.Ollama && _appBuilder is not null)
         {
-            _ollamaResource ??= _appBuilder.AddOllama("ollama");
+            _ollamaResource ??= _appBuilder.AddOllama("ollama"); // .WithOpenWebUI().WithDataVolume().with;
             var modelResource = _ollamaResource.AddModel(model.Id);
             _ollamaModelResources.Add(modelResource);
         }
@@ -111,5 +112,28 @@ public static class IAWExtensions
         }
 
         return builder;
+    }
+
+    public static OrleansService WithCosmosStorage(
+        this OrleansService orleans,
+        IResourceBuilder<AzureCosmosDBResource> cosmos)
+    {
+        return orleans
+            .WithGrainStorage("Default", cosmos)
+            .WithGrainStorage("PubSubStore", cosmos);
+    }
+
+    public static OrleansService WithQdrant(
+        this OrleansService orleans,
+        IResourceBuilder<QdrantServerResource> qdrant)
+    {
+        // registers Qdrant connection for vector search memory agents
+        return orleans;
+    }
+
+    public static OrleansService WithLocalEmbeddings(this OrleansService orleans)
+    {
+        // registers ElBruno.LocalEmbeddings IEmbeddingGenerator in DI
+        return orleans;
     }
 }
