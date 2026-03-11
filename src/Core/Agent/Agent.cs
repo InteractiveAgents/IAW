@@ -30,6 +30,7 @@ public abstract partial class Agent(
     protected IDurableDictionary<string, StateEntry> State => state;
     protected IDurableList<AgentEvent> EventLog => eventLog;
     protected IStreamProvider StreamProvider => this.GetStreamProvider("agents");
+    protected virtual IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() => [];
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
