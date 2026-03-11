@@ -38,6 +38,7 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="Anthropic" Version="12.8.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.3.0" />
+    <PackageVersion Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.3.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.3.0" />
     <PackageVersion Include="OpenAI" Version="2.9.0" />
@@ -50,6 +51,7 @@
     <PackageVersion Include="Concentus" Version="2.2.2" />
     <PackageVersion Include="Concentus.Oggfile" Version="1.0.6" />
     <PackageVersion Include="NAudio" Version="2.2.1" />
+    <PackageVersion Include="ElBruno.LocalEmbeddings" Version="1.1.4" />
     <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0-2.final" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0-preview.1.26104.118" />
