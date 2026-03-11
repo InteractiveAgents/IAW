@@ -92,8 +92,15 @@ public abstract class AgentTest<TAgent> : IAsyncLifetime where TAgent : Agent
 
     protected IAgent Agent(string id)
     {
-        var specificInterface = typeof(TAgent).GetInterfaces()
-            .FirstOrDefault(i => i != typeof(IAgent) && typeof(IAgent).IsAssignableFrom(i) && typeof(IGrainWithStringKey).IsAssignableFrom(i));
+        // Find the most specific IAgent-derived interface (leaf, not a base like IMemoryAgent)
+        var agentInterfaces = typeof(TAgent).GetInterfaces()
+            .Where(i => i != typeof(IAgent) && typeof(IAgent).IsAssignableFrom(i) && typeof(IGrainWithStringKey).IsAssignableFrom(i))
+            .ToList();
+
+        // Prefer leaf interfaces: exclude any interface that is a base of another candidate
+        var specificInterface = agentInterfaces
+            .FirstOrDefault(i => !agentInterfaces.Any(other => other != i && i.IsAssignableFrom(other)))
+            ?? agentInterfaces.FirstOrDefault();
 
         if (specificInterface is not null)
             return (IAgent)Cluster.GrainFactory.GetGrain(specificInterface, id);

@@ -1,10 +1,12 @@
 using Core.AI;
 using Core.AI.Models;
 using Core.Communication;
+using Core.Context;
 using Core.Contracts;
 using Core.Registry;
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Knowledge;
+using IAW.Agents.Memory;
 using IAW.Agents.Messages;
 using IAW.Agents.Review;
 using IAW.Core;
@@ -35,6 +37,12 @@ public class PersonalAssistantAgent(
         You are the Personal Assistant — the CEO of an AI engineering team.
         You receive user requests, decompose them into tasks, and delegate to your team.
 
+        IMPORTANT — Memory:
+        When the user shares personal facts (birthday, name, preferences, important dates, etc.),
+        ALWAYS call RememberFact to store them. This persists across conversations.
+        When context from memory is provided in your prompt, use it naturally without re-asking.
+        When the user asks "do you remember...", use RecallMemories to search stored facts.
+
         Core team (always available):
         - Roslyn (roslyn): C# code intelligence — type catalogs, syntax trees, pattern detection
         - DotNet (dot-net): .NET toolchain — build, test, format, publish
@@ -59,6 +67,14 @@ public class PersonalAssistantAgent(
 
     protected override AgentKind AgentKindValue => AgentKind.Static;
 
+    protected override IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() =>
+    [
+        new MemoryContextProvider([
+            GrainFactory.GetGrain<IUserMemory>("user-memory"),
+            GrainFactory.GetGrain<IProjectMemory>("project-memory")
+        ])
+    ];
+
     protected override IReadOnlyList<AITool> DefineTools()
     {
         return
@@ -69,6 +85,10 @@ public class PersonalAssistantAgent(
                 "Get the current status of all engineering team members"),
             AIFunctionFactory.Create(SpawnDynamicAgent, nameof(SpawnDynamicAgent),
                 "Spawn a dynamic agent for parallel work"),
+            AIFunctionFactory.Create(RememberFact, nameof(RememberFact),
+                "Store an important fact about the user for future conversations"),
+            AIFunctionFactory.Create(RecallMemories, nameof(RecallMemories),
+                "Search stored memories for information about a topic"),
         ];
     }
 
@@ -245,6 +265,33 @@ public class PersonalAssistantAgent(
     Task<bool> IReceiver<TaskFailedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
     Task<bool> IReceiver<DeploySucceededMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
     Task<bool> IReceiver<ReviewCompletedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+    [Description("Store an important fact about the user (birthday, preferences, name, etc.) for future conversations")]
+    private async Task<string> RememberFact(
+        [Description("The fact to remember (e.g. 'User birthday is March 15')")] string fact,
+        CancellationToken ct = default)
+    {
+        var userMemory = GrainFactory.GetGrain<IUserMemory>("user-memory");
+        await userMemory.ObserveAsync(fact, "personal-assistant", ct);
+        return $"Remembered: {fact}";
+    }
+
+    [Description("Search stored memories for information about a topic")]
+    private async Task<string> RecallMemories(
+        [Description("What to search for (e.g. 'birthday', 'preferences')")] string query,
+        CancellationToken ct = default)
+    {
+        var userMemory = GrainFactory.GetGrain<IUserMemory>("user-memory");
+        var results = await userMemory.SearchAsync(query, 5, ct);
+        if (results.Count == 0)
+            return "No memories found for that topic.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {results.Count} memories:");
+        foreach (var entry in results)
+            sb.AppendLine($"- {entry.Content} (stored {entry.CreatedAt:yyyy-MM-dd})");
+        return sb.ToString();
+    }
 
     private IAgent? ResolveAgent(string agentKey)
     {

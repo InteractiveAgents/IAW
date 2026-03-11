@@ -2,4 +2,4 @@ using Core.Contracts;
 
 namespace IAW.Agents.Memory;
 
-public interface IProjectMemory : IAgent;
+public interface IProjectMemory : IMemoryAgent;

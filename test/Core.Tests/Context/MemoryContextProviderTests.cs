@@ -8,7 +8,7 @@ public class MemoryContextProviderTests
     [Fact]
     public void MemoryContextProvider_has_correct_name()
     {
-        var provider = new MemoryContextProvider(null!, []);
+        var provider = new MemoryContextProvider([]);
         Assert.Equal("Memory", provider.Name);
     }
 
@@ -21,7 +21,7 @@ public class MemoryContextProviderTests
     [Fact]
     public async Task MemoryContextProvider_with_no_agents_returns_empty()
     {
-        var provider = new MemoryContextProvider(null!, []);
+        var provider = new MemoryContextProvider([]);
         var context = await provider.GetContextAsync("test-agent", "test query", TestContext.Current.CancellationToken);
         Assert.Empty(context);
     }

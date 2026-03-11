@@ -15,7 +15,7 @@ public abstract class Memory(
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder)
-    : Agent(state, eventLog, chatClient, history, trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems), IMemoryAgent
 {
     protected IDurableList<MemoryEntry> Memories => memories;
     protected IEmbeddingGenerator<string, Embedding<float>> Embedder => embedder;
@@ -69,6 +69,31 @@ public abstract class Memory(
         for (var i = 0; i < memories.Count; i++)
         {
             if (memories[i].Id == memoryId)
+            {
+                memories.RemoveAt(i);
+                await WriteStateAsync(ct);
+                return;
+            }
+        }
+    }
+
+    // IMemoryAgent public interface — delegates to protected methods
+    public Task ObserveAsync(string content, string source, CancellationToken ct = default)
+    {
+        var provenance = new MemoryProvenance(
+            source, null, this.GetPrimaryKeyString(), null,
+            DateTimeOffset.UtcNow, null, 1.0f);
+        return Observe(content, provenance, ct);
+    }
+
+    public Task<IReadOnlyList<MemoryEntry>> SearchAsync(string query, int topK = 5, CancellationToken ct = default)
+        => Search(query, topK, ct);
+
+    public async Task ForgetAsync(string content, CancellationToken ct = default)
+    {
+        for (var i = 0; i < memories.Count; i++)
+        {
+            if (memories[i].Content.Equals(content, StringComparison.OrdinalIgnoreCase))
             {
                 memories.RemoveAt(i);
                 await WriteStateAsync(ct);

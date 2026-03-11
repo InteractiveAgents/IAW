@@ -2,7 +2,7 @@ using Core.Contracts;
 
 namespace Core.Context;
 
-public class MemoryContextProvider(IGrainFactory grainFactory, string[] memoryAgentIds) : IAgentContextProvider
+public class MemoryContextProvider(IReadOnlyList<IMemoryAgent> memoryAgents) : IAgentContextProvider
 {
     public string Name => "Memory";
 
@@ -10,14 +10,13 @@ public class MemoryContextProvider(IGrainFactory grainFactory, string[] memoryAg
     {
         var context = new List<string>();
 
-        foreach (var memoryId in memoryAgentIds)
+        foreach (var memoryAgent in memoryAgents)
         {
             try
             {
-                var memoryAgent = grainFactory.GetGrain<IAgent>(memoryId);
-                var response = await memoryAgent.GetResponse($"Search for memories relevant to: {prompt}", ct);
-                if (!string.IsNullOrWhiteSpace(response))
-                    context.Add($"[{memoryId}] {response}");
+                var results = await memoryAgent.SearchAsync(prompt, 3, ct);
+                foreach (var entry in results)
+                    context.Add($"[memory] {entry.Content}");
             }
             catch
             {

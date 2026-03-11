@@ -66,6 +66,7 @@ public abstract partial class Agent(
     {
         AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
 
+        prompt = await EnrichWithContext(prompt, cancellationToken);
         await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
         {
             if (chunk.Text is not { } text)
@@ -84,6 +85,7 @@ public abstract partial class Agent(
 
     public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
     {
+        prompt = await EnrichWithContext(prompt, cancellationToken);
         var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
 
         var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
@@ -111,6 +113,30 @@ public abstract partial class Agent(
 
     public Task<AgentUsage?> GetLastUsage(CancellationToken ct = default)
         => Task.FromResult(_usageCapture.LastUsage);
+
+    private async Task<string> EnrichWithContext(string prompt, CancellationToken ct)
+    {
+        var providers = GetContextProviders();
+        if (providers.Count == 0) return prompt;
+
+        var contextParts = new List<string>();
+        foreach (var provider in providers)
+        {
+            try
+            {
+                var items = await provider.GetContextAsync(this.GetPrimaryKeyString(), prompt, ct);
+                contextParts.AddRange(items);
+            }
+            catch
+            {
+                // context provider unavailable — skip
+            }
+        }
+
+        if (contextParts.Count == 0) return prompt;
+
+        return $"[Relevant context from memory]\n{string.Join("\n", contextParts)}\n\n[User message]\n{prompt}";
+    }
 
     protected static string BuildSafeErrorMessage(Exception ex)
         => $"An error occurred: {ex.GetType().Name} — {ex.Message}";
