@@ -184,65 +184,12 @@ public class AgentStateTests : AgentTest<TestAgent>
 public class AgentEventTests : AgentTest<TestAgent>
 {
     [Fact]
-    public async Task PublishToStream_LogsEventInEventLog()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var agent = Agent(UniqueId("evtlog"));
-        var evt = new AgentEvent("test.event", "test-source", Guid.NewGuid().ToString(),
-            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["key"] = "value" });
-        await agent.PublishToStream(evt, ct);
-
-        var log = await agent.GetEventLog(ct);
-        Assert.Single(log);
-        Assert.Equal("test.event", log[0].EventName);
-        Assert.Equal("test-source", log[0].SourceAgentId);
-    }
-
-    [Fact]
-    public async Task PublishToStream_MultipleEvents_AllLogged()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var agent = Agent(UniqueId("multi"));
-        for (var i = 0; i < 3; i++)
-        {
-            var evt = new AgentEvent($"event-{i}", "source", Guid.NewGuid().ToString(),
-                DateTimeOffset.UtcNow, []);
-            await agent.PublishToStream(evt, ct);
-        }
-
-        var log = await agent.GetEventLog(ct);
-        Assert.Equal(3, log.Count);
-    }
-
-    [Fact]
     public async Task GetEventLog_EmptyByDefault()
     {
         var ct = TestContext.Current.CancellationToken;
         var agent = Agent(UniqueId("nolog"));
         var log = await agent.GetEventLog(ct);
         Assert.Empty(log);
-    }
-
-    [Fact]
-    public async Task HandleEvent_DefaultIsNoOp()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var agent = Agent(UniqueId("hevt"));
-        var evt = new AgentEvent("some.event", "source", "corr", DateTimeOffset.UtcNow, []);
-        await agent.HandleEvent(evt, ct);
-    }
-
-    [Fact]
-    public async Task PublishToStream_PreservesCorrelationId()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var agent = Agent(UniqueId("corr"));
-        var correlationId = "test-correlation-123";
-        var evt = new AgentEvent("corr.test", "source", correlationId, DateTimeOffset.UtcNow, []);
-        await agent.PublishToStream(evt, ct);
-
-        var log = await agent.GetEventLog(ct);
-        Assert.Equal(correlationId, log[0].CorrelationId);
     }
 }
 
@@ -367,7 +314,7 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
     }
 
     [Fact]
-    public async Task StreamPublish_TriggersHandleEvent()
+    public async Task StreamPublish_TriggersOnStreamEventAsync()
     {
         var ct = TestContext.Current.CancellationToken;
         var id = UniqueId("stream");
@@ -377,20 +324,20 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         await agent.GetMetadata(ct);
         await Task.Delay(200, ct);
 
-        // publish to the "code.changed" stream that StreamTestAgent subscribes to
-        var evt = new AgentEvent("code.changed", "publisher", Guid.NewGuid().ToString(),
-            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["file"] = "test.cs" });
+        // publish a typed CodeChangedEvent to the "code.changed" stream that StreamTestAgent subscribes to
+        var evt = new CodeChangedEvent("publisher", Guid.NewGuid().ToString(),
+            DateTimeOffset.UtcNow, ["test.cs"]);
 
         var streamProvider = Cluster.Client.GetStreamProvider("agents");
         var streamId = StreamId.Create("agents", "code.changed");
-        var stream = streamProvider.GetStream<AgentEvent>(streamId);
+        var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
         // give stream delivery time
         await Task.Delay(1000, ct);
 
         var state = await agent.GetState(ct);
-        Assert.True(state.Entries.Count > 0, "Agent should have handled stream event");
+        Assert.True(state.Entries.Count > 0, "Agent should have handled stream event via OnStreamEventAsync");
     }
 
     [Fact]
@@ -407,12 +354,12 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         await agent2.GetMetadata(ct);
         await Task.Delay(200, ct);
 
-        var evt = new AgentEvent("code.changed", "publisher", Guid.NewGuid().ToString(),
-            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["file"] = "multi.cs" });
+        var evt = new CodeChangedEvent("publisher", Guid.NewGuid().ToString(),
+            DateTimeOffset.UtcNow, ["multi.cs"]);
 
         var streamProvider = Cluster.Client.GetStreamProvider("agents");
         var streamId = StreamId.Create("agents", "code.changed");
-        var stream = streamProvider.GetStream<AgentEvent>(streamId);
+        var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
         await Task.Delay(1000, ct);
@@ -440,14 +387,12 @@ public class AgentTrackingTests : AgentTest<TrackingTestAgent>
     }
 
     [Fact]
-    public async Task PublishToStream_WorksOnTrackingAgent()
+    public async Task GetEventLog_InitiallyEmpty_OnTrackingAgent()
     {
         var ct = TestContext.Current.CancellationToken;
         var agent = Agent(UniqueId("track"));
-        var evt = new AgentEvent("test", "src", "corr", DateTimeOffset.UtcNow, []);
-        await agent.PublishToStream(evt, ct);
         var log = await agent.GetEventLog(ct);
-        Assert.Single(log);
+        Assert.Empty(log);
     }
 
     [Fact]

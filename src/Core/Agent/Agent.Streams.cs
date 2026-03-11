@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Reflection;
 using Core.Communication;
 using Core.Contracts;
+using Core.Messages;
 using Core.Observability;
 using Orleans.Streams;
 
@@ -8,16 +10,6 @@ namespace IAW.Core;
 
 public abstract partial class Agent
 {
-    public async Task PublishToStream(AgentEvent evt, CancellationToken ct = default)
-    {
-        eventLog.Add(evt);
-        await WriteStateAsync(ct);
-        var streamId = StreamId.Create("agents", evt.EventName);
-        var stream = StreamProvider.GetStream<AgentEvent>(streamId);
-        await stream.OnNextAsync(evt);
-        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", evt.EventName } });
-    }
-
     public Task<IReadOnlyList<string>> GetActiveSubscriptions(CancellationToken ct = default)
     {
         var subs = GetType().GetInterfaces()
@@ -41,21 +33,34 @@ public abstract partial class Agent
             var eventType = iface.GetGenericArguments()[0];
             var streamName = EventTypeToStreamName(eventType);
             var streamId = StreamId.Create("agents", streamName);
-            var stream = StreamProvider.GetStream<AgentEvent>(streamId);
 
-            await stream.SubscribeAsync((Func<AgentEvent, StreamSequenceToken, Task>)(async (evt, _) =>
-            {
-                using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.handle_stream_event");
-                activity?.SetTag("event.name", evt.EventName);
-                activity?.SetTag("agent.type", GetType().Name);
+            // subscribe to typed Stream<TEvent> and dispatch to OnStreamEventAsync
+            var subscribeMethod = typeof(Agent)
+                .GetMethod(nameof(SubscribeTyped), BindingFlags.NonPublic | BindingFlags.Instance)!
+                .MakeGenericMethod(eventType);
 
-                var sw = Stopwatch.StartNew();
-                await this.HandleEvent(evt, AgentCancellation);
-                sw.Stop();
-
-                AgentTelemetry.EventsHandled.Add(1, new TagList { { "event.name", evt.EventName } });
-                AgentTelemetry.EventHandleDuration.Record(sw.Elapsed.TotalSeconds, new TagList { { "event.name", evt.EventName } });
-            }));
+            await (Task)subscribeMethod.Invoke(this, [streamId, streamName])!;
         }
+    }
+
+    private async Task SubscribeTyped<TEvent>(StreamId streamId, string streamName) where TEvent : class, IEvent
+    {
+        var stream = StreamProvider.GetStream<TEvent>(streamId);
+        var consumer = (IStreamConsumer<TEvent>)this;
+
+        await stream.SubscribeAsync(async (evt, token) =>
+        {
+            using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.handle_stream_event");
+            activity?.SetTag("event.name", streamName);
+            activity?.SetTag("event.type", typeof(TEvent).Name);
+            activity?.SetTag("agent.type", GetType().Name);
+
+            var sw = Stopwatch.StartNew();
+            await consumer.OnStreamEventAsync(evt, token);
+            sw.Stop();
+
+            AgentTelemetry.EventsHandled.Add(1, new TagList { { "event.name", streamName } });
+            AgentTelemetry.EventHandleDuration.Record(sw.Elapsed.TotalSeconds, new TagList { { "event.name", streamName } });
+        });
     }
 }

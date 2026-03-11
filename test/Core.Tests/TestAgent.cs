@@ -88,18 +88,13 @@ public class StreamTestAgent(
     protected override string DisplayName => "Stream Test";
 
     public int EventsHandled { get; private set; }
-    public AgentEvent? LastHandledEvent { get; private set; }
-
-    public override Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-    {
-        EventsHandled++;
-        LastHandledEvent = agentEvent;
-        State[$"handled-{EventsHandled}"] = new StateEntry($"handled-{EventsHandled}", agentEvent.EventName);
-        return Task.CompletedTask;
-    }
 
     public Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
-        => Task.CompletedTask;
+    {
+        EventsHandled++;
+        State[$"handled-{EventsHandled}"] = new StateEntry($"handled-{EventsHandled}", string.Join(",", evt.FilePaths));
+        return Task.CompletedTask;
+    }
 }
 
 // test agent that overrides OnTrackingDueAsync for tracking tests
@@ -163,7 +158,7 @@ public class ProducerTestAgent(
     protected override string DisplayName => "Producer Test";
 
     public async Task PublishToStreamAsync(CodeChangedEvent evt, CancellationToken ct = default)
-        => await PublishTypedAsync(evt, ct);
+        => await PublishToStream(evt, ct);
 
     public async Task PublishCodeChanged(CodeChangedEvent evt, CancellationToken ct = default)
         => await PublishToStreamAsync(evt, ct);

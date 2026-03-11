@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Net;
 
-// IAW Pipeline — demonstrates event publishing and agent event flow
+// IAW Pipeline -- demonstrates agent conversation and event flow
 // Run 'aspire run' first, then 'dotnet run --project samples/Pipeline'
 
 var cts = new CancellationTokenSource();
@@ -34,19 +34,12 @@ Console.WriteLine();
 var producer = grains.GetGrain<IPersonalAssistant>("pipeline-producer");
 var consumer = grains.GetGrain<IPersonalAssistant>("pipeline-consumer");
 
-// Step 1: Publish events to the producer's stream
-Console.WriteLine("Publishing events to producer stream...");
+// Step 1: Send tasks to the producer
+Console.WriteLine("Sending tasks to producer agent...");
 for (var i = 1; i <= 3; i++)
 {
-    var evt = new AgentEvent(
-        $"pipeline.step-{i}", "pipeline-producer", Guid.NewGuid().ToString("N"),
-        DateTimeOffset.UtcNow, new Dictionary<string, object>
-        {
-            ["step"] = i,
-            ["data"] = $"Payload from step {i}"
-        });
-    await producer.PublishToStream(evt, ct);
-    Console.WriteLine($"  Published: pipeline.step-{i}");
+    var response = await producer.GetResponse($"Execute pipeline step {i}: process payload {i}.", ct);
+    Console.WriteLine($"  Step {i} response: {response[..Math.Min(80, response.Length)]}...");
 }
 
 // Step 2: Read producer's event log
@@ -55,22 +48,7 @@ Console.WriteLine($"\nProducer event log: {producerEvents.Count} events");
 foreach (var e in producerEvents)
     Console.WriteLine($"  {e.EventName} @ {e.Timestamp:HH:mm:ss}");
 
-// Step 3: Have consumer handle an event from the producer
-var resultEvent = new AgentEvent(
-    "pipeline.result", "pipeline-consumer", Guid.NewGuid().ToString("N"),
-    DateTimeOffset.UtcNow, new Dictionary<string, object>
-    {
-        ["source"] = "pipeline-producer",
-        ["result"] = "Pipeline complete"
-    });
-await consumer.HandleEvent(resultEvent, ct);
-
-var consumerEvents = await consumer.GetEventLog(ct);
-Console.WriteLine($"\nConsumer event log: {consumerEvents.Count} events");
-foreach (var e in consumerEvents)
-    Console.WriteLine($"  {e.EventName} @ {e.Timestamp:HH:mm:ss}");
-
-// Step 4: Ask consumer to summarize the pipeline result
+// Step 3: Have consumer summarize the pipeline result
 var summary = await consumer.GetResponse("Summarize what just happened in one sentence.", ct);
 Console.WriteLine($"\nConsumer summary: {summary}");
 

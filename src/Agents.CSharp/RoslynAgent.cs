@@ -226,44 +226,6 @@ public class RoslynAgent(
 
     public Task<bool> CanReceiveAsync(CancellationToken ct = default) => Task.FromResult(true);
 
-    public override async Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-    {
-        if (agentEvent.EventName == "dependency.updated")
-        {
-            var packageId = agentEvent.Payload.TryGetValue("PackageId", out var pid) ? pid.ToString()! : "unknown";
-            var currentVersion = agentEvent.Payload.TryGetValue("CurrentVersion", out var cv) ? cv.ToString()! : "unknown";
-            var latestVersion = agentEvent.Payload.TryGetValue("LatestVersion", out var lv) ? lv.ToString()! : "unknown";
-
-            var messages = new List<Microsoft.Extensions.AI.ChatMessage>
-            {
-                new(ChatRole.User,
-                    $"Analyze the impact of upgrading {packageId} from {currentVersion} to {latestVersion}.\n\n" +
-                    "Consider: 1) Known breaking changes, 2) API surface changes, " +
-                    "3) Required code modifications, 4) Risk assessment (Low/Medium/High).")
-            };
-
-            var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
-            var analysis = response.Text ?? string.Empty;
-
-            State[$"impact-{packageId}"] = new StateEntry($"impact-{packageId}", analysis);
-            await WriteStateAsync(ct);
-
-            await PublishAsync("impact.analysis.completed", new Dictionary<string, object>
-            {
-                ["PackageId"] = packageId,
-                ["CurrentVersion"] = currentVersion,
-                ["LatestVersion"] = latestVersion,
-                ["Analysis"] = analysis
-            }, ct);
-        }
-        else
-        {
-            State[$"event-{agentEvent.CorrelationId}"] = new StateEntry(
-                $"event-{agentEvent.CorrelationId}", agentEvent.EventName);
-            await WriteStateAsync(ct);
-        }
-    }
-
     private static IEnumerable<TypeEntry> ExtractTypes(SyntaxNode root, string filePath)
     {
         var namespaceDeclarations = root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>();

@@ -99,16 +99,8 @@ app.MapGet("/samples/agent/events", async (
     var agentId = $"sample-events-{Guid.NewGuid():N}";
     var agent = grains.GetGrain<IPersonalAssistant>(agentId);
 
-    var refreshEvent = new AgentEvent(
-        "weather.refresh", agentId, Guid.NewGuid().ToString("N"),
-        DateTimeOffset.UtcNow, new Dictionary<string, object> { ["city"] = "Seattle" });
-
-    var alertEvent = new AgentEvent(
-        "weather.alert", agentId, Guid.NewGuid().ToString("N"),
-        DateTimeOffset.UtcNow, new Dictionary<string, object> { ["condition"] = "rain" });
-
-    await agent.PublishToStream(refreshEvent, ct);
-    await agent.PublishToStream(alertEvent, ct);
+    // trigger events via conversation (agents publish internally)
+    await agent.GetResponse("Log a weather event for Seattle.", ct);
 
     var eventLog = await agent.GetEventLog(ct);
 
@@ -232,28 +224,20 @@ app.MapGet("/samples/agent/cancel", async (
     });
 });
 
-app.MapGet("/samples/agent/handle-event", async (
+app.MapGet("/samples/agent/assign-task", async (
     IGrainFactory grains,
     CancellationToken ct) =>
 {
-    var agentId = $"sample-handle-{Guid.NewGuid():N}";
+    var agentId = $"sample-task-{Guid.NewGuid():N}";
     var agent = grains.GetGrain<IPersonalAssistant>(agentId);
 
-    var evt = new AgentEvent(
-        "task.assigned", agentId, Guid.NewGuid().ToString("N"),
-        DateTimeOffset.UtcNow, new Dictionary<string, object>
-        {
-            ["task"] = "Review pull request #42",
-            ["priority"] = "high"
-        });
-
-    await agent.HandleEvent(evt, ct);
+    var response = await agent.GetResponse("Review pull request #42 with high priority.", ct);
     var eventLog = await agent.GetEventLog(ct);
 
     return Results.Ok(new
     {
         agentId,
-        eventHandled = true,
+        response,
         eventLogCount = eventLog.Count
     });
 });

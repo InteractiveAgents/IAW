@@ -43,21 +43,6 @@ public class SelfImprovementAgent(
 
     protected override AgentKind AgentKindValue => AgentKind.Static;
 
-    public override async Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-    {
-        switch (agentEvent.EventName)
-        {
-            case "tests.passed":
-                var passed = GetPayloadInt(agentEvent, "Passed");
-                var failed = GetPayloadInt(agentEvent, "Failed");
-                await AccumulateTestMetrics(passed, failed);
-                break;
-            case "code.changed":
-                await RecordCodeChange(agentEvent.SourceAgentId, agentEvent.EventName, agentEvent.Timestamp);
-                break;
-        }
-    }
-
     public Task OnStreamEventAsync(TestsPassedEvent evt, StreamSequenceToken? token)
         => AccumulateTestMetrics(evt.Passed, evt.Failed);
 
@@ -88,9 +73,6 @@ public class SelfImprovementAgent(
             }));
         await WriteStateAsync(default);
     }
-
-    private static int GetPayloadInt(AgentEvent evt, string key)
-        => evt.Payload.TryGetValue(key, out var val) && val is int i ? i : 0;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {

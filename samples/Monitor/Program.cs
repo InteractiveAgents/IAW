@@ -42,28 +42,13 @@ foreach (var kvp in state.Entries)
     Console.WriteLine($"  {kvp.Key} = {kvp.Value.Value}");
 Console.WriteLine();
 
-// 2. Publish monitoring events
-Console.WriteLine("Publishing monitoring events...");
-var healthCheck = new AgentEvent(
-    "monitor.health-check", "monitor-demo", Guid.NewGuid().ToString("N"),
-    DateTimeOffset.UtcNow, new Dictionary<string, object>
-    {
-        ["target"] = "/tmp/monitored-project",
-        ["status"] = "healthy"
-    });
-await agent.PublishToStream(healthCheck, ct);
-Console.WriteLine("  Published: monitor.health-check");
+// 2. Trigger monitoring via agent conversation (events published internally)
+Console.WriteLine("Triggering monitoring checks...");
+await agent.GetResponse("Run a health check on /tmp/monitored-project and report status.", ct);
+Console.WriteLine("  Health check triggered.");
 
-var alert = new AgentEvent(
-    "monitor.alert", "monitor-demo", Guid.NewGuid().ToString("N"),
-    DateTimeOffset.UtcNow, new Dictionary<string, object>
-    {
-        ["target"] = "/tmp/monitored-project",
-        ["severity"] = "warning",
-        ["message"] = "Disk usage above 80%"
-    });
-await agent.PublishToStream(alert, ct);
-Console.WriteLine("  Published: monitor.alert");
+await agent.GetResponse("Alert: Disk usage above 80% on /tmp/monitored-project.", ct);
+Console.WriteLine("  Alert triggered.");
 
 // 3. Review event log
 var events = await agent.GetEventLog(ct);

@@ -17,15 +17,4 @@ public class NotificationAgent(
 {
     protected override string DisplayName => "Notification Hub";
     protected override string Instructions => "Aggregates events and delivers notifications";
-
-    public override async Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-    {
-        await PublishAsync("notification.delivered", new Dictionary<string, object>
-        {
-            ["OriginalEvent"] = agentEvent.EventName,
-            ["Source"] = agentEvent.SourceAgentId,
-            ["Payload"] = agentEvent.Payload,
-            ["DeliveredAt"] = DateTimeOffset.UtcNow
-        }, ct);
-    }
 }

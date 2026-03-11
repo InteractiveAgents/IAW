@@ -17,11 +17,9 @@ public interface IAgent : IGrainWithStringKey
     Task<AgentCapabilities> GetCapabilities(CancellationToken ct);
 
     // Events
-    Task HandleEvent(AgentEvent agentEvent, CancellationToken ct);
     Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct);
 
     // Streams
-    Task PublishToStream(AgentEvent evt, CancellationToken ct);
     Task<IReadOnlyList<string>> GetActiveSubscriptions(CancellationToken ct);
 
     // Usage

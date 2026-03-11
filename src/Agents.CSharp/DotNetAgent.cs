@@ -63,23 +63,6 @@ public partial class DotNetAgent(
 
     public Task<bool> CanReceiveAsync(CancellationToken ct = default) => Task.FromResult(true);
 
-    public override async Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-    {
-        if (agentEvent.EventName != "code.changed") return;
-
-        var solutionPath = agentEvent.Payload.TryGetValue("SolutionPath", out var sp)
-            ? sp.ToString()!
-            : agentEvent.Payload.TryGetValue("FilePath", out var fp)
-                ? FindSolutionPath(fp.ToString()!)
-                : FindSolutionFromWorkspace();
-
-        if (solutionPath is not null)
-        {
-            await RunTestsAsync(solutionPath, null, ct);
-            await RunFormatAsync(solutionPath, ct);
-        }
-    }
-
     private async Task<TestRunResult> RunTestsAsync(string solutionPath, string? filter, CancellationToken ct)
     {
         State["solution-path"] = new StateEntry("solution-path", solutionPath);

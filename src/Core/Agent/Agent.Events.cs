@@ -8,14 +8,8 @@ namespace IAW.Core;
 
 public abstract partial class Agent
 {
-    public virtual Task HandleEvent(AgentEvent agentEvent, CancellationToken ct = default)
-        => Task.CompletedTask;
-
     public Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<AgentEvent>>(eventLog.ToList());
-
-    public Task PublishAsync(string eventName, Dictionary<string, object> payload)
-        => PublishAsync(eventName, payload, default);
 
     protected async Task PublishAsync(string eventName, Dictionary<string, object>? payload = null, CancellationToken ct = default)
     {
@@ -37,7 +31,7 @@ public abstract partial class Agent
         AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", eventName } });
     }
 
-    protected async Task PublishTypedAsync<TEvent>(TEvent evt, CancellationToken ct = default) where TEvent : IEvent
+    protected async Task PublishToStream<TEvent>(TEvent evt, CancellationToken ct = default) where TEvent : IEvent
     {
         var streamName = EventTypeToStreamName(typeof(TEvent));
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish_typed");
@@ -52,10 +46,33 @@ public abstract partial class Agent
         await WriteStateAsync(ct);
 
         var streamId = StreamId.Create("agents", streamName);
-        var stream = StreamProvider.GetStream<AgentEvent>(streamId);
-        await stream.OnNextAsync(agentEvent);
+        var stream = StreamProvider.GetStream<TEvent>(streamId);
+        await stream.OnNextAsync(evt);
 
         AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", streamName } });
+    }
+
+    // back-compat alias so existing callers of PublishTypedAsync keep compiling
+    protected Task PublishTypedAsync<TEvent>(TEvent evt, CancellationToken ct = default) where TEvent : IEvent
+        => PublishToStream(evt, ct);
+
+    protected async Task PublishToTaskStream<TEvent>(string taskId, TEvent evt, CancellationToken ct = default)
+        where TEvent : ITaskStreamEvent
+    {
+        using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish_task_stream");
+        activity?.SetTag("event.type", typeof(TEvent).Name);
+        activity?.SetTag("task.id", taskId);
+
+        var streamId = StreamId.Create("agents", $"task/{taskId}");
+        var stream = StreamProvider.GetStream<TEvent>(streamId);
+        await stream.OnNextAsync(evt);
+
+        eventLog.Add(new AgentEvent(
+            typeof(TEvent).Name, evt.SourceAgentId, evt.CorrelationId,
+            evt.Timestamp, new Dictionary<string, object> { ["taskId"] = taskId }));
+        await WriteStateAsync(ct);
+
+        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", typeof(TEvent).Name } });
     }
 
     public static string EventTypeToStreamName(Type eventType)
