@@ -1,65 +1,208 @@
 # Architecture
 
-This page covers the V3 agent class hierarchy, behavior composition via interfaces, the typed message system, stream patterns, and the agent registry.
+This page covers the v0.2.0 agent class hierarchy, communication patterns, orchestration pipeline, persistence, context providers, and the agent registry.
 
-## Class Hierarchy
+## Three-Tier Hierarchy
 
 ```
 DurableGrain (Orleans.Journaling)
-  +-- Agent (Core.V3) [abstract, partial]
-        implements IAgent
-        implements IRemindable
-        implements ISelfDiagnosable
-
-  Partial files:
-    Agent.cs          -- Conversation (GetResponse, GetResponseStream, history)
-    Agent.Events.cs   -- Event publishing (PublishAsync, PublishTypedAsync)
-    Agent.Streams.cs  -- Stream subscriptions (IStreamConsumer auto-wiring)
-    Agent.Tools.cs    -- Tool registration (built-in + DefineTools)
-    Agent.Tracking.cs -- Tracking items (StartTrackingAsync, OnTrackingDueAsync)
-    Agent.State.cs    -- Workspace and state management
-    Agent.Lifecycle.cs -- Metadata, capabilities, cancellation
-    Agent.Observers.cs -- Observer subscribe/unsubscribe
+  +-- Agent (IAW.Core) [abstract, partial]
+        implements IAgent, IRemindable, ISelfDiagnosable
+        5 constructor params
+        |
+        +-- LLM (IAW.Core) [abstract]
+        |     Same 5 params, default Instructions
+        |     11 agents: Sonnet46, Opus46, Claude45Haiku, Gpt4o,
+        |     Gpt4oMini, Gpt52, Gpt53, Gemini31, GrokLatest, Llama32, Qwen25
+        |
+        +-- Memory (IAW.Core) [abstract]
+        |     7 params (+memories, +embedder)
+        |     5 agents: UserMemory, ProjectMemory, PatternMemory,
+        |     EpisodeMemory, CodeMemory
+        |
+        +-- DynamicAgent (IAW.Core) [concrete, runtime-created]
+        |
+        +-- (domain agents extending Agent directly)
+              PersonalAssistant, CodeOrchestrator, TaskSupervisor, Planning,
+              Deployer, Notification, Reviewer, SelfImprovement,
+              FileSystem, Shell, Git, Build, Aspire,
+              Roslyn, DotNet, NuGet, GitHub, User, Knowledge
 ```
 
-`Agent` is split across 8 partial files for maintainability. Each file owns a single concern.
+`Agent` is split across 8 partial files for maintainability:
 
-## Durable State
+| File | Concern |
+|---|---|
+| `Agent.cs` | Conversation (GetResponse, GetResponseStream, history) |
+| `Agent.Events.cs` | Event publishing (PublishAsync, PublishToStream, PublishToTaskStream) |
+| `Agent.Streams.cs` | Stream subscriptions (IStreamConsumer auto-wiring) |
+| `Agent.Tools.cs` | Tool registration (built-in + DefineTools) |
+| `Agent.Tracking.cs` | Tracking items (StartTrackingAsync, OnTrackingDueAsync) |
+| `Agent.State.cs` | Workspace and state management |
+| `Agent.Lifecycle.cs` | Metadata, capabilities, cancellation |
+| `Agent.Observers.cs` | Observer subscribe/unsubscribe |
 
-The `Agent` constructor accepts five durable state collections. Orleans injects and persists these automatically via journaled grain storage:
+## Communication
 
-| Parameter | Type | Storage Key | Purpose |
-|---|---|---|---|
-| `state` | `IDurableDictionary<string, StateEntry>` | `agent-state` | General key-value state (workspace path, custom data) |
-| `eventLog` | `IDurableList<AgentEvent>` | `agent-events` | Immutable event audit log |
-| `chatClient` | `IChatClient` | -- | LLM client (not state, injected via DI) |
-| `history` | `IDurableList<ChatMessage>` | `v3-history` | Conversation history (role, content, timestamp) |
-| `trackingItems` | `IDurableDictionary<string, TrackingItem>` | `v3-tracking` | Scheduled tracking items |
+Agents communicate through three channels, all with auto-logging to the durable event log and OpenTelemetry instrumentation.
 
-All collections survive grain deactivation and silo restarts. Mutations are committed via `WriteStateAsync()`.
+### Task Streams
 
-## Behavior Composition
-
-V3 agents compose behaviors by implementing typed interfaces instead of inheriting from deep class hierarchies.
+Task-scoped events flow through per-task Orleans streams at `StreamId.Create("agents", $"task/{taskId}")`. All events implement `ITaskStreamEvent` (which extends `IEvent` with `TaskId`).
 
 ```mermaid
 graph LR
-    A[Your Agent] -->|implements| B[IStreamConsumer&lt;T&gt;]
-    A -->|implements| C[IStreamProducer&lt;T&gt;]
-    A -->|implements| D[IBroadcaster&lt;T&gt;]
-    A -->|implements| E[IReceiver&lt;T&gt;]
-    A -->|implements| F[INotifier&lt;T&gt;]
+    Orch["CodeOrchestrator"] -->|StepProgressEvent| TS["task/abc123"]
+    Worker["Worker"] -->|StepCompletedEvent| TS
+    Worker -->|StepFailedEvent| TS
+    Orch -->|TaskCompletedEvent| TS
+    LLM["LLM Agent"] -->|ConsiliumResponseEvent| TS
 ```
 
-| Interface | Purpose | Auto-wired? |
-|---|---|---|
-| `IStreamConsumer<TEvent>` | Receive events from a stream | Yes -- auto-subscribes on activation |
-| `IStreamProducer<TEvent>` | Publish typed events to a stream | No -- call `PublishTypedAsync` |
-| `IBroadcaster<TMessage>` | Fan-out messages to registered receivers | No -- manage receivers, call `BroadcastAsync` |
-| `IReceiver<TMessage>` | Accept directed messages from other agents | No -- implement `ReceiveAsync` |
-| `INotifier<TNotification>` | Push notifications to observers | No -- manage observers, call `NotifyAsync` |
+Published via `PublishToTaskStream<TEvent>(taskId, evt, ct)`.
 
-An agent can implement any combination of these interfaces for different message types.
+### Typed Pub/Sub
+
+Global typed events flow through streams named by convention (PascalCase to dot.case with suffix stripped). `IStreamConsumer<T>` auto-subscribes on grain activation, `IStreamProducer<T>` declares publishing capability.
+
+```mermaid
+graph LR
+    A["Producer"] -->|PublishToStream&lt;T&gt;| S["code.changed stream"]
+    S -->|OnStreamEventAsync| B["Consumer A"]
+    S -->|OnStreamEventAsync| C["Consumer B"]
+```
+
+### Peer-to-Peer
+
+Directed messaging between specific agents via `IReceiver<T>` (one-to-one) and `IBroadcaster<T>` (one-to-many fan-out).
+
+```mermaid
+graph LR
+    PA["PersonalAssistant"] -->|IBroadcaster| W1["Worker 1"]
+    PA -->|IBroadcaster| W2["Worker 2"]
+    W1 -->|IReceiver| PA
+    W2 -->|IReceiver| PA
+```
+
+## Orchestration
+
+The orchestration pipeline decomposes natural-language task descriptions into executable agent scripts.
+
+### CodeOrchestrator
+
+`CodeOrchestratorAgent` (implements `ICodeOrchestrator`) manages task lifecycle with durable state:
+
+```csharp
+public interface ICodeOrchestrator : IAgent
+{
+    Task<string> CreateTask(string description, CancellationToken ct = default);
+    Task<TaskState> GetTaskState(string taskId, CancellationToken ct = default);
+    Task PauseTask(string taskId, CancellationToken ct = default);
+    Task ResumeTask(string taskId, CancellationToken ct = default);
+}
+```
+
+`TaskState` tracks the full task lifecycle:
+
+```csharp
+public record TaskState(
+    string TaskId,
+    string Description,
+    OrchestrationStatus Status,    // Created, Running, Paused, Completed, Failed
+    IReadOnlyList<StepRecord> Steps,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? CompletedAt);
+```
+
+### ScriptGenerator
+
+`ScriptGenerator.Generate(plan, endpoint, port, workspace?)` turns an `OrchestrationPlan` into a runnable C# script. It uses `InterfaceCatalog.Discover()` to resolve grain interfaces and grain IDs for each step, generating code that connects to the Orleans cluster and invokes agents in order.
+
+### OrchestrationCompiler
+
+`OrchestrationCompiler.Compile(source)` validates generated scripts using Roslyn, checking for compilation errors without executing:
+
+```csharp
+var result = OrchestrationCompiler.Compile(scriptSource);
+if (!result.Success)
+    foreach (var error in result.Errors)
+        Console.WriteLine(error);
+```
+
+### InterfaceCatalog
+
+`InterfaceCatalog.Discover()` scans all loaded assemblies for `IAgent`-derived interfaces and their concrete implementations, building a catalog with each agent's `InterfaceName`, computed `GrainId`, and lists of produced/consumed/received message types. This catalog is the discovery backbone for `ScriptGenerator` and for injecting agent awareness into LLM prompts via `InterfaceCatalog.ToPromptString()`.
+
+## Durable State
+
+The `Agent` constructor accepts five durable state collections. `Memory` agents add two more. Orleans injects and persists these automatically via journaled grain storage:
+
+| Parameter | Type | Storage Key | Tier |
+|---|---|---|---|
+| `state` | `IDurableDictionary<string, StateEntry>` | `agent-state` | Agent |
+| `eventLog` | `IDurableList<AgentEvent>` | `agent-events` | Agent |
+| `chatClient` | `IChatClient` | -- (DI) | Agent |
+| `history` | `IDurableList<ChatMessage>` | `history` | Agent |
+| `trackingItems` | `IDurableDictionary<string, TrackingItem>` | `tracking` | Agent |
+| `memories` | `IDurableList<MemoryEntry>` | `memories` | Memory |
+| `embedder` | `IEmbeddingGenerator<string, Embedding<float>>` | -- (DI) | Memory |
+
+All durable collections survive grain deactivation and silo restarts. Mutations are committed via `WriteStateAsync()`.
+
+## Persistence
+
+### CosmosDB
+
+Orleans grain state and journaled state (the five durable collections) persist to Azure CosmosDB in production. The Aspire AppHost configures this via `AddIAW().WithCosmosDB()`.
+
+### Qdrant
+
+Memory agents use Qdrant for vector similarity search. The `IEmbeddingGenerator<string, Embedding<float>>` produces embeddings that are stored alongside `MemoryEntry` records. Each Memory agent has its own `CollectionName` (e.g., `iaw-user-memory`, `iaw-code-memory`).
+
+## Context Providers
+
+Context providers implement `IAgentContextProvider` and inject additional context into agent prompts before LLM calls.
+
+### MemoryContextProvider
+
+Queries Memory agents for relevant context based on the current prompt:
+
+```csharp
+public class MemoryContextProvider(IGrainFactory grainFactory, string[] memoryAgentIds)
+    : IAgentContextProvider
+{
+    public string Name => "Memory";
+
+    public async Task<IReadOnlyList<string>> GetContextAsync(
+        string agentId, string prompt, CancellationToken ct = default)
+    {
+        // For each memory agent, calls GetResponse("Search for memories relevant to: {prompt}")
+        // Returns results prefixed with the memory agent ID
+    }
+}
+```
+
+This allows any agent to be augmented with long-term memory from one or more Memory agents without explicit coupling.
+
+### TaskStreamContextProvider
+
+Retrieves recent task-scoped events from the agent's event log:
+
+```csharp
+public class TaskStreamContextProvider(IGrainFactory grainFactory) : IAgentContextProvider
+{
+    public string Name => "TaskStream";
+
+    public async Task<IReadOnlyList<string>> GetContextAsync(
+        string agentId, string prompt, CancellationToken ct = default)
+    {
+        // Reads the agent's event log, filters for task events (payload contains "taskId"),
+        // returns the 10 most recent entries as formatted strings
+    }
+}
+```
+
+This gives agents awareness of recent orchestration activity without subscribing to task streams directly.
 
 ## Typed Message Hierarchy
 
@@ -76,104 +219,29 @@ classDiagram
     class ICommand
     class IEvent
     class INotification
+    class ITaskStreamEvent {
+        +string TaskId
+    }
 
     IAgentMessage <|-- ICommand
     IAgentMessage <|-- IEvent
     IAgentMessage <|-- INotification
+    IEvent <|-- ITaskStreamEvent
 
     ICommand <|-- AssignTaskCommand
     IEvent <|-- CodeChangedEvent
-    IEvent <|-- BuildCompletedEvent
-    IEvent <|-- TestResultEvent
-    IEvent <|-- DeployCompletedEvent
-    IEvent <|-- HealthCheckEvent
-    IEvent <|-- AgentActivatedEvent
-    IEvent <|-- StateChangedEvent
+    ITaskStreamEvent <|-- StepProgressEvent
+    ITaskStreamEvent <|-- StepCompletedEvent
+    ITaskStreamEvent <|-- StepFailedEvent
+    ITaskStreamEvent <|-- TaskCompletedEvent
+    ITaskStreamEvent <|-- ConsiliumResponseEvent
     INotification <|-- AlertNotification
     INotification <|-- ProgressNotification
-    INotification <|-- ReviewRequestNotification
 ```
-
-| Category | Interface | Use For |
-|---|---|---|
-| Commands | `ICommand` | Directed requests to a specific agent |
-| Events | `IEvent` | Broadcast via Orleans streams |
-| Notifications | `INotification` | Observer-pattern delivery |
-
-## Stream Patterns
-
-### Pipeline
-
-Events flow through a chain of agents, each consuming one event type and producing another.
-
-```mermaid
-graph LR
-    Dev["Developer"] -->|CodeChangedEvent| CI["CI Pipeline Agent"]
-    CI -->|BuildCompletedEvent| Deploy["Deploy Agent"]
-    Deploy -->|DeployCompletedEvent| Monitor["Monitor Agent"]
-```
-
-Each agent implements `IStreamConsumer<TInput>` and `IStreamProducer<TOutput>`:
-
-```csharp
-public class CIPipelineAgent : Agent,
-    IStreamConsumer<CodeChangedEvent>,
-    IStreamProducer<BuildCompletedEvent>
-{
-    // OnStreamEventAsync receives CodeChangedEvent
-    // PublishTypedAsync sends BuildCompletedEvent
-}
-```
-
-### Fan-Out (Broadcast)
-
-One agent broadcasts a message to multiple registered receivers.
-
-```mermaid
-graph LR
-    PA["Personal Assistant"] -->|AssignTaskCommand| A["Agent A"]
-    PA -->|AssignTaskCommand| B["Agent B"]
-    PA -->|AssignTaskCommand| C["Agent C"]
-```
-
-The broadcaster implements `IBroadcaster<T>` and manages a list of receivers:
-
-```csharp
-public class PersonalAssistantAgent : Agent,
-    IBroadcaster<AssignTaskCommand>
-{
-    // BroadcastAsync sends to all registered receivers
-    // RegisterReceiverAsync/UnregisterReceiverAsync manage the list
-}
-```
-
-### Fan-In (Aggregation)
-
-One agent receives messages from multiple sources via `IReceiver<T>`:
-
-```mermaid
-graph LR
-    A["Agent A"] -->|ProgressNotification| PA["Personal Assistant"]
-    B["Agent B"] -->|ProgressNotification| PA
-    C["Agent C"] -->|ProgressNotification| PA
-```
-
-### Stream Name Resolution
-
-Typed events are mapped to Orleans stream names by stripping the suffix and converting to dot.case:
-
-| Type Name | Stream Name |
-|---|---|
-| `CodeChangedEvent` | `code.changed` |
-| `BuildCompletedEvent` | `build.completed` |
-| `AssignTaskCommand` | `assign.task` |
-| `AlertNotification` | `alert` |
-
-The conversion is handled by `Agent.EventTypeToStreamName()`.
 
 ## AI Integration
 
-V3 uses `Microsoft.Extensions.AI` for LLM abstraction and `Microsoft.Agents.AI` for the agent framework.
+The `Agent` base class uses `Microsoft.Extensions.AI` for LLM abstraction.
 
 On activation, the `Agent` base class:
 1. Creates an `AIAgent` from the `IChatClient`
@@ -218,7 +286,7 @@ Each `AgentRegistration` includes the agent type name, display name, kind (Stati
 
 The `AgentTelemetry` class provides built-in telemetry under the `"IAW"` source:
 
-- **ActivitySource**: `"IAW"` -- traces for `agent.activate`, `agent.publish`, `agent.publish_typed`, `agent.handle_stream_event`
+- **ActivitySource**: `"IAW"` -- traces for `agent.activate`, `agent.publish`, `agent.publish_typed`, `agent.publish_task_stream`, `agent.handle_stream_event`
 - **Counters**: `agents.events.published`, `agents.events.handled`, `agents.activations`, `agents.messages.sent`, `agents.conversations.errors`
 - **Histograms**: `agents.events.handle_duration`, `agents.conversations.duration`
 

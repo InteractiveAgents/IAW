@@ -1,31 +1,63 @@
 # Events & Streams
 
-V3 agents communicate through typed events and Orleans streams. This page covers event publishing, stream composition interfaces, auto-subscription, and the three stream patterns.
+Agents communicate through typed events and Orleans streams. All events implement `IEvent`, which extends `IAgentMessage` with three required properties. This page covers event types, publishing methods, task streams, and auto-logging.
 
-## Event Publishing
+## Event Hierarchy
 
-Every agent can publish events. Events are recorded in the durable event log and broadcast on Orleans streams.
-
-### Untyped Events
-
-Use `PublishAsync` for simple event publishing with a name and optional payload:
+All inter-agent events share a common base:
 
 ```csharp
-await PublishAsync("task.completed", new Dictionary<string, object>
+public interface IAgentMessage
 {
-    ["taskId"] = "abc",
-    ["duration"] = 42
-}, ct);
+    string SourceAgentId { get; }
+    string CorrelationId { get; }
+    DateTimeOffset Timestamp { get; }
+}
+
+public interface IEvent : IAgentMessage;
 ```
 
-This creates an `AgentEvent` record, appends it to the durable event log, and publishes it to the Orleans stream at `StreamId.Create("agents", "task.completed")`.
-
-### Typed Events
-
-Use `PublishTypedAsync` for compile-time-safe event publishing with `IEvent` implementations:
+Every concrete event is a `[GenerateSerializer]` record implementing `IEvent`:
 
 ```csharp
-await PublishTypedAsync(new CodeChangedEvent(
+[GenerateSerializer]
+public record CodeChangedEvent(
+    [property: Id(0)] string SourceAgentId,
+    [property: Id(1)] string CorrelationId,
+    [property: Id(2)] DateTimeOffset Timestamp,
+    [property: Id(3)] string[] FilePaths,
+    [property: Id(4)] string? CommitSha = null) : IEvent;
+```
+
+### ITaskStreamEvent
+
+Task-scoped events extend `IEvent` with a `TaskId` for correlation within an orchestration task:
+
+```csharp
+public interface ITaskStreamEvent : IEvent
+{
+    string TaskId { get; }
+}
+```
+
+Five built-in task stream events are provided:
+
+| Event | Key Properties | Purpose |
+|---|---|---|
+| `StepProgressEvent` | `TaskId`, `StepDescription`, `Output?` | Report in-progress work |
+| `StepCompletedEvent` | `TaskId`, `StepIndex`, `Output`, `Duration` | Mark a step as done |
+| `StepFailedEvent` | `TaskId`, `StepIndex`, `Error`, `Exception?` | Record step failure |
+| `TaskCompletedEvent` | `TaskId`, `Success`, `Summary?` | Signal task completion |
+| `ConsiliumResponseEvent` | `TaskId`, `ModelId`, `Response`, `Confidence` | Collect LLM consilium votes |
+
+## Publishing Events
+
+### PublishToStream&lt;T&gt;
+
+The primary method for publishing typed events. It logs the event to the durable event log, publishes it on the Orleans stream, and increments telemetry counters:
+
+```csharp
+await PublishToStream(new CodeChangedEvent(
     SourceAgentId: this.GetPrimaryKeyString(),
     CorrelationId: Guid.NewGuid().ToString(),
     Timestamp: DateTimeOffset.UtcNow,
@@ -33,45 +65,51 @@ await PublishTypedAsync(new CodeChangedEvent(
     CommitSha: "abc123"), ct);
 ```
 
-The stream name is derived automatically from the type name: `CodeChangedEvent` becomes `code.changed`.
+The stream name is derived automatically from the type name: `CodeChangedEvent` publishes to stream `code.changed`.
 
-### HandleEvent
+::: tip
+`PublishTypedAsync` is a back-compat alias that delegates to `PublishToStream<T>`. New code should use `PublishToStream<T>` directly.
+:::
 
-Override `HandleEventAsync` to process incoming events:
+### PublishToTaskStream
 
-```csharp
-public override async Task HandleEventAsync(AgentEvent agentEvent, CancellationToken ct)
-{
-    if (agentEvent.EventName == "code.changed")
-    {
-        await GetResponse($"Review changes from {agentEvent.SourceAgentId}", ct);
-    }
-}
-```
-
-### Event Log
-
-Query the durable event log:
+For task-scoped events implementing `ITaskStreamEvent`, use `PublishToTaskStream`. It publishes to a task-specific stream at `StreamId.Create("agents", $"task/{taskId}")`:
 
 ```csharp
-var events = await agent.GetEventLogAsync(ct);
-foreach (var evt in events)
-{
-    Console.WriteLine($"{evt.Timestamp}: {evt.EventName} from {evt.SourceAgentId}");
-}
+await PublishToTaskStream(taskId, new StepProgressEvent(
+    SourceAgentId: this.GetPrimaryKeyString(),
+    CorrelationId: correlationId,
+    Timestamp: DateTimeOffset.UtcNow,
+    TaskId: taskId,
+    StepDescription: "Running build...",
+    Output: null), ct);
 ```
 
-## Stream Composition Interfaces
+Task streams allow consumers to subscribe to events for a specific orchestration task rather than a global event type.
 
-V3 provides five interfaces for composing stream behaviors. Each is generic over a message type.
+### PublishAsync (Untyped)
+
+For simple, ad-hoc events that do not warrant a dedicated type:
+
+```csharp
+await PublishAsync("orchestration.created", new Dictionary<string, object>
+{
+    ["TaskId"] = taskId,
+    ["Description"] = description
+}, ct);
+```
+
+This creates an `AgentEvent` record and publishes it to `StreamId.Create("agents", "orchestration.created")`.
+
+## Consuming Events
 
 ### IStreamConsumer&lt;TEvent&gt;
 
 Auto-subscribes to an Orleans stream on grain activation. When an event arrives, `OnStreamEventAsync` is called:
 
 ```csharp
-using Core.V3.Communication;
-using Core.V3.Messages;
+using Core.Communication;
+using Core.Messages;
 using Orleans.Streams;
 
 public class ReviewAgent : Agent, IStreamConsumer<CodeChangedEvent>
@@ -85,20 +123,37 @@ public class ReviewAgent : Agent, IStreamConsumer<CodeChangedEvent>
 ```
 
 ::: tip
-`IStreamConsumer<T>` auto-subscribes during `OnActivateAsync`. You don't need to manually subscribe to streams.
+`IStreamConsumer<T>` auto-subscribes during `OnActivateAsync`. You do not need to manually subscribe to streams.
 :::
 
 ### IStreamProducer&lt;TEvent&gt;
 
-Declares that an agent can publish a specific typed event. Implement `PublishToStreamAsync` and delegate to `PublishTypedAsync`:
+Declares that an agent can publish a specific typed event. Implement `PublishToStreamAsync` and delegate to `PublishToStream<T>`:
 
 ```csharp
 public class BuildAgent : Agent, IStreamProducer<BuildCompletedEvent>
 {
     public async Task PublishToStreamAsync(BuildCompletedEvent evt, CancellationToken ct)
     {
-        await PublishTypedAsync(evt, ct);
+        await PublishToStream(evt, ct);
     }
+}
+```
+
+### IReceiver&lt;TMessage&gt;
+
+Accept directed messages from other agents:
+
+```csharp
+public class WorkerAgent : Agent, IReceiver<AssignTaskCommand>
+{
+    public async Task<MessageReceipt> ReceiveAsync(AssignTaskCommand cmd, CancellationToken ct)
+    {
+        var result = await GetResponse($"Execute task: {cmd.Description}", ct);
+        return new MessageReceipt(true, this.GetPrimaryKeyString(), DateTimeOffset.UtcNow, null);
+    }
+
+    public Task<bool> CanReceiveAsync(CancellationToken ct) => Task.FromResult(true);
 }
 ```
 
@@ -145,50 +200,6 @@ public class CoordinatorAgent : Agent, IBroadcaster<AssignTaskCommand>
 }
 ```
 
-### IReceiver&lt;TMessage&gt;
-
-Accept directed messages from other agents:
-
-```csharp
-public class WorkerAgent : Agent, IReceiver<AssignTaskCommand>
-{
-    public async Task<MessageReceipt> ReceiveAsync(AssignTaskCommand cmd, CancellationToken ct)
-    {
-        var result = await GetResponse($"Execute task: {cmd.Description}", ct);
-        return new MessageReceipt(true, this.GetPrimaryKeyString(), DateTimeOffset.UtcNow, null);
-    }
-
-    public Task<bool> CanReceiveAsync(CancellationToken ct) => Task.FromResult(true);
-}
-```
-
-The `MessageReceipt` provides delivery acknowledgment:
-
-```csharp
-public record MessageReceipt(
-    bool Accepted,
-    string ReceiptId,
-    DateTimeOffset Timestamp,
-    string? RejectionReason);
-```
-
-### INotifier&lt;TNotification&gt;
-
-Push notifications to subscribed observers using the Orleans observer pattern:
-
-```csharp
-public class MonitorAgent : Agent, INotifier<AlertNotification>
-{
-    public async Task NotifyAsync(AlertNotification notification, CancellationToken ct)
-    {
-        // Push to all subscribed observers
-    }
-
-    public Task SubscribeObserverAsync(IAgentObserver<AlertNotification> observer) { ... }
-    public Task UnsubscribeObserverAsync(IAgentObserver<AlertNotification> observer) { ... }
-}
-```
-
 ## Stream Name Resolution
 
 Type names are converted to stream names by:
@@ -199,9 +210,24 @@ Type names are converted to stream names by:
 |---|---|
 | `CodeChangedEvent` | `code.changed` |
 | `BuildCompletedEvent` | `build.completed` |
+| `StepProgressEvent` | `step.progress` |
+| `TaskCompletedEvent` | `task.completed` |
 | `AssignTaskCommand` | `assign.task` |
 | `AlertNotification` | `alert` |
-| `HealthCheckEvent` | `health.check` |
+
+The conversion is handled by `Agent.EventTypeToStreamName()`.
+
+## Auto-Logging
+
+All publishing methods automatically log events to the durable event log and increment OpenTelemetry counters. Each method creates an `Activity` under the `"IAW"` source:
+
+| Method | Activity Name | Tags |
+|---|---|---|
+| `PublishAsync` | `agent.publish` | `event.name` |
+| `PublishToStream<T>` | `agent.publish_typed` | `event.name`, `event.type` |
+| `PublishToTaskStream<T>` | `agent.publish_task_stream` | `event.type`, `task.id` |
+
+LLM calls are also auto-logged. Every `GetResponse` call records an `LlmCall` event in the event log with `prompt_length` and agent source ID. Streaming calls record `LlmStreamCall`.
 
 ## Stream Patterns
 
@@ -233,9 +259,23 @@ public class CIPipelineAgent : Agent,
     }
 
     public async Task PublishToStreamAsync(BuildCompletedEvent evt, CancellationToken ct)
-        => await PublishTypedAsync(evt, ct);
+        => await PublishToStream(evt, ct);
 }
 ```
+
+### Task Stream Pattern
+
+Orchestration tasks use `PublishToTaskStream` so subscribers can follow a single task's progress:
+
+```mermaid
+graph LR
+    Orch["CodeOrchestrator"] -->|StepProgressEvent| TS["task/abc123"]
+    Worker["Worker Agent"] -->|StepCompletedEvent| TS
+    Worker -->|StepFailedEvent| TS
+    Orch -->|TaskCompletedEvent| TS
+```
+
+Any consumer subscribing to `StreamId.Create("agents", "task/abc123")` receives all events for that task, regardless of which agent published them.
 
 ### Fan-Out Pattern
 
@@ -263,12 +303,24 @@ graph LR
 
 The aggregator implements `IReceiver<ProgressNotification>` and collects results from multiple sources.
 
+## Event Log
+
+Query the durable event log:
+
+```csharp
+var events = await agent.GetEventLog(ct);
+foreach (var evt in events)
+{
+    Console.WriteLine($"{evt.Timestamp}: {evt.EventName} from {evt.SourceAgentId}");
+}
+```
+
 ## Active Subscriptions
 
 Query which streams an agent is subscribed to:
 
 ```csharp
-var subs = await agent.GetActiveSubscriptionsAsync(ct);
+var subs = await agent.GetActiveSubscriptions(ct);
 // Returns: ["code.changed", "build.completed", ...]
 ```
 

@@ -1,13 +1,33 @@
 # Building Agents
 
-This guide covers creating V3 agents: the constructor parameters, override points, custom tools, behavior interfaces, and testing.
+This guide covers the three-tier agent hierarchy, constructor parameters, override points, custom tools, behavior interfaces, and discovery.
 
-## Minimal Agent
+## Agent Hierarchy
 
-Every agent extends the `Agent` base class and implements a grain interface that extends `IAgent`:
+IAW provides a three-tier class hierarchy. All agents ultimately extend `Agent`, which is an Orleans `DurableGrain`:
+
+```
+DurableGrain (Orleans.Journaling)
+  +-- Agent (IAW.Core) [abstract]
+        5 constructor params: state, eventLog, chatClient, history, trackingItems
+        |
+        +-- LLM (IAW.Core) [abstract]
+        |     Same 5 params, default Instructions template
+        |     11 concrete agents (one per model)
+        |
+        +-- Memory (IAW.Core) [abstract]
+        |     7 params (+memories, +embedder)
+        |     5 concrete agents
+        |
+        +-- (your custom agents extending Agent directly)
+```
+
+### Agent Base Class
+
+Every agent extends `Agent` and implements a grain interface derived from `IAgent`:
 
 ```csharp
-using Core.V3;
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
@@ -17,8 +37,8 @@ public class MinimalAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems), IMinimalAgent
 {
     protected override string Instructions => "You are a minimal agent.";
@@ -27,9 +47,114 @@ public class MinimalAgent(
 
 This gives you a fully functional agent with durable conversation history, state management, event publishing, tracking, and built-in tools.
 
+### LLM Abstract Class
+
+`LLM` extends `Agent` with a default `Instructions` template. It is the base for model-specific agents that expose a particular LLM as an Orleans grain:
+
+```csharp
+public abstract class LLM(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : Agent(state, eventLog, chatClient, history, trackingItems)
+{
+    protected override string Instructions =>
+        $"You are {DisplayName}. Answer directly and accurately.";
+}
+```
+
+11 concrete LLM agents ship out of the box, each binding a specific model via `[Llm<TModel>]`:
+
+| Agent | Model | Interface |
+|---|---|---|
+| `Sonnet46Agent` | Sonnet 4.6 | `ISonnet46` |
+| `Opus46Agent` | Opus 4.6 | `IOpus46` |
+| `Claude45HaikuAgent` | Claude 4.5 Haiku | `IClaude45Haiku` |
+| `Gpt4oAgent` | GPT-4o | `IGpt4o` |
+| `Gpt4oMiniAgent` | GPT-4o Mini | `IGpt4oMini` |
+| `Gpt52Agent` | GPT-5.2 | `IGpt52` |
+| `Gpt53Agent` | GPT-5.3 | `IGpt53` |
+| `Gemini31Agent` | Gemini 3.1 | `IGemini31` |
+| `GrokLatestAgent` | Grok Latest | `IGrokLatest` |
+| `Llama32Agent` | Llama 3.2 | `ILlama32` |
+| `Qwen25Agent` | Qwen 2.5 | `IQwen25` |
+
+Example LLM agent (all follow this pattern):
+
+```csharp
+public class Sonnet46Agent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [Llm<Sonnet46>] IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    : global::IAW.Core.LLM(state, eventLog, chatClient, history, trackingItems), ISonnet46
+{
+}
+```
+
+### Memory Abstract Class
+
+`Memory` extends `Agent` with two additional constructor parameters (`memories` and `embedder`) and provides built-in methods for semantic memory operations:
+
+```csharp
+public abstract class Memory(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
+    [Memory("memories")] IDurableList<MemoryEntry> memories,
+    IEmbeddingGenerator<string, Embedding<float>> embedder)
+    : Agent(state, eventLog, chatClient, history, trackingItems)
+{
+    protected abstract string CollectionName { get; }
+
+    protected virtual Task Observe(string content, MemoryProvenance provenance, CancellationToken ct);
+    protected virtual Task<IReadOnlyList<MemoryEntry>> Search(string query, int topK = 5, CancellationToken ct);
+    protected virtual Task Consolidate(CancellationToken ct);
+    protected virtual Task Decay(float decayFactor = 0.95f, CancellationToken ct);
+    protected virtual Task Forget(string memoryId, CancellationToken ct);
+}
+```
+
+5 concrete Memory agents ship out of the box:
+
+| Agent | Collection | Interface | Purpose |
+|---|---|---|---|
+| `UserMemoryAgent` | `iaw-user-memory` | `IUserMemory` | User preferences, personal facts |
+| `ProjectMemoryAgent` | `iaw-project-memory` | `IProjectMemory` | Project-level knowledge |
+| `PatternMemoryAgent` | `iaw-pattern-memory` | `IPatternMemory` | Recurring patterns and conventions |
+| `EpisodeMemoryAgent` | `iaw-episode-memory` | `IEpisodeMemory` | Task execution episodes |
+| `CodeMemoryAgent` | `iaw-code-memory` | `ICodeMemory` | Code structure and relationships |
+
+Example Memory agent:
+
+```csharp
+public class UserMemoryAgent(
+    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
+    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [Llm<Claude45Haiku>] IChatClient chatClient,
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
+    [Memory("memories")] IDurableList<MemoryEntry> memories,
+    IEmbeddingGenerator<string, Embedding<float>> embedder)
+    : global::IAW.Core.Memory(state, eventLog, chatClient, history, trackingItems, memories, embedder),
+      IUserMemory
+{
+    protected override string CollectionName => "iaw-user-memory";
+    protected override string DisplayName => "User Memory";
+    protected override string Instructions =>
+        "You manage user preferences, personal facts, and corrections. " +
+        "Extract and remember personal information from conversations.";
+}
+```
+
 ## Constructor Parameters
 
-The five constructor parameters are injected by Orleans:
+The five base `Agent` constructor parameters are injected by Orleans:
 
 | Parameter | Type | Purpose |
 |---|---|---|
@@ -39,8 +164,15 @@ The five constructor parameters are injected by Orleans:
 | `history` | `IDurableList<ChatMessage>` | Conversation history |
 | `trackingItems` | `IDurableDictionary<string, TrackingItem>` | Scheduled tracking items |
 
+`Memory` agents add two more:
+
+| Parameter | Type | Purpose |
+|---|---|---|
+| `memories` | `IDurableList<MemoryEntry>` | Durable memory store with relevance scores |
+| `embedder` | `IEmbeddingGenerator<string, Embedding<float>>` | Embedding generator for semantic search |
+
 ::: tip
-You never instantiate these yourself. Orleans resolves the `[Memory]`-annotated parameters from journaled grain storage and the `IChatClient` from dependency injection.
+You never instantiate these yourself. Orleans resolves the `[Memory]`-annotated parameters from journaled grain storage and the `IChatClient` from dependency injection. The `[Llm<TModel>]` attribute resolves to a keyed `IChatClient` for a specific model.
 :::
 
 ## Override Points
@@ -104,7 +236,7 @@ private async Task<string> CreateReminder(
 ```
 
 ::: warning
-Tool methods must have a `[Description]` attribute. Without it, the method won't be discovered by the tool registration system.
+Tool methods must have a `[Description]` attribute. Without it, the method will not be discovered by the tool registration system.
 :::
 
 ## Conversation
@@ -125,7 +257,7 @@ await foreach (var chunk in agent.GetResponseStream("Tell me a story", ct))
 Conversation history is persisted in the durable `history` list via `DurableChatHistoryProvider`. Clear it with:
 
 ```csharp
-await agent.ClearHistoryAsync(ct);
+await agent.ClearHistory(ct);
 ```
 
 ## State Management
@@ -134,10 +266,10 @@ The agent's state is a durable dictionary of `StateEntry` records:
 
 ```csharp
 // Set workspace (enables FileTools and ShellTools)
-await agent.SetWorkspaceAsync("/path/to/project", ct);
+await agent.SetWorkspace("/path/to/project", ct);
 
 // Read all state
-var state = await agent.GetStateAsync(ct);
+var state = await agent.GetState(ct);
 foreach (var entry in state.Entries)
 {
     Console.WriteLine($"{entry.Key} = {entry.Value.Value}");
@@ -156,22 +288,24 @@ await WriteStateAsync(AgentCancellation);
 Publish events to the event log and Orleans streams:
 
 ```csharp
-// Untyped event
-await PublishAsync("task.completed", new Dictionary<string, object>
-{
-    ["taskId"] = "abc",
-    ["duration"] = 42
-}, ct);
-
-// Typed event (uses IEvent interface)
-await PublishTypedAsync(new BuildCompletedEvent(
+// Typed event (preferred)
+await PublishToStream(new CodeChangedEvent(
     SourceAgentId: this.GetPrimaryKeyString(),
     CorrelationId: Guid.NewGuid().ToString(),
     Timestamp: DateTimeOffset.UtcNow,
-    Success: true,
-    CommitSha: "abc123",
-    Output: "Build succeeded"), ct);
+    FilePaths: ["src/Agent.cs"],
+    CommitSha: "abc123"), ct);
+
+// Task-scoped event
+await PublishToTaskStream(taskId, new StepProgressEvent(
+    SourceAgentId: this.GetPrimaryKeyString(),
+    CorrelationId: correlationId,
+    Timestamp: DateTimeOffset.UtcNow,
+    TaskId: taskId,
+    StepDescription: "Running build..."), ct);
 ```
+
+See [Events & Streams](/guide/events-streams) for detailed patterns.
 
 ## Behavior Interfaces
 
@@ -184,13 +318,11 @@ public class MyAgent : Agent,
     IReceiver<AssignTaskCommand>,         // can receive directed commands
     IBroadcaster<AlertNotification>       // can broadcast to registered receivers
 {
-    // IStreamConsumer callback -- called automatically
     public async Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
     {
         var review = await GetResponse($"Review: {string.Join(", ", evt.FilePaths)}", AgentCancellation);
     }
 
-    // IReceiver -- accept directed messages
     public async Task<MessageReceipt> ReceiveAsync(AssignTaskCommand cmd, CancellationToken ct)
     {
         await GetResponse($"Task: {cmd.Description}", ct);
@@ -201,34 +333,49 @@ public class MyAgent : Agent,
 }
 ```
 
-See [Events & Streams](/guide/events-streams) for detailed patterns.
+## InterfaceCatalog
+
+`InterfaceCatalog` discovers all `IAgent`-derived interfaces at runtime and builds a catalog of agent capabilities. It scans loaded assemblies for grain interfaces and their concrete implementations:
+
+```csharp
+var catalog = InterfaceCatalog.Discover();
+foreach (var entry in catalog)
+{
+    Console.WriteLine($"{entry.InterfaceName} (id: {entry.GrainId})");
+    Console.WriteLine($"  Produces: {string.Join(", ", entry.Produces)}");
+    Console.WriteLine($"  Consumes: {string.Join(", ", entry.Consumes)}");
+    Console.WriteLine($"  Receives: {string.Join(", ", entry.Receives)}");
+}
+```
+
+Each `CatalogEntry` contains:
+
+| Property | Type | Source |
+|---|---|---|
+| `InterfaceName` | `string` | The grain interface name (e.g., `ISonnet46`) |
+| `GrainId` | `string` | Computed grain ID (e.g., `sonnet46`) |
+| `InterfaceType` | `Type` | The .NET type for the interface |
+| `Produces` | `IReadOnlyList<string>` | Event types from `IStreamProducer<T>` |
+| `Consumes` | `IReadOnlyList<string>` | Event types from `IStreamConsumer<T>` |
+| `Receives` | `IReadOnlyList<string>` | Message types from `IReceiver<T>` |
+
+The catalog is used by `ScriptGenerator` to resolve agent interfaces when generating orchestration scripts, and by `PersonalAssistantAgent` to understand what agents are available.
+
+Call `InterfaceCatalog.ToPromptString(entries)` to render the catalog as a markdown string suitable for injecting into LLM prompts.
 
 ## Metadata and Capabilities
 
 The agent automatically reports its metadata based on implemented interfaces and attributes:
 
 ```csharp
-var metadata = await agent.GetMetadataAsync(ct);
+var metadata = await agent.GetMetadata(ct);
 // metadata.AgentType = "MyAgent"
 // metadata.DisplayName = "My Agent"
-// metadata.Publishes = ["BuildCompletedEvent", "AlertNotification"]
-// metadata.Subscribes = ["CodeChangedEvent", "AssignTaskCommand"]
 
-var caps = await agent.GetCapabilitiesAsync(ct);
+var caps = await agent.GetCapabilities(ct);
 // caps.HasMemory = true
-// caps.HasEvents = true (because it implements IStreamConsumer/IStreamProducer)
+// caps.HasEvents = true
 // caps.HasTools = true
-```
-
-Add custom capabilities with attributes:
-
-```csharp
-using Core.V3.Attributes;
-
-[Capability("code-review")]
-[Publishes("review.completed")]
-[Subscribes("code.changed")]
-public class CodeReviewAgent : Agent { ... }
 ```
 
 ## Cancellation
@@ -236,7 +383,7 @@ public class CodeReviewAgent : Agent { ... }
 Every agent has a cancellation token accessible via `AgentCancellation`. Cancel an agent externally:
 
 ```csharp
-await agent.CancelAsync(ct);
+await agent.Cancel(ct);
 ```
 
 This cancels the current token and creates a new one, stopping any in-progress LLM calls or tool executions.
@@ -245,7 +392,7 @@ This cancels the current token and creates a new one, stopping any in-progress L
 
 ```csharp
 using System.ComponentModel;
-using Core.V3;
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
 
@@ -255,8 +402,8 @@ public class WeatherAgent(
     [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
     [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
     IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    [Memory("history")] IDurableList<ChatMessage> history,
+    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
     : Agent(state, eventLog, chatClient, history, trackingItems), IWeatherAgent
 {
     protected override string Instructions =>

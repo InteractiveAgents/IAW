@@ -144,4 +144,11 @@ public class AssistantAgent(
 - [Building Agents](/guide/agents) -- constructor params, custom tools, override points
 - [Events & Streams](/guide/events-streams) -- typed events, stream composition, pipeline patterns
 - [Message Types](/guide/messages) -- ICommand, IEvent, INotification
+- [Communication](/guide/communication) -- pub/sub, P2P, broadcast patterns
+- [LLM Agents](/guide/llm-agents) -- model hierarchy, [Llm&lt;T&gt;] attribute, adding new models
+- [Persistence](/guide/persistence) -- CosmosDB, Qdrant, in-memory vs durable mode
+- [Orchestration](/guide/orchestration) -- PlanningAgent, ScriptGenerator, ScriptExecutor
+- [Consilium](/guide/consilium) -- multi-model patterns: routing, voting, synthesis
+- [Memory](/guide/memory) -- memory agents, MemoryEntry, context providers
+- [Task Supervision](/guide/supervisor) -- stall detection, escalation, notification routing
 - [MCP Server](/guide/mcp) -- orchestrate agents from Claude Code via MCP

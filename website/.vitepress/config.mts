@@ -32,7 +32,10 @@ export default defineConfig({
             { text: 'Architecture', link: '/guide/architecture' },
             { text: 'Building Agents', link: '/guide/agents' },
             { text: 'Message Types', link: '/guide/messages' },
-            { text: 'Events & Streams', link: '/guide/events-streams' }
+            { text: 'Events & Streams', link: '/guide/events-streams' },
+            { text: 'Communication', link: '/guide/communication' },
+            { text: 'LLM Agents', link: '/guide/llm-agents' },
+            { text: 'Persistence', link: '/guide/persistence' }
           ]
         },
         {
@@ -41,6 +44,15 @@ export default defineConfig({
             { text: 'Conversation', link: '/guide/behaviors/conversation' },
             { text: 'Tools', link: '/guide/behaviors/tools' },
             { text: 'Tracking', link: '/guide/behaviors/tracking' }
+          ]
+        },
+        {
+          text: 'Advanced',
+          items: [
+            { text: 'Orchestration', link: '/guide/orchestration' },
+            { text: 'Consilium', link: '/guide/consilium' },
+            { text: 'Memory', link: '/guide/memory' },
+            { text: 'Task Supervision', link: '/guide/supervisor' }
           ]
         },
         {
