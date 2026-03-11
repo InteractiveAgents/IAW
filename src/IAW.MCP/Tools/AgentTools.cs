@@ -1,45 +1,55 @@
-using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Text.Json;
 using Core.Contracts;
+using Core.Orchestration;
 
-internal sealed partial class AgentTools(IClusterClient orleans)
+internal sealed class AgentTools(IClusterClient orleans)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    // Cache: grain ID → grain interface type (built once from loaded assemblies)
-    private static readonly ConcurrentDictionary<string, Type> GrainInterfaceMap = BuildGrainInterfaceMap();
-
     private IAgent ResolveAgent(string agentId)
     {
-        if (GrainInterfaceMap.TryGetValue(agentId, out var interfaceType))
-            return (IAgent)orleans.GetGrain(interfaceType, agentId);
+        var entry = InterfaceCatalog.Discover()
+            .FirstOrDefault(e => string.Equals(e.GrainId, agentId, StringComparison.OrdinalIgnoreCase));
+
+        if (entry is not null)
+            return (IAgent)orleans.GetGrain(entry.InterfaceType, agentId);
 
         if (agentId.StartsWith("dynamic-"))
             return orleans.GetGrain<IDynamicAgent>(agentId);
 
-        throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {string.Join(", ", GrainInterfaceMap.Keys)}");
+        var known = string.Join(", ", InterfaceCatalog.Discover().Select(e => e.GrainId));
+        throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }
 
     [McpServerTool(Name = "agent_list_all")]
     [Description("List all registered agents with their metadata and capabilities.")]
     public async Task<string> AgentListAll(CancellationToken ct)
     {
+        var catalog = InterfaceCatalog.Discover();
         var results = new List<object>();
-        foreach (var (id, _) in GrainInterfaceMap)
+        foreach (var entry in catalog)
         {
             try
             {
-                var agent = ResolveAgent(id);
+                var agent = ResolveAgent(entry.GrainId);
                 var metadata = await agent.GetMetadata(ct);
                 var capabilities = await agent.GetCapabilities(ct);
-                results.Add(new { id, metadata, capabilities });
+                results.Add(new
+                {
+                    id = entry.GrainId,
+                    interfaceName = entry.InterfaceName,
+                    produces = entry.Produces,
+                    consumes = entry.Consumes,
+                    receives = entry.Receives,
+                    metadata,
+                    capabilities
+                });
             }
             catch
             {
-                results.Add(new { id, error = "Agent not available" });
+                results.Add(new { id = entry.GrainId, error = "Agent not available" });
             }
         }
         return JsonSerializer.Serialize(results, JsonOptions);
@@ -135,38 +145,4 @@ internal sealed partial class AgentTools(IClusterClient orleans)
             "Analyze recent agent interactions and propose improvements", ct);
         return JsonSerializer.Serialize(new { response }, JsonOptions);
     }
-
-    private static ConcurrentDictionary<string, Type> BuildGrainInterfaceMap()
-    {
-        var map = new ConcurrentDictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-
-        var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-            .Where(t => t.IsInterface
-                         && t != typeof(IAgent)
-                         && t != typeof(IDynamicAgent)
-                         && typeof(IAgent).IsAssignableFrom(t)
-                         && !t.IsGenericType);
-
-        foreach (var iface in agentInterfaces)
-        {
-            var name = iface.Name;
-            if (name.StartsWith('I') && name.Length > 1 && char.IsUpper(name[1]))
-                name = name[1..];
-
-            var grainId = ToKebabCase(name);
-            map.TryAdd(grainId, iface);
-        }
-
-        return map;
-    }
-
-    private static string ToKebabCase(string pascalCase)
-    {
-        var kebab = KebabRegex().Replace(pascalCase, "-$1").ToLowerInvariant();
-        return kebab.TrimStart('-');
-    }
-
-    [GeneratedRegex("(?<!^)([A-Z])")]
-    private static partial Regex KebabRegex();
 }
