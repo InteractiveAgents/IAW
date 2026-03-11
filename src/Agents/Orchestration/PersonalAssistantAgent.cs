@@ -254,7 +254,7 @@ public class PersonalAssistantAgent(
             ["self-improvement"] = () => GrainFactory.GetGrain<ISelfImprovement>("self-improvement"),
             ["deployer"] = () => GrainFactory.GetGrain<IDeployer>("deployer"),
             ["planning"] = () => GrainFactory.GetGrain<IPlanning>("planning"),
-            ["notification"] = () => GrainFactory.GetGrain<INotification>("notification"),
+            ["notification"] = () => GrainFactory.GetGrain<INotificationAgent>("notification"),
             ["knowledge"] = () => GrainFactory.GetGrain<IKnowledge>("knowledge"),
             ["user"] = () => GrainFactory.GetGrain<IUser>("user"),
             ["file-system"] = () => GrainFactory.GetGrain<IFileSystem>("file-system"),

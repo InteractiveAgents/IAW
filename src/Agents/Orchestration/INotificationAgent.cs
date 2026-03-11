@@ -2,4 +2,4 @@ using Core.Contracts;
 
 namespace IAW.Agents.Orchestration;
 
-public interface INotification : IAgent;
+public interface INotificationAgent : IAgent;

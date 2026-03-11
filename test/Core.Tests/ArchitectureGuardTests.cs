@@ -147,6 +147,7 @@ public class ArchitectureGuardTests
         var concreteGrains = agentsAssembly.GetTypes()
             .Where(t => !t.IsAbstract && !t.IsInterface
                 && t.Name.EndsWith("Agent")
+                && !t.Name.StartsWith("Proxy_")
                 && typeof(IGrain).IsAssignableFrom(t));
 
         Assert.NotEmpty(concreteGrains);

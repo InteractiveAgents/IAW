@@ -13,7 +13,7 @@ public class NotificationAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient,
     [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
     [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), INotification
+    : Agent(state, eventLog, chatClient, history, trackingItems), INotificationAgent
 {
     protected override string DisplayName => "Notification Hub";
     protected override string Instructions => "Aggregates events and delivers notifications";
