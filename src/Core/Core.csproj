@@ -23,6 +23,7 @@
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="OpenAI" />
     <PackageReference Include="OllamaSharp" />

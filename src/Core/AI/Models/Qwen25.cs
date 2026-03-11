@@ -1,3 +1,5 @@
+using Core.Contracts;
+
 namespace Core.AI.Models;
 
 public sealed class Qwen25 : LLMModel
@@ -10,3 +12,5 @@ public sealed class Qwen25 : LLMModel
     public override ProviderType Provider => ProviderType.Ollama;
     public override ModelCapabilities Capabilities => ModelCapabilities.ChatOnly;
 }
+
+public interface IQwen25 : IAgent { }

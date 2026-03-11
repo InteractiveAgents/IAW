@@ -1,3 +1,5 @@
+using Core.Contracts;
+
 namespace Core.AI.Models;
 
 public sealed class Gpt4oMini : LLMModel
@@ -10,3 +12,5 @@ public sealed class Gpt4oMini : LLMModel
     public override ProviderType Provider => ProviderType.OpenAI;
     public override ModelCapabilities Capabilities => ModelCapabilities.ToolCapable;
 }
+
+public interface IGpt4oMini : IAgent { }

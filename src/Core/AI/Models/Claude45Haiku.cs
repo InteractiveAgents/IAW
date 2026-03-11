@@ -1,3 +1,5 @@
+using Core.Contracts;
+
 namespace Core.AI.Models;
 
 public sealed class Claude45Haiku : LLMModel
@@ -10,3 +12,5 @@ public sealed class Claude45Haiku : LLMModel
     public override ProviderType Provider => ProviderType.Anthropic;
     public override ModelCapabilities Capabilities => ModelCapabilities.FullyCapable;
 }
+
+public interface IClaude45Haiku : IAgent { }

@@ -1,3 +1,5 @@
+using Core.Contracts;
+
 namespace Core.AI.Models;
 
 public sealed class Llama32 : LLMModel
@@ -10,3 +12,5 @@ public sealed class Llama32 : LLMModel
     public override ProviderType Provider => ProviderType.Ollama;
     public override ModelCapabilities Capabilities => ModelCapabilities.ChatOnly;
 }
+
+public interface ILlama32 : IAgent { }
