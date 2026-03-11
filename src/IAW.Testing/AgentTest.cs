@@ -28,6 +28,7 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
         var mockClient = new MockChatClient().ReturnsText("mock-response");
 
         siloBuilder.Services.AddSingleton<IChatClient>(mockClient);
+        siloBuilder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new MockEmbeddingGenerator());
         siloBuilder.Services.AddHttpClient();
         siloBuilder.Services.AddSingleton<Octokit.IGitHubClient>(
             new Octokit.GitHubClient(new Octokit.ProductHeaderValue("iaw-test")));
