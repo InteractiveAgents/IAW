@@ -59,7 +59,8 @@
       "Bash(ping:*)",
       "Bash(wc:*)",
       "mcp__aspire__list_trace_structured_logs",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(do sed:*)"
     ]
   },
   "enabledMcpjsonServers": [
