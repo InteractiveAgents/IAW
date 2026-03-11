@@ -55,5 +55,10 @@
     <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0-2.final" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0-preview.1.26104.118" />
+    <PackageVersion Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.Clustering.Cosmos" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.Reminders.Cosmos" Version="10.0.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.1.2" />
   </ItemGroup>
 </Project>
