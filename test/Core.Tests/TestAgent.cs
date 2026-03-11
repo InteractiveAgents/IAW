@@ -89,11 +89,11 @@ public class StreamTestAgent(
 
     public int EventsHandled { get; private set; }
 
-    public Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
+    public async Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
     {
         EventsHandled++;
         State[$"handled-{EventsHandled}"] = new StateEntry($"handled-{EventsHandled}", string.Join(",", evt.FilePaths));
-        return Task.CompletedTask;
+        await WriteStateAsync(default);
     }
 }
 
