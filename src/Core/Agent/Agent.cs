@@ -73,12 +73,23 @@ public abstract partial class Agent(
             yield return text;
         }
 
+        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
+        eventLog.Add(new AgentEvent(
+            "LlmStreamCall", this.GetPrimaryKeyString(), correlationId,
+            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
+
         await WriteStateAsync(cancellationToken);
     }
 
     public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
     {
         var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
+
+        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
+        eventLog.Add(new AgentEvent(
+            "LlmCall", this.GetPrimaryKeyString(), correlationId,
+            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
+
         await WriteStateAsync(cancellationToken);
         return response.Text ?? string.Empty;
     }
