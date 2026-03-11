@@ -8,8 +8,16 @@ public class ScriptExecutor
     public async Task<ScriptResult> ExecuteScriptAsync(
         string programSource,
         string workingDirectory,
+        Func<string, (bool Success, string[] Errors)>? validator = null,
         CancellationToken ct = default)
     {
+        if (validator is not null)
+        {
+            var (success, errors) = validator(programSource);
+            if (!success)
+                return new ScriptResult(-1, string.Join("\n", errors)) { Error = "Compilation validation failed" };
+        }
+
         var runDir = Path.Combine(workingDirectory, $"orchestration-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}");
         Directory.CreateDirectory(runDir);
 
@@ -60,4 +68,5 @@ public record ScriptResult(
     [property: Id(1)] string Output)
 {
     public bool Success => ExitCode == 0;
+    [Id(2)] public string? Error { get; init; }
 }
