@@ -123,14 +123,6 @@ public static class IAWExtensions
             .WithGrainStorage("PubSubStore", cosmos);
     }
 
-    public static OrleansService WithQdrant(
-        this OrleansService orleans,
-        IResourceBuilder<QdrantServerResource> qdrant)
-    {
-        // registers Qdrant connection for vector search memory agents
-        return orleans;
-    }
-
     public static OrleansService WithLocalEmbeddings(this OrleansService orleans)
     {
         // registers ElBruno.LocalEmbeddings IEmbeddingGenerator in DI

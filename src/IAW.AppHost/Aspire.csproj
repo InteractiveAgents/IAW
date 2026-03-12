@@ -10,21 +10,16 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.Orleans" />
-    <!-- TODO: Re-enable when website/telegram are restored -->
-    <!-- <PackageReference Include="Aspire.Hosting.JavaScript" /> -->
-    <!-- <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ngrok" /> -->
     <PackageReference Include="CommunityToolkit.Aspire.Hosting.Ollama" />
     <PackageReference Include="Aspire.Hosting.Azure.CosmosDB" />
-    <PackageReference Include="Aspire.Hosting.Qdrant" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\samples\Samples\Samples.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\DevUI\DevUI.csproj" />
-    <!-- TODO: Re-enable after TelegramBot is migrated to V3 API -->
-    <!-- <ProjectReference Include="..\Clients.Telegram.Bot\TelegramBot.csproj" /> -->
     <ProjectReference Include="..\IAW.MCP\MCP.csproj" />
+    <ProjectReference Include="..\IAW.Assistant\IAW.Assistant.csproj" />
   </ItemGroup>
 
 </Project>
