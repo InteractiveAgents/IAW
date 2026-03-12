@@ -118,9 +118,27 @@ app.Run();
 
 Update `src/IAW.AppHost/AppHost.cs` to add `IAW.Assistant` as primary silo and rewire all clients.
 
-### Changes
+### Aspire.csproj changes
+
+Add project references for new projects:
+```xml
+<ProjectReference Include="..\IAW.Assistant\IAW.Assistant.csproj" />
+<ProjectReference Include="..\Clients.Telegram\Telegram.csproj" />
+```
+
+Remove unused package (Qdrant deferred):
+```xml
+<!-- Remove: <PackageReference Include="Aspire.Hosting.Qdrant" /> -->
+```
+
+### AppHost.cs changes
 
 ```csharp
+using Aspire;
+using Core.AI.Models;
+
+var builder = DistributedApplication.CreateBuilder(args);
+
 var iaw = builder.AddIAW("iaw")
     .WithLLM<Qwen25>()
     .WithLLM<Claude45Haiku>()
@@ -140,14 +158,14 @@ var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
         DisplayText = "Orleans Dashboard"
     });
 
-// Demo silo (independent)
+// Demo silo (independent, no clients depend on it)
 builder.AddProject<Projects.Samples>("samples")
     .WithReference(iaw)
     .WithLLMEnvironment(builder)
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30002; })
     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11113; });
 
-// Clients all point to assistant silo
+// Clients — all point to assistant silo
 builder.AddProject<Projects.DevUI>("devui")
     .WithReference(iaw.AsClient())
     .WithLLMEnvironment(builder)
@@ -162,15 +180,21 @@ builder.AddProject<Projects.MCP>("mcp")
 
 // Telegram client
 var botToken = builder.AddParameter("bot-token", secret: true);
-var telegram = builder.AddProject<Projects.Telegram>("telegram")
+builder.AddProject<Projects.Telegram>("telegram")
     .WithReference(iaw.AsClient())
-    .WithLLMEnvironment(builder)
     .WithEnvironment("Orleans__PrimaryGateway", assistant.GetEndpoint("orleans-gateway"))
     .WithEnvironment("Telegram__BotToken", botToken)
     .WaitFor(assistant);
+
+// TODO: Re-enable when website directory exists
+// builder.AddViteApp("website", "../../website")
+//     .WithNpm()
+//     .WithExternalHttpEndpoints();
+
+builder.Build().Run();
 ```
 
-Note: ngrok removed for now. Webhook URL can be set via config or environment variable directly. Qdrant is also deferred — not needed until vector search is wired for real embeddings.
+Note: ngrok removed for now. Webhook URL set via config directly. Qdrant deferred. No `WithLLMEnvironment` on Telegram — it's a pure client (matching DevUI/MCP pattern where MCP also has no LLM providers).
 
 ## Workstream 3: Telegram Client Rewrite
 
@@ -185,21 +209,56 @@ Rewrite `src/Clients.Telegram.Bot/` as an Orleans client (not silo). Rename to `
 - `AgentRouter.cs` — PA has built-in delegation via `AssignTaskToAgent`
 - `MonitorSourceProvider.cs` — unused RSS monitoring
 
-### Keep (with modifications)
+### Keep (with rewrites)
 
-- `Program.cs` — rewrite as Orleans client
-- `WebhookSetupService.cs` — keep webhook registration
-- `Services/VoiceTranscriptionService.cs` — keep voice support
-- `Services/AudioConverter.cs` — keep audio conversion
-- `Services/VoiceCallService.cs` — keep call support
+- `Program.cs` — full rewrite as Orleans client
+- `WebhookSetupService.cs` — rewrite to call Telegram Bot API directly (currently calls deleted `ITelegramConversation.SetWebhook`); remove ngrok discovery logic
+- `Services/VoiceTranscriptionService.cs` — keep as-is
+- `Services/AudioConverter.cs` — keep as-is
+
+### Delete (stubs)
+
+- `Services/VoiceCallService.cs` — placeholder with no implementation, not registered in new Program.cs
 
 ### New files
 
-- `TelegramBotService.cs` — handles webhook updates, manages forum topics, sends messages
+- `TelegramBotService.cs` — handles webhook updates, manages forum topics, sends messages, downloads+converts voice files
 - `StreamSubscriber.cs` — subscribes to Orleans notification stream, routes to Telegram topics
-- `TelegramBotOptions.cs` — config record (already exists partially)
+- `TelegramBotOptions.cs` — clean config record (BotToken, WebhookUrl, WebhookSecretToken, ChatId)
+
+### Telegram.csproj (Orleans client, not silo)
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TelegramClient</RootNamespace>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Streaming" />
+    <PackageReference Include="Telegram.BotAPI" />
+    <PackageReference Include="Concentus" />
+    <PackageReference Include="Concentus.Oggfile" />
+    <PackageReference Include="NAudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\Agents\Agents.csproj" />
+    <ProjectReference Include="..\IAW.ServiceDefaults\ServiceDefaults.csproj" />
+  </ItemGroup>
+</Project>
+```
+
+Key differences from old silo csproj: no `Orleans.Server`, `Orleans.Journaling`, `Orleans.Persistence.Memory`, `Orleans.Reminders`, `Aspire.Qdrant.Client`. Added `Agents.csproj` reference for `IPersonalAssistant` grain interface resolution.
 
 ### Program.cs (rewritten)
+
+Same pattern as DevUI/MCP — pure Orleans client, no silo, no LLM providers:
 
 ```csharp
 using System.Net;
@@ -213,7 +272,7 @@ using BotUpdate = Telegram.BotAPI.GettingUpdates.Update;
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
-// Orleans CLIENT (not silo)
+// Orleans CLIENT — same pattern as DevUI and MCP
 var gatewayAddress = builder.Configuration["Orleans:PrimaryGateway"];
 var clusterId = builder.Configuration.GetValue("Orleans:ClusterId", "dev");
 var serviceId = builder.Configuration.GetValue("Orleans:ServiceId", "dev");
@@ -236,6 +295,9 @@ builder.UseOrleansClient(client =>
         client.UseLocalhostClustering();
     }
 
+    // Stream subscription needed for agent->Telegram notifications
+    // Aspire Orleans resource handles stream provider config via WithReference(iaw.AsClient())
+    // but we need to explicitly add streams for client-side subscription
     client.AddMemoryStreams("agents");
 });
 
@@ -252,8 +314,6 @@ builder.Services.AddHostedService<StreamSubscriber>();
 builder.Services.AddHostedService<WebhookSetupService>();
 builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
 builder.Services.AddSingleton<IVoiceTranscriptionService, VoiceTranscriptionService>();
-
-builder.AddLlmProviders();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
@@ -288,16 +348,17 @@ app.Run();
 
 Handles all Telegram interaction. Key responsibilities:
 - Extract text/voice from updates
+- Download voice files from Telegram API, convert OGG->WAV via AudioConverter, transcribe via VoiceTranscriptionService
 - Route to PersonalAssistant via Orleans client
 - Stream responses back as Telegram message edits (typing indicator + progressive edits)
 - Manage forum topics (ensure Assistant and Notifications topics exist)
-- Handle inline keyboard callbacks
 
 ```csharp
 public class TelegramBotService(
     IClusterClient clusterClient,
     ITelegramBotClient botClient,
     IVoiceTranscriptionService voiceService,
+    IAudioConverter audioConverter,
     IOptions<TelegramBotOptions> options)
 {
     private int? _assistantTopicId;
@@ -312,21 +373,24 @@ public class TelegramBotService(
         var text = update.Message?.Text;
         var voiceFileId = update.Message?.Voice?.FileId;
 
-        // Voice transcription
+        // Voice: download from Telegram -> convert OGG to WAV -> transcribe
         if (!string.IsNullOrEmpty(voiceFileId) && string.IsNullOrEmpty(text))
-            text = await voiceService.TranscribeAsync(voiceFileId, ct);
+        {
+            var file = await botClient.GetFileAsync(voiceFileId);
+            var oggPath = Path.GetTempFileName();
+            await botClient.DownloadFileAsync(file.FilePath!, oggPath);
+            var wavPath = await audioConverter.ConvertAsync(oggPath, ct);
+            text = await voiceService.TranscribeAsync(wavPath, ct);
+        }
 
         if (string.IsNullOrEmpty(text)) return;
 
         // Route to PersonalAssistant
         var pa = clusterClient.GetGrain<IPersonalAssistant>("personal-assistant");
 
-        // Send typing indicator
-        await botClient.SendChatActionAsync(chatId, "typing", ...);
-
         // Stream response with progressive message edits
         var threadId = update.Message?.MessageThreadId ?? _assistantTopicId;
-        var sentMessage = await botClient.SendMessageAsync(chatId, "...", threadId, ...);
+        var sentMessage = await botClient.SendMessageAsync(chatId, "...", messageThreadId: threadId);
 
         var buffer = new StringBuilder();
         var lastEdit = DateTimeOffset.MinValue;
@@ -336,20 +400,36 @@ public class TelegramBotService(
             buffer.Append(chunk);
             if ((DateTimeOffset.UtcNow - lastEdit).TotalMilliseconds > 500)
             {
-                await botClient.EditMessageTextAsync(chatId, sentMessage.MessageId, buffer.ToString(), ...);
+                await botClient.EditMessageTextAsync(chatId, sentMessage.MessageId, buffer.ToString());
                 lastEdit = DateTimeOffset.UtcNow;
             }
         }
 
         // Final edit with complete text
-        await botClient.EditMessageTextAsync(chatId, sentMessage.MessageId, buffer.ToString(), ...);
+        if (buffer.Length > 0)
+            await botClient.EditMessageTextAsync(chatId, sentMessage.MessageId, buffer.ToString());
+    }
+
+    public async Task SendNotificationAsync(AgentEvent evt, CancellationToken ct)
+    {
+        var chatId = options.Value.ChatId;
+        if (chatId == 0) return;
+        await EnsureTopicsAsync(chatId, ct);
+        var text = $"*{evt.EventName}* from `{evt.SourceAgentId}`\n{string.Join(", ", evt.Payload.Select(p => $"{p.Key}: {p.Value}"))}";
+        await botClient.SendMessageAsync(chatId, text, messageThreadId: _notificationsTopicId);
+    }
+
+    private async Task EnsureTopicsAsync(long chatId, CancellationToken ct)
+    {
+        // Create forum topics on first use, cache IDs
+        // Implementation: call botClient.CreateForumTopicAsync if topics don't exist yet
     }
 }
 ```
 
 ### StreamSubscriber.cs
 
-Subscribes to Orleans agent notification stream to receive proactive agent messages:
+Subscribes to Orleans notification stream using the same `StreamId` pattern as `NotificationAgent` publishes:
 
 ```csharp
 public class StreamSubscriber(
@@ -359,13 +439,13 @@ public class StreamSubscriber(
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         var streamProvider = clusterClient.GetStreamProvider("agents");
-        var stream = streamProvider.GetStream<AgentEvent>("agent-notifications", "notifications");
+        // Match the StreamId pattern used by Agent.PublishAsync in Agent.Events.cs:
+        // StreamId.Create("agents", eventName) — subscribe to notification events
+        var stream = streamProvider.GetStream<AgentEvent>(
+            StreamId.Create("agents", "notification.sent"));
 
         await stream.SubscribeAsync((evt, token) =>
-        {
-            // Route event to appropriate Telegram forum topic
-            return botService.SendNotificationAsync(evt, ct);
-        });
+            botService.SendNotificationAsync(evt, ct));
     }
 }
 ```
@@ -381,7 +461,7 @@ User says "my birthday is March 15" via Telegram -> PA stores it -> next convers
 
 ## Workstream 4: Dead Code Cleanup
 
-### Files to delete
+### Telegram files to delete
 
 | File | Reason |
 |------|--------|
@@ -389,13 +469,25 @@ User says "my birthday is March 15" via Telegram -> PA stores it -> next convers
 | `src/Clients.Telegram.Bot/ITelegramConversation.cs` | V2 interface and models |
 | `src/Clients.Telegram.Bot/AgentRouter.cs` | PA handles routing |
 | `src/Clients.Telegram.Bot/MonitorSourceProvider.cs` | Unused RSS feature |
+| `src/Clients.Telegram.Bot/Services/VoiceCallService.cs` | Stub with no implementation |
+
+### Core dead interfaces to delete
+
+| File | Reason |
+|------|--------|
+| `src/Core/Routing/IAgentRouter.cs` | Only implementation (AgentRouter.cs) deleted; PA handles routing |
+| `src/Core/Contracts/IMonitorSourceProvider.cs` | Only implementation (MonitorSourceProvider.cs) deleted |
+| `src/Core/Contracts/MonitorPollRequest.cs` | Orphaned model for deleted IMonitorSourceProvider |
+| `src/Core/Contracts/MonitorPollResult.cs` | Orphaned model for deleted IMonitorSourceProvider |
+| `src/Core/Contracts/MonitorFeedItem.cs` | Orphaned model for deleted IMonitorSourceProvider |
+
+Note: verify these Core files exist before deleting. If `IAgentRouter` or monitor types are referenced elsewhere, keep them.
 
 ### Commented-out code to clean
 
 | Location | What |
 |----------|------|
 | `AppHost.cs` lines 30-49 | Old Telegram silo config — replaced by new client config |
-| `AppHost.cs` lines 50-53 | Website ViteApp — keep TODO but clean up stale comments |
 | `IAW.slnx` | Commented-out TelegramBot project reference |
 
 ### Stale TODOs to resolve
@@ -403,7 +495,6 @@ User says "my birthday is March 15" via Telegram -> PA stores it -> next convers
 | Location | TODO | Action |
 |----------|------|--------|
 | `AppHost.cs:30` | "Re-enable after TelegramBot is migrated to V3 API" | Delete — replaced by new Telegram client wiring |
-| `AppHost.cs:50` | "Re-enable when website directory exists" | Keep — website is a future task |
 | `IAW.slnx` | "Re-enable after TelegramBot V3 migration" | Delete — add new Telegram client project |
 
 ### Telegram project rename
@@ -411,7 +502,7 @@ User says "my birthday is March 15" via Telegram -> PA stores it -> next convers
 `src/Clients.Telegram.Bot/` -> `src/Clients.Telegram/`
 - Update namespace from `TelegramBot` to `TelegramClient`
 - Update csproj name from `TelegramBot.csproj` to `Telegram.csproj`
-- Update all references in IAW.slnx and AppHost
+- Update all references in IAW.slnx and AppHost Aspire.csproj
 
 ### Solution file update
 
@@ -445,10 +536,12 @@ Add new projects, remove old references:
 ## Build Order
 
 1. Create `IAW.Assistant` project (no dependencies change)
-2. Update AppHost to add `assistant`, rewire clients
-3. Change Samples ports to 11113/30002
-4. Test: `aspire run` — verify assistant silo + clients work, samples independent
-5. Rename and rewrite Telegram project
-6. Delete dead code (V2 files, stale TODOs, commented blocks)
-7. Update IAW.slnx
-8. Final: `dotnet build IAW.slnx && dotnet test IAW.slnx && aspire run`
+2. Update Aspire.csproj with new project references
+3. Update AppHost.cs — add `assistant`, rewire clients, add Telegram
+4. Change Samples ports to 11113/30002
+5. Test: `aspire run` — verify assistant silo + clients work, samples independent
+6. Rename `Clients.Telegram.Bot/` to `Clients.Telegram/`, rewrite csproj
+7. Rewrite Telegram: Program.cs, TelegramBotService, StreamSubscriber, WebhookSetupService
+8. Delete dead code (V2 files, Core orphans, stale TODOs, commented blocks)
+9. Update IAW.slnx
+10. Final: `dotnet build IAW.slnx && dotnet test IAW.slnx && aspire run`
