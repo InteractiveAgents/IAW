@@ -45,8 +45,7 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddHostedService<StreamSubscriber>();
-// TODO: uncomment when WebhookSetupService is created (Task 7)
-// builder.Services.AddHostedService<WebhookSetupService>();
+builder.Services.AddHostedService<WebhookSetupService>();
 builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
 builder.Services.AddSingleton<IVoiceTranscriptionService, VoiceTranscriptionService>();
 
