@@ -20,6 +20,7 @@
     <ProjectReference Include="..\DevUI\DevUI.csproj" />
     <ProjectReference Include="..\IAW.MCP\MCP.csproj" />
     <ProjectReference Include="..\IAW.Assistant\IAW.Assistant.csproj" />
+    <ProjectReference Include="..\Clients.Telegram\Telegram.csproj" />
   </ItemGroup>
 
 </Project>

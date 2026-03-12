@@ -42,4 +42,12 @@ builder.AddProject<Projects.MCP>("mcp")
     .WithHttpEndpoint(port: 5300, name: "mcp-direct", isProxied: false)
     .WaitFor(assistant);
 
+// Telegram client
+var botToken = builder.AddParameter("bot-token", secret: true);
+builder.AddProject<Projects.Telegram>("telegram")
+    .WithReference(iaw.AsClient())
+    .WithEnvironment("Orleans__PrimaryGateway", assistant.GetEndpoint("orleans-gateway"))
+    .WithEnvironment("Telegram__BotToken", botToken)
+    .WaitFor(assistant);
+
 builder.Build().Run();
