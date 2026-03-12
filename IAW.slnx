@@ -14,9 +14,8 @@
     <Project Path="samples/Pipeline/Pipeline.csproj" />
     <Project Path="samples/Monitor/Monitor.csproj" />
   </Folder>
-  <!-- TODO: Re-enable after TelegramBot V3 migration -->
-  <!-- <Project Path="src/Clients.Telegram.Bot/TelegramBot.csproj" /> -->
   <Project Path="src/Core/Core.csproj" />
+  <Project Path="src/IAW.Assistant/IAW.Assistant.csproj" />
   <Project Path="src/DevUI/DevUI.csproj" />
   <Project Path="src/IAW.AppHost/Aspire.csproj" />
   <Project Path="src/IAW.MCP/MCP.csproj" Id="f72a5392-8914-4f0c-a8b3-642c4a424a11" />
