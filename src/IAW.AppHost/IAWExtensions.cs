@@ -122,10 +122,4 @@ public static class IAWExtensions
             .WithGrainStorage("Default", cosmos)
             .WithGrainStorage("PubSubStore", cosmos);
     }
-
-    public static OrleansService WithLocalEmbeddings(this OrleansService orleans)
-    {
-        // registers ElBruno.LocalEmbeddings IEmbeddingGenerator in DI
-        return orleans;
-    }
 }
