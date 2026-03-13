@@ -2,10 +2,18 @@ namespace Core.AI;
 
 public abstract class LLMModel
 {
-    public abstract string Id { get; }
-    public abstract string DisplayName { get; }
-    public abstract string Provider { get; }
-    public abstract ModelCapabilities Capabilities { get; }
+    private readonly string? _id;
+    private readonly string? _provider;
+    private readonly string? _displayName;
+    private readonly ModelCapabilities? _capabilities;
+
+    public virtual string Id => _id ?? throw new InvalidOperationException(
+        "Override Id or use the LLMModel(id, provider, displayName) constructor.");
+    public virtual string DisplayName => _displayName ?? throw new InvalidOperationException(
+        "Override DisplayName or use the LLMModel(id, provider, displayName) constructor.");
+    public virtual string Provider => _provider ?? throw new InvalidOperationException(
+        "Override Provider or use the LLMModel(id, provider, displayName) constructor.");
+    public virtual ModelCapabilities Capabilities => _capabilities ?? ModelCapabilities.FullyCapable;
 
     public bool IsLocal => Provider.Equals("ollama", StringComparison.OrdinalIgnoreCase);
 
@@ -33,6 +41,15 @@ public abstract class LLMModel
         lock (_lock) { _registry.Add(this); }
     }
 
+    protected LLMModel(string id, string provider, string displayName, ModelCapabilities? capabilities = null)
+    {
+        _id = id;
+        _provider = provider;
+        _displayName = displayName;
+        _capabilities = capabilities;
+        lock (_lock) { _registry.Add(this); }
+    }
+
     public static LLMModel Register(string id, string provider, string displayName, ModelCapabilities? capabilities = null)
     {
         lock (_lock)
@@ -40,7 +57,7 @@ public abstract class LLMModel
             if (_registry.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException($"Model '{id}' is already registered.");
         }
-        return new ConfiguredLLMModel(id, provider, displayName, capabilities ?? ModelCapabilities.FullyCapable);
+        return new RuntimeLLMModel(id, provider, displayName, capabilities ?? ModelCapabilities.FullyCapable);
     }
 
     public static void EnsureAllModelsLoaded()
@@ -60,11 +77,13 @@ public abstract class LLMModel
         _ = Models.GitHubGpt4o.Instance;
     }
 
-    private sealed class ConfiguredLLMModel(string id, string provider, string displayName, ModelCapabilities capabilities) : LLMModel
-    {
-        public override string Id => id;
-        public override string Provider => provider;
-        public override string DisplayName => displayName;
-        public override ModelCapabilities Capabilities => capabilities;
-    }
+    // Runtime-only model — for programmatic registration without [Llm<T>].
+    // For [Llm<T>] support, define your own class:
+    //   public sealed class MyModel : LLMModel
+    //   {
+    //       public static readonly MyModel Instance = new();
+    //       private MyModel() : base("my-model", "openai", "My Model") { }
+    //   }
+    private sealed class RuntimeLLMModel(string id, string provider, string displayName, ModelCapabilities capabilities)
+        : LLMModel(id, provider, displayName, capabilities);
 }
