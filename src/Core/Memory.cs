@@ -23,25 +23,83 @@ public abstract class Memory(
 
     protected virtual async Task Observe(string content, MemoryProvenance provenance, CancellationToken ct = default)
     {
+        float[]? embedding = null;
+        try
+        {
+            var result = await Embedder.GenerateAsync([content], cancellationToken: ct);
+            embedding = result[0].Vector.ToArray();
+        }
+        catch
+        {
+            // embedder unavailable — fall back to keyword-only
+        }
+
         var entry = new MemoryEntry(
             Guid.NewGuid().ToString("N"),
             content, provenance, 1.0f,
-            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, null);
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 0, null)
+        { Embedding = embedding };
+
         memories.Add(entry);
         await WriteStateAsync(ct);
     }
 
-    protected virtual Task<IReadOnlyList<MemoryEntry>> Search(string query, int topK = 5, CancellationToken ct = default)
+    protected virtual async Task<IReadOnlyList<MemoryEntry>> Search(string query, int topK = 5, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        var results = new List<MemoryEntry>();
-        foreach (var entry in memories)
+
+        float[]? queryEmbedding = null;
+        try
         {
-            if (entry.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
-                results.Add(entry with { AccessCount = entry.AccessCount + 1, LastAccessedAt = DateTimeOffset.UtcNow });
+            var result = await Embedder.GenerateAsync([query], cancellationToken: ct);
+            queryEmbedding = result[0].Vector.ToArray();
         }
-        IReadOnlyList<MemoryEntry> topResults = results.OrderByDescending(e => e.RelevanceScore).Take(topK).ToList();
-        return Task.FromResult(topResults);
+        catch
+        {
+            // embedder unavailable — keyword fallback
+        }
+
+        var scored = new List<(MemoryEntry Entry, float Score)>();
+        for (var i = 0; i < memories.Count; i++)
+        {
+            var entry = memories[i];
+            float score;
+
+            if (queryEmbedding is not null && entry.Embedding is not null)
+                score = CosineSimilarity(queryEmbedding, entry.Embedding);
+            else if (entry.Content.Contains(query, StringComparison.OrdinalIgnoreCase))
+                score = 0.5f;
+            else
+                continue;
+
+            var updated = entry with { AccessCount = entry.AccessCount + 1, LastAccessedAt = DateTimeOffset.UtcNow };
+            memories[i] = updated;
+            scored.Add((updated, score * entry.RelevanceScore));
+        }
+
+        if (scored.Count > 0)
+            await WriteStateAsync(ct);
+
+        IReadOnlyList<MemoryEntry> topResults = scored
+            .OrderByDescending(s => s.Score)
+            .Take(topK)
+            .Select(s => s.Entry)
+            .ToList();
+        return topResults;
+    }
+
+    static float CosineSimilarity(float[] a, float[] b)
+    {
+        if (a.Length != b.Length || a.Length == 0) return 0f;
+        float dot = 0, magA = 0, magB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            magA += a[i] * a[i];
+            magB += b[i] * b[i];
+        }
+        var denom = MathF.Sqrt(magA) * MathF.Sqrt(magB);
+        return denom == 0 ? 0f : dot / denom;
     }
 
     protected virtual Task Consolidate(CancellationToken ct = default)
