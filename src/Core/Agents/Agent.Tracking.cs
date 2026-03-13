@@ -42,8 +42,8 @@ public abstract partial class Agent : IRemindable
         var prompt = $"Check on this tracking item and report: {item.Description}";
         var chatHistory = new List<Microsoft.Extensions.AI.ChatMessage>
         {
-            new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
-            new(Microsoft.Extensions.AI.ChatRole.User, prompt)
+            new(ChatRole.System, Instructions),
+            new(ChatRole.User, prompt)
         };
         var tools = DefineTools();
         var options = tools.Count > 0 ? new ChatOptions { Tools = [.. tools] } : null;

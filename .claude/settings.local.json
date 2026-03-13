@@ -60,7 +60,15 @@
       "Bash(wc:*)",
       "mcp__aspire__list_trace_structured_logs",
       "Bash(python3:*)",
-      "Bash(do sed:*)"
+      "Bash(do sed:*)",
+      "Bash(python:*)",
+      "Bash(sort -t: -k2 -n)",
+      "Bash(find /e/IAW/InteractiveAgents/src/Core -type d -name \"*Observability*\" -o -name \"*Telemetry*\" 2>/dev/null | head -20)",
+      "WebFetch(domain:opentelemetry.io)",
+      "Bash(find /e/IAW/InteractiveAgents/src/IAW.AppHost -name \"*.cs\" 2>/dev/null | head -10)",
+      "Bash(find /e/IAW/InteractiveAgents/src -name \"*.cs\" -exec grep -l \"OpenTelemetry\\\\|ActivitySource\\\\|Meter\\\\|Counter\\\\|Histogram\" {} \\\\; | head -20)",
+      "Bash(find /e/IAW/InteractiveAgents/src -name \"*.cs\" -exec grep -l \"GetResponse\\\\|ChatClient\\\\|IChatClient\" {} \\\\; | xargs grep -l \"Activity\\\\|Telemetry\\\\|Meter\\\\|Counter\" | head -20)",
+      "WebFetch(domain:iaw.dev.localhost)"
     ]
   },
   "enabledMcpjsonServers": [
