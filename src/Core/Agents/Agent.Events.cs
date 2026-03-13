@@ -28,7 +28,7 @@ public abstract partial class Agent
         var stream = StreamProvider.GetStream<AgentEvent>(streamId);
         await stream.OnNextAsync(agentEvent);
 
-        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", eventName } });
+        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", eventName }, { "agent.type", GetType().Name } });
     }
 
     protected async Task PublishToStream<TEvent>(TEvent evt, CancellationToken ct = default) where TEvent : IEvent
@@ -49,7 +49,7 @@ public abstract partial class Agent
         var stream = StreamProvider.GetStream<TEvent>(streamId);
         await stream.OnNextAsync(evt);
 
-        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", streamName } });
+        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", streamName }, { "agent.type", GetType().Name } });
     }
 
     // back-compat alias so existing callers of PublishTypedAsync keep compiling
@@ -72,7 +72,7 @@ public abstract partial class Agent
             evt.Timestamp, new Dictionary<string, object> { ["taskId"] = taskId }));
         await WriteStateAsync(ct);
 
-        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", typeof(TEvent).Name } });
+        AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", typeof(TEvent).Name }, { "agent.type", GetType().Name } });
     }
 
     public static string EventTypeToStreamName(Type eventType)

@@ -58,8 +58,8 @@ public abstract partial class Agent
             await consumer.OnStreamEventAsync(evt, token);
             sw.Stop();
 
-            AgentTelemetry.EventsHandled.Add(1, new TagList { { "event.name", streamName } });
-            AgentTelemetry.EventHandleDuration.Record(sw.Elapsed.TotalSeconds, new TagList { { "event.name", streamName } });
+            AgentTelemetry.EventsHandled.Add(1, new TagList { { "event.name", streamName }, { "agent.type", GetType().Name } });
+            AgentTelemetry.EventHandleDuration.Record(sw.Elapsed.TotalSeconds, new TagList { { "event.name", streamName }, { "agent.type", GetType().Name } });
         });
     }
 }

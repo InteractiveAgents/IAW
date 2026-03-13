@@ -23,6 +23,7 @@ public abstract partial class Agent(
     private AgentSession? _session;
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
+    protected virtual int MaxHistoryMessages => 100;
     protected IChatClient ChatClient => chatClient;
     protected IDurableList<ChatMessage> History => durableState.History;
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
@@ -45,7 +46,7 @@ public abstract partial class Agent(
                 Instructions = Instructions,
                 Tools = [.. GetAllTools()]
             },
-            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History)
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages)
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);
@@ -63,6 +64,7 @@ public abstract partial class Agent(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
+        var sw = Stopwatch.StartNew();
 
         prompt = await EnrichWithContext(prompt, cancellationToken);
         await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
@@ -79,20 +81,38 @@ public abstract partial class Agent(
             DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
 
         await WriteStateAsync(cancellationToken);
+
+        AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
+            new TagList { { "agent.type", GetType().Name } });
     }
 
     public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
     {
-        prompt = await EnrichWithContext(prompt, cancellationToken);
-        var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
+        AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            prompt = await EnrichWithContext(prompt, cancellationToken);
+            var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
 
-        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
-        durableState.EventLog.Add(new AgentEvent(
-            "LlmCall", this.GetPrimaryKeyString(), correlationId,
-            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
+            var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
+            durableState.EventLog.Add(new AgentEvent(
+                "LlmCall", this.GetPrimaryKeyString(), correlationId,
+                DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
 
-        await WriteStateAsync(cancellationToken);
-        return response.Text ?? string.Empty;
+            await WriteStateAsync(cancellationToken);
+            return response.Text ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            AgentTelemetry.ConversationErrors.Add(1, new TagList { { "agent.type", GetType().Name } });
+            throw;
+        }
+        finally
+        {
+            AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
+                new TagList { { "agent.type", GetType().Name } });
+        }
     }
 
     public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
