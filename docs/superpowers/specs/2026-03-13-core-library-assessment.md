@@ -43,7 +43,8 @@
 - Derived interfaces (`ISonnet46 : IAgent`, `IFileSystem : IAgent`) enable type-safe grain references with `InterfaceCatalog` auto-discovery.
 
 ### Weaknesses
-- **11 methods spanning 7 concerns** — conversation, state, metadata, events, streams, usage, lifecycle. Violates ISP. Consumer implementing a conversation-only agent must implement all 11.
+- **12 methods spanning 7 concerns** — conversation (4), state (2), metadata (2), events (1), streams (1), usage (1), lifecycle (1). Violates ISP. Consumer implementing a conversation-only agent must implement all 12.
+- **`IAsyncEnumerable<string>` from `GetResponseStream` pins the grain** — the grain stays activated for the entire streaming duration. Under high concurrency, this exhausts thread pool resources. Scalability concern for consumers who don't understand Orleans grain threading.
 - **`GetHistory` and `GetEventLog` return unbounded lists** — full serialization over the wire for large histories.
 - **`GetActiveSubscriptions` returns raw strings** — leaks internal naming convention.
 - **No versioning strategy** — adding a method to `IAgent` breaks all consumer implementations.
@@ -53,7 +54,7 @@
 
 | # | Change | Breaking? | Severity |
 |---|--------|-----------|----------|
-| 1 | Split `IAgent` into focused interfaces (`IConversation`, `IObservable`, `IConfigurable`) with `IAgent` composing them | Yes | Critical |
+| 1 | Split `IAgent` into focused interfaces (`IConversation`, `IObservable`, `IConfigurable`) with `IAgent` composing them. Note: changes grain reference patterns in Orleans — needs careful design | Yes | High |
 | 2 | Add pagination to `GetHistory` and `GetEventLog` (`int skip, int take`) | Yes | High |
 | 3 | Replace `GetActiveSubscriptions` string return with typed `StreamSubscription` record | Yes | Medium |
 | 4 | Add `GetCumulativeUsage()` for billing scenarios | No | Medium |
@@ -73,7 +74,7 @@
 - **No deduplication** — `Observe` always appends. Replayed observations create duplicates.
 - **`ForgetAsync` matches by content equality, not ID** — loses both entries if content is identical with different provenance. Internal `Forget(memoryId)` uses ID but isn't exposed on `IMemoryAgent`.
 - **`SupersededBy` field is never set** — dead field.
-- **`Search` mutates state (AccessCount, LastAccessedAt)** — read operation triggers `WriteStateAsync`. Write amplification under read-heavy workloads.
+- **Access tracking in `Search` is broken** — `Search` creates new `MemoryEntry` records via `with` expression (record copy) with updated `AccessCount`/`LastAccessedAt`, but these copies are returned to the caller without being written back to the `memories` list. The stored entries remain unchanged. Access tracking silently does nothing.
 - **No eviction** — `Decay` reduces scores but never removes entries. No max-size cap.
 
 ### Recommendations
@@ -83,7 +84,7 @@
 | 1 | Implement semantic search in base `Memory` using injected `IEmbeddingGenerator` | Yes | Critical |
 | 2 | Add deduplication in `Observe` — content hash check | No | High |
 | 3 | Add eviction policy — max entry count with lowest-relevance eviction | No | High |
-| 4 | Separate access tracking from `Search` — opt-in or batch writes | No | High |
+| 4 | Fix access tracking — currently broken (copies not written back). Either implement properly or remove | No | Critical |
 | 5 | Expose `Forget(memoryId)` on `IMemoryAgent` | Yes | Medium |
 | 6 | Add `MemoryCategory` enum or tag system to `MemoryEntry` | Yes | Medium |
 | 7 | Wire `SupersededBy` or remove the dead field | Yes | Low |
@@ -141,7 +142,7 @@
 
 | # | Change | Breaking? | Severity |
 |---|--------|-----------|----------|
-| 1 | Migrate untyped `PublishAsync` callsites to typed `PublishToStream<T>` — deprecate untyped path | Yes | Critical |
+| 1 | Migrate untyped `PublishAsync` callsites to typed `PublishToStream<T>` — deprecate untyped path. Note: untyped path serves legitimate fire-and-forget cases (e.g., tracking.changed) | Yes | High |
 | 2 | Add event log rotation — configurable max size with oldest-first eviction | No | High |
 | 3 | Decouple event log from stream publishing — make logging opt-in per event type | No | High |
 | 4 | Document and test with persistent stream provider for production | No | High |
@@ -191,6 +192,7 @@
 - **`ShellTools` timeout (120s) and output cap (8KB) are hardcoded** — not configurable.
 - **`FileTools` exclusion list is hardcoded** — consumers with different conventions can't customize.
 - **No tool permission model** — tools are either available (workspace set) or not. No granularity for read-only, command restrictions, or user preferences.
+- **`WebTools` injected unconditionally** — every agent gets `WebTools` with a `new HttpClient()` per activation regardless of workspace state. No `IHttpClientFactory` pooling, no opt-out. Creates connection pool exhaustion risk under high activation churn.
 
 ### Workspace Direction
 `SetWorkspace` stays on `IAgent` — workspace is a core concept (the folder IAW agents can access). File/shell tool ownership and access policy enforcement are open design questions for the implementation plan.
@@ -244,17 +246,17 @@
 
 ### Weaknesses
 - **No per-test LLM behavior** — `MockChatClient.ReturnsText` set once during cluster setup. Can't simulate different responses across tests.
-- **`MockChatClient` doesn't capture calls** — returns canned response but doesn't record prompts, tools invoked, or call count.
+- **`MockChatClient` captures basic counts but lacks structured recording** — has `SendCount` and `ReceivedMessages` (captured texts) and `ThrowsOnSend` for failure simulation, but doesn't record per-call details (prompt content, tool invocations, options passed). No `ReturnsSequence(...)` for varying responses across calls.
 - **No assertion helpers** — no `ShouldHavePublished<T>()`, no `WaitForStreamEvent<T>(timeout)`.
-- **No failure-mode mocks** — can't simulate timeouts, errors, or malformed responses.
+- **No per-test LLM behavior switching** — mock is configured once at cluster setup in `AgentTestSiloConfigurator`, shared across all tests in the class.
 - **No silo configuration customization** — consumers can't extend `AgentTestSiloConfigurator` without copying everything.
 
 ### Recommendations
 
 | # | Change | Breaking? | Severity |
 |---|--------|-----------|----------|
-| 1 | Make `MockChatClient` capture calls — expose `Calls` list for assertions | No | High |
-| 2 | Allow per-test LLM behavior — `ReturnsSequence(...)` or `Returns(Func<prompt, response>)` | No | High |
+| 1 | Enhance `MockChatClient` call recording — structured per-call capture (prompt, options, tools) beyond existing `SendCount`/`ReceivedMessages` | No | High |
+| 2 | Allow per-test LLM behavior — `ReturnsSequence(...)` or `Returns(Func<prompt, response>)` switchable at test level | No | High |
 | 3 | Add assertion helpers for events, LLM calls, stream events | No | High |
 | 4 | Allow silo configuration customization via virtual method or `Action<ISiloBuilder>` | No | Medium |
 | 5 | Add failure-mode mocks — `Throws<T>()`, `TimesOut()`, `ReturnsEmpty()` | No | Medium |
@@ -274,6 +276,7 @@
 - **No history windowing** — `ProvideChatHistoryAsync` loads entire durable list on every LLM call. 5,000-message agent serializes all 5,000 objects every turn.
 - **`DynamicAgent.ConfigureAsync` doesn't reset session** — new instructions only take effect after grain reactivation.
 - **`DynamicAgent.ToolNames` is persisted but never resolved to tools** — dead config.
+- **`DurableChatHistoryProvider.StoreChatHistoryAsync` doesn't call `WriteStateAsync`** — appended messages are only persisted when the owning grain's next `WriteStateAsync` fires (in `GetResponse`/`GetResponseStream`). If the grain crashes between store and write, messages are lost.
 
 ### Recommendations
 
@@ -296,7 +299,7 @@
 - Every LLM call wrapped in OTel activity — distributed traces flow through agent-to-agent calls.
 
 ### Weaknesses
-- **No per-agent metrics** — no tags for agent type or ID. Aggregate-only counters are useless for debugging at scale.
+- **Inconsistent per-agent metrics** — `Activations` and `MessagesSent` counters have `agent.type` tags, but `EventsPublished`/`EventsHandled` use `event.name` tags instead, and `ConversationErrors`/`ConversationDuration` have no agent tags. No counter uses `agent.id`. Inconsistent tagging makes per-agent dashboarding unreliable.
 - **No cumulative LLM cost tracking** — `GetLastUsage` overwrites on each call. No aggregation, no persistence.
 - **No error classification** — all errors in one counter. No distinction between provider, tool, context, or application errors.
 - **No latency breakdown** — full `GetResponse` duration only. Can't see context enrichment vs. LLM call vs. state persistence.
@@ -307,7 +310,7 @@
 
 | # | Change | Breaking? | Severity |
 |---|--------|-----------|----------|
-| 1 | Add `agent.type` and `agent.id` tags to all counters and histograms | No | Critical |
+| 1 | Standardize `agent.type` and `agent.id` tags on all counters and histograms (some already have `agent.type`) | No | Critical |
 | 2 | Add cumulative usage tracking — persist token counts, expose `GetCumulativeUsage()` | Yes | High |
 | 3 | Add error classification tags on errors counter | No | High |
 | 4 | Add latency breakdown — separate spans for enrichment, LLM, persistence | No | Medium |
@@ -318,22 +321,31 @@
 
 ## Cross-Cutting Priority Matrix
 
+### Must fix before v3 release
+
 | Priority | Issue | Subsystems |
 |----------|-------|------------|
 | **Critical** | Constructor parameter bag — adding a 6th breaks all consumers | Agent base |
 | **Critical** | History grows unbounded, loads fully on every LLM call | Session, Agent base |
 | **Critical** | Closed model/provider registry — consumers can't add their own | LLM |
-| **Critical** | No in-process orchestration runtime | Orchestration |
-| **Critical** | Aggregate-only telemetry — no per-agent visibility | Observability |
-| **Critical** | Semantic memory search not implemented in base | Memory |
 | **Critical** | Every agent gets shell/file tools by default | Tools |
-| **Critical** | Untyped `PublishAsync` with string event names | Events |
-| **Critical** | `OrchestrationPlan` is flat list, not DAG | Orchestration |
-| **High** | `IAgent` too broad — 11 methods, no segmentation | Interface |
+| **Critical** | Memory access tracking is broken (copies not written back) | Memory |
+| **Critical** | Semantic memory search not implemented in base | Memory |
+| **Critical** | Inconsistent telemetry tags — no per-agent visibility on most counters | Observability |
+
+### Should fix during v3 cycle
+
+| Priority | Issue | Subsystems |
+|----------|-------|------------|
+| **High** | No in-process orchestration runtime + flat OrchestrationPlan | Orchestration |
+| **High** | `IAgent` too broad — 12 methods, no segmentation | Interface |
 | **High** | No multi-session support | Session |
 | **High** | No LLM resilience (retry, circuit breaker) | LLM |
+| **High** | Untyped `PublishAsync` with string event names | Events |
 | **High** | Registry tracks types not instances, misses DynamicAgent | Registry |
-| **High** | MockChatClient doesn't capture calls or support per-test behavior | Testing |
+| **High** | MockChatClient lacks structured call recording and per-test switching | Testing |
 | **High** | Event log grows unbounded | Events |
 | **High** | `DynamicAgent.ConfigureAsync` doesn't reset session | Session |
 | **High** | No `OnActivateAsync` template methods for customization | Agent base |
+| **High** | `WebTools` unconditional injection with per-activation `HttpClient` | Tools |
+| **High** | `DurableChatHistoryProvider` persistence gap on crash | Session |
