@@ -15,6 +15,8 @@ public abstract partial class Agent
     {
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish");
         activity?.SetTag("event.name", eventName);
+        activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
+        activity?.SetTag("gen_ai.agent.name", DisplayName);
 
         var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
         var agentEvent = new AgentEvent(
@@ -37,6 +39,8 @@ public abstract partial class Agent
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish_typed");
         activity?.SetTag("event.name", streamName);
         activity?.SetTag("event.type", typeof(TEvent).Name);
+        activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
+        activity?.SetTag("gen_ai.agent.name", DisplayName);
 
         var agentEvent = new AgentEvent(
             streamName, evt.SourceAgentId, evt.CorrelationId,
@@ -62,6 +66,8 @@ public abstract partial class Agent
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish_task_stream");
         activity?.SetTag("event.type", typeof(TEvent).Name);
         activity?.SetTag("task.id", taskId);
+        activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
+        activity?.SetTag("gen_ai.agent.name", DisplayName);
 
         var streamId = StreamId.Create("agents", $"task/{taskId}");
         var stream = StreamProvider.GetStream<TEvent>(streamId);

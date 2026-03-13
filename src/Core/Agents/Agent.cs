@@ -71,20 +71,35 @@ public abstract partial class Agent(
         string prompt,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        using var activity = AgentTelemetry.ActivitySource.StartActivity(
+            $"invoke_agent {this.GetPrimaryKeyString()}", ActivityKind.Internal);
+        activity?.SetTag("gen_ai.operation.name", "invoke_agent");
+        activity?.SetTag("gen_ai.provider.name", "iaw");
+        activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
+        activity?.SetTag("gen_ai.agent.name", DisplayName);
+        activity?.SetTag("gen_ai.conversation.id", this.GetPrimaryKeyString());
+
         var sw = Stopwatch.StartNew();
         var completed = false;
         try
         {
             prompt = await EnrichWithContext(prompt, cancellationToken);
+
             await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
             {
                 if (chunk.Text is not { } text)
                     continue;
-
                 yield return text;
             }
 
-            var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
+            if (_usageCapture.LastUsage is { } usage)
+            {
+                activity?.SetTag("gen_ai.usage.input_tokens", usage.InputTokens);
+                activity?.SetTag("gen_ai.usage.output_tokens", usage.OutputTokens);
+                RecordTokenMetrics(usage);
+            }
+
+            var correlationId = activity?.TraceId.ToString() ?? Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
             durableState.EventLog.Add(new AgentEvent(
                 "LlmCall", this.GetPrimaryKeyString(), correlationId,
                 DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
@@ -95,7 +110,10 @@ public abstract partial class Agent(
         finally
         {
             if (!completed)
+            {
+                activity?.SetTag("error.type", "conversation_error");
                 AgentTelemetry.ConversationErrors.Add(1, new TagList { { "agent.type", GetType().Name } });
+            }
             AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
                 new TagList { { "agent.type", GetType().Name } });
         }
@@ -126,10 +144,49 @@ public abstract partial class Agent(
     public Task<AgentUsage?> GetLastUsage(CancellationToken ct = default)
         => Task.FromResult(_usageCapture.LastUsage);
 
+    private void RecordTokenMetrics(AgentUsage usage)
+    {
+        var tags = new TagList
+        {
+            { "gen_ai.agent.name", DisplayName },
+            { "gen_ai.operation.name", "invoke_agent" }
+        };
+        var inputTags = new TagList
+        {
+            { "gen_ai.agent.name", DisplayName },
+            { "gen_ai.operation.name", "invoke_agent" },
+            { "gen_ai.token.type", "input" }
+        };
+        var outputTags = new TagList
+        {
+            { "gen_ai.agent.name", DisplayName },
+            { "gen_ai.operation.name", "invoke_agent" },
+            { "gen_ai.token.type", "output" }
+        };
+        AgentTelemetry.TokenUsage.Record(usage.InputTokens, inputTags);
+        AgentTelemetry.TokenUsage.Record(usage.OutputTokens, outputTags);
+        AgentTelemetry.TotalInputTokens.Add(usage.InputTokens, tags);
+        AgentTelemetry.TotalOutputTokens.Add(usage.OutputTokens, tags);
+
+        var currentInput = GetLongFromState("cumulative-input-tokens");
+        var currentOutput = GetLongFromState("cumulative-output-tokens");
+        durableState.State["cumulative-input-tokens"] = new StateEntry("cumulative-input-tokens", currentInput + usage.InputTokens);
+        durableState.State["cumulative-output-tokens"] = new StateEntry("cumulative-output-tokens", currentOutput + usage.OutputTokens);
+    }
+
+    private long GetLongFromState(string key)
+    {
+        if (!durableState.State.TryGetValue(key, out var entry)) return 0;
+        return entry.Value is long l ? l : long.TryParse(entry.Value.ToString(), out var parsed) ? parsed : 0;
+    }
+
     private async Task<string> EnrichWithContext(string prompt, CancellationToken ct)
     {
         var providers = GetContextProviders();
         if (providers.Count == 0) return prompt;
+
+        using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.enrich_context");
+        activity?.SetTag("context.provider_count", providers.Count);
 
         var contextParts = new List<string>();
         foreach (var provider in providers)
@@ -144,6 +201,8 @@ public abstract partial class Agent(
                 // context provider unavailable — skip
             }
         }
+
+        activity?.SetTag("context.items_found", contextParts.Count);
 
         if (contextParts.Count == 0) return prompt;
 

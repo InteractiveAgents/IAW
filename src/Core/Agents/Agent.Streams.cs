@@ -53,6 +53,8 @@ public abstract partial class Agent
             activity?.SetTag("event.name", streamName);
             activity?.SetTag("event.type", typeof(TEvent).Name);
             activity?.SetTag("agent.type", GetType().Name);
+            activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
+            activity?.SetTag("gen_ai.agent.name", DisplayName);
 
             var sw = Stopwatch.StartNew();
             await consumer.OnStreamEventAsync(evt, token);

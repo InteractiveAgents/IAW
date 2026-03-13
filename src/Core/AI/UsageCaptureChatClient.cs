@@ -1,10 +1,11 @@
+using System.Runtime.CompilerServices;
 using Core.Contracts;
 using Microsoft.Extensions.AI;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Core.AI;
 
-// IChatClient wrapper that captures token usage from responses
+// IChatClient wrapper that captures token usage from both regular and streaming responses
 internal sealed class UsageCaptureChatClient(IChatClient inner) : IChatClient
 {
     private volatile AgentUsage? _lastUsage;
@@ -21,11 +22,30 @@ internal sealed class UsageCaptureChatClient(IChatClient inner) : IChatClient
         return response;
     }
 
-    public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+    public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
         IEnumerable<AIChatMessage> messages,
         ChatOptions? options,
-        CancellationToken cancellationToken)
-        => inner.GetStreamingResponseAsync(messages, options, cancellationToken);
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        long inputTokens = 0, outputTokens = 0, totalTokens = 0;
+
+        await foreach (var update in inner.GetStreamingResponseAsync(messages, options, cancellationToken))
+        {
+            foreach (var content in update.Contents)
+            {
+                if (content is UsageContent usageContent)
+                {
+                    inputTokens += usageContent.Details.InputTokenCount ?? 0;
+                    outputTokens += usageContent.Details.OutputTokenCount ?? 0;
+                    totalTokens += usageContent.Details.TotalTokenCount ?? 0;
+                }
+            }
+            yield return update;
+        }
+
+        if (inputTokens > 0 || outputTokens > 0)
+            _lastUsage = new AgentUsage(inputTokens, outputTokens, totalTokens);
+    }
 
     public object? GetService(Type serviceType, object? serviceKey = null)
         => serviceType == typeof(UsageCaptureChatClient) ? this : inner.GetService(serviceType, serviceKey);
