@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
+using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
@@ -17,6 +18,15 @@ public class GitAgent(
     protected override string Instructions =>
         "You are a git agent. You manage git operations including status, commits, diffs, log, and reverts. " +
         "You track commit patterns and file churn metrics.";
+
+    protected override IReadOnlyList<AITool> DefineTools()
+    {
+        var tools = new List<AITool>();
+        var workspacePath = GetWorkspacePath();
+        if (workspacePath is not null)
+            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        return tools;
+    }
 
     public async Task<string> StatusAsync(string repoPath, CancellationToken ct = default)
         => (await RunGitAsync("status", repoPath, ct)).Output;

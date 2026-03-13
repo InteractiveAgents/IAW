@@ -18,6 +18,18 @@ public class FileSystemAgent(
         "You are a file system agent. You read, write, list, and search files within the workspace. " +
         "You track all file access metrics and publish events for every operation.";
 
+    protected override IReadOnlyList<AITool> DefineTools()
+    {
+        var tools = new List<AITool>();
+        var workspacePath = GetWorkspacePath();
+        if (workspacePath is not null)
+        {
+            RegisterToolMethods(tools, new FileTools(() => workspacePath));
+            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        }
+        return tools;
+    }
+
     public async Task<string> ReadFileAsync(string path, CancellationToken ct = default)
     {
         ValidatePathWithinWorkspace(path);

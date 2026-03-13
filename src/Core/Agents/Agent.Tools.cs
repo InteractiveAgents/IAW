@@ -28,15 +28,6 @@ public abstract partial class Agent
             });
         RegisterToolMethods(tools, workspaceTools);
 
-        var workspacePath = GetWorkspacePath();
-        if (workspacePath is not null)
-        {
-            RegisterToolMethods(tools, new FileTools(() => workspacePath));
-            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
-        }
-
-        RegisterToolMethods(tools, new WebTools(new HttpClient()));
-
         tools.AddRange(DefineTools());
         _cachedTools = tools;
         return _cachedTools;

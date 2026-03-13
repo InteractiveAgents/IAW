@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
+using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
@@ -17,6 +18,15 @@ public class ShellAgent(
     protected override string Instructions =>
         "You are a shell command agent. You execute shell commands and dotnet CLI operations. " +
         "You track execution metrics, failure rates, and command frequency.";
+
+    protected override IReadOnlyList<AITool> DefineTools()
+    {
+        var tools = new List<AITool>();
+        var workspacePath = GetWorkspacePath();
+        if (workspacePath is not null)
+            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        return tools;
+    }
 
     public async Task<CommandResult> ExecuteAsync(
         string command, string? workingDirectory = null, int timeoutMs = 120_000, CancellationToken ct = default)

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
+using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
@@ -17,6 +18,15 @@ public class AspireAgent(
     protected override string Instructions =>
         "You are an Aspire orchestration agent. You manage Aspire resources by listing, starting, stopping, " +
         "and restarting services. You track resource health, uptime, and restart counts.";
+
+    protected override IReadOnlyList<AITool> DefineTools()
+    {
+        var tools = new List<AITool>();
+        var workspacePath = GetWorkspacePath();
+        if (workspacePath is not null)
+            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        return tools;
+    }
 
     public async Task<ResourceStatus[]> ListResourcesAsync(CancellationToken ct = default)
     {

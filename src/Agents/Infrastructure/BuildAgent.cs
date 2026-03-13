@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
+using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
@@ -17,6 +18,15 @@ public partial class BuildAgent(
     protected override string Instructions =>
         "You are a build agent. You compile .NET projects and run tests. " +
         "You track build success rates, timings, and diagnostic counts.";
+
+    protected override IReadOnlyList<AITool> DefineTools()
+    {
+        var tools = new List<AITool>();
+        var workspacePath = GetWorkspacePath();
+        if (workspacePath is not null)
+            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        return tools;
+    }
 
     public async Task<BuildResult> BuildAsync(
         string projectPath, string configuration = "Debug", CancellationToken ct = default)
