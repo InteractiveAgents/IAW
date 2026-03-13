@@ -9,7 +9,7 @@ public sealed class Opus46 : LLMModel
 
     public override string Id => "claude-opus-4-6";
     public override string DisplayName => "Claude Opus 4.6";
-    public override ProviderType Provider => ProviderType.Anthropic;
+    public override string Provider => "anthropic";
     public override ModelCapabilities Capabilities => ModelCapabilities.FullyCapable;
 }
 

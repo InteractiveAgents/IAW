@@ -17,12 +17,23 @@ public static class LlmRegistration
         LLMModel.EnsureAllModelsLoaded();
         var config = builder.Configuration;
 
+        var factories = new ILlmProviderFactory[]
+        {
+            new AnthropicProviderFactory(),
+            new OpenAIProviderFactory(),
+            new OllamaProviderFactory(),
+            new GitHubProviderFactory()
+        };
+        foreach (var f in factories)
+            builder.Services.AddSingleton<ILlmProviderFactory>(f);
+
+        var factoryMap = factories.ToDictionary(f => f.ProviderName, StringComparer.OrdinalIgnoreCase);
+
         var declaredModels = ReadDeclaredModels(config);
         var modelsToRegister = declaredModels.Count > 0
             ? declaredModels
-            : [.. LLMModel.All.Where(m => IsProviderConfigured(config, m.Provider))];
+            : [.. LLMModel.All.Where(m => IsProviderConfigured(factoryMap, config, m.Provider))];
 
-        // Register attribute mappers for ALL known models so Orleans can construct grains
         foreach (var model in LLMModel.All)
             RegisterAttributeMapper(builder.Services, model);
 
@@ -30,15 +41,15 @@ public static class LlmRegistration
 
         foreach (var model in modelsToRegister)
         {
-            if (!IsProviderConfigured(config, model.Provider))
+            if (!IsProviderConfigured(factoryMap, config, model.Provider))
                 continue;
 
             builder.Services.AddKeyedSingleton<IChatClient>(model.ServiceKey,
-                (sp, key) => CreateChatClient(sp, config, model));
+                (sp, key) => CreateChatClient(sp, factoryMap, config, model));
         }
 
         var firstConfigured = modelsToRegister
-            .FirstOrDefault(m => IsProviderConfigured(config, m.Provider));
+            .FirstOrDefault(m => IsProviderConfigured(factoryMap, config, m.Provider));
         if (firstConfigured is not null)
         {
             builder.Services.AddChatClient(services =>
@@ -82,37 +93,15 @@ public static class LlmRegistration
         services.AddSingleton(interfaceType, mapperType);
     }
 
-    public static bool IsProviderConfigured(IConfiguration config, ProviderType provider)
-    {
-        return provider switch
-        {
-            ProviderType.Ollama => !string.IsNullOrEmpty(config[LlmConfig.OllamaEndpoint])
-                                   || !string.IsNullOrEmpty(config["ConnectionStrings:ollama"])
-                                   || HasOllamaModelConnectionString(config),
-            ProviderType.Anthropic => !string.IsNullOrEmpty(config[LlmConfig.AnthropicApiKey]),
-            ProviderType.OpenAI => !string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]),
-            ProviderType.GitHub => !string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]),
-            _ => false
-        };
-    }
+    public static bool IsProviderConfigured(Dictionary<string, ILlmProviderFactory> factories, IConfiguration config, string provider)
+        => factories.TryGetValue(provider, out var factory) && factory.IsConfigured(config);
 
-    private static bool HasOllamaModelConnectionString(IConfiguration config)
+    internal static IChatClient CreateChatClient(IServiceProvider services, Dictionary<string, ILlmProviderFactory> factories, IConfiguration config, LLMModel model)
     {
-        var connectionStrings = config.GetSection("ConnectionStrings");
-        return connectionStrings.GetChildren().Any(c =>
-            c.Key.StartsWith("ollama-", StringComparison.OrdinalIgnoreCase));
-    }
+        if (!factories.TryGetValue(model.Provider, out var factory))
+            throw new NotSupportedException($"Provider '{model.Provider}' not supported. Register an ILlmProviderFactory.");
 
-    internal static IChatClient CreateChatClient(IServiceProvider services, IConfiguration config, LLMModel model)
-    {
-        var innerClient = model.Provider switch
-        {
-            ProviderType.Ollama => CreateOllamaClient(config, model),
-            ProviderType.Anthropic => CreateAnthropicClient(config, model),
-            ProviderType.OpenAI => CreateOpenAiClient(config, model),
-            ProviderType.GitHub => CreateGitHubModelsClient(config, model),
-            _ => throw new NotSupportedException($"Provider {model.Provider} not supported")
-        };
+        var innerClient = factory.CreateClient(model, config);
 
         return new ChatClientBuilder(innerClient)
             .UseStreamingUsage()
@@ -134,7 +123,6 @@ public static class LlmRegistration
 
     private static string? FindOllamaModelConnectionString(IConfiguration config, LLMModel model)
     {
-        // Aspire generates connection names like "ollama-qwen2-5" for model id "qwen2.5"
         var sanitizedId = model.Id.Replace(".", "-").Replace(":", "-");
         return config[$"ConnectionStrings:ollama-{sanitizedId}"];
     }
@@ -144,11 +132,9 @@ public static class LlmRegistration
         if (string.IsNullOrEmpty(connectionString))
             return null;
 
-        // Aspire Ollama connection strings use "Endpoint=http://...;Model=..." format
         if (connectionString.StartsWith("Endpoint=", StringComparison.OrdinalIgnoreCase))
             return connectionString.Split(';')[0]["Endpoint=".Length..];
 
-        // Plain URI format
         if (connectionString.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             return connectionString;
 
@@ -213,5 +199,50 @@ public static class LlmRegistration
         }
 
         return builder;
+    }
+
+    private sealed class AnthropicProviderFactory : ILlmProviderFactory
+    {
+        public string ProviderName => "anthropic";
+        public bool IsConfigured(IConfiguration config)
+            => !string.IsNullOrEmpty(config[LlmConfig.AnthropicApiKey]);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config)
+            => CreateAnthropicClient(config, model);
+    }
+
+    private sealed class OpenAIProviderFactory : ILlmProviderFactory
+    {
+        public string ProviderName => "openai";
+        public bool IsConfigured(IConfiguration config)
+            => !string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config)
+            => CreateOpenAiClient(config, model);
+    }
+
+    private sealed class OllamaProviderFactory : ILlmProviderFactory
+    {
+        public string ProviderName => "ollama";
+        public bool IsConfigured(IConfiguration config)
+            => !string.IsNullOrEmpty(config[LlmConfig.OllamaEndpoint])
+               || !string.IsNullOrEmpty(config["ConnectionStrings:ollama"])
+               || HasOllamaModelConnectionString(config);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config)
+            => CreateOllamaClient(config, model);
+    }
+
+    private sealed class GitHubProviderFactory : ILlmProviderFactory
+    {
+        public string ProviderName => "github";
+        public bool IsConfigured(IConfiguration config)
+            => !string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config)
+            => CreateGitHubModelsClient(config, model);
+    }
+
+    private static bool HasOllamaModelConnectionString(IConfiguration config)
+    {
+        var connectionStrings = config.GetSection("ConnectionStrings");
+        return connectionStrings.GetChildren().Any(c =>
+            c.Key.StartsWith("ollama-", StringComparison.OrdinalIgnoreCase));
     }
 }

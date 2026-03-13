@@ -9,7 +9,7 @@ public sealed class GrokLatest : LLMModel
 
     public override string Id => "grok-latest";
     public override string DisplayName => "Grok Latest";
-    public override ProviderType Provider => ProviderType.OpenAI;
+    public override string Provider => "openai";
     public override ModelCapabilities Capabilities => ModelCapabilities.FullyCapable;
 }
 

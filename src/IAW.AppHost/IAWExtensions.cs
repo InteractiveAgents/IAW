@@ -8,7 +8,7 @@ public static class IAWExtensions
 {
     private static IDistributedApplicationBuilder? _appBuilder;
     private static readonly List<LLMModel> _declaredModels = [];
-    private static readonly HashSet<ProviderType> _declaredProviders = [];
+    private static readonly HashSet<string> _declaredProviders = new(StringComparer.OrdinalIgnoreCase);
     private static IResourceBuilder<ParameterResource>? _anthropicKeyParam;
     private static IResourceBuilder<ParameterResource>? _openaiKeyParam;
     private static IResourceBuilder<ParameterResource>? _gitHubTokenParam;
@@ -47,7 +47,7 @@ public static class IAWExtensions
         _declaredModels.Add(model);
         _declaredProviders.Add(model.Provider);
 
-        if (model.Provider == ProviderType.Ollama && _appBuilder is not null)
+        if (model.Provider.Equals("ollama", StringComparison.OrdinalIgnoreCase) && _appBuilder is not null)
         {
             _ollamaResource ??= _appBuilder.AddOllama("ollama"); // .WithOpenWebUI().WithDataVolume().with;
             var modelResource = _ollamaResource.AddModel(model.Id);
@@ -84,13 +84,13 @@ public static class IAWExtensions
             builder.WithEnvironment($"{prefix}__ServiceKey", model.ServiceKey);
         }
 
-        if (_declaredProviders.Contains(ProviderType.Anthropic))
+        if (_declaredProviders.Contains("anthropic"))
         {
             _anthropicKeyParam ??= appBuilder.AddParameter("anthropic-api-key", secret: true);
             builder.WithEnvironment("AI__LLM__AnthropicApiKey", _anthropicKeyParam);
         }
 
-        if (_declaredProviders.Contains(ProviderType.OpenAI))
+        if (_declaredProviders.Contains("openai"))
         {
             _openaiKeyParam ??= appBuilder.AddParameter("openai-api-key", secret: true);
             builder.WithEnvironment("AI__LLM__OpenAiApiKey", _openaiKeyParam);
@@ -99,7 +99,7 @@ public static class IAWExtensions
         _gitHubTokenParam ??= appBuilder.AddParameter("github-token", secret: true);
         builder.WithEnvironment("GitHub__Token", _gitHubTokenParam); // Octokit
 
-        if (_declaredProviders.Contains(ProviderType.GitHub))
+        if (_declaredProviders.Contains("github"))
             builder.WithEnvironment("AI__LLM__GitHubToken", _gitHubTokenParam);
 
         var waitForLlmModelResources = appBuilder.Configuration.GetValue("IAW:WaitForLlmModelResources", false);

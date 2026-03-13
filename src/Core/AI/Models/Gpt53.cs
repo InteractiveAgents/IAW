@@ -9,7 +9,7 @@ public sealed class Gpt53 : LLMModel
 
     public override string Id => "gpt-5.3";
     public override string DisplayName => "GPT 5.3";
-    public override ProviderType Provider => ProviderType.OpenAI;
+    public override string Provider => "openai";
     public override ModelCapabilities Capabilities => ModelCapabilities.FullyCapable;
 }
 
