@@ -8,18 +8,18 @@ namespace IAW.Core;
 
 public abstract partial class Agent : IRemindable
 {
-    protected IDurableDictionary<string, TrackingItem> TrackingItems => trackingItems;
+    protected IDurableDictionary<string, TrackingItem> TrackingItems => durableState.TrackingItems;
 
     public async Task StartTrackingAsync(string name, TrackingItem item, TimeSpan interval, CancellationToken ct = default)
     {
-        trackingItems[name] = item;
+        durableState.TrackingItems[name] = item;
         await WriteStateAsync(ct);
         await this.RegisterOrUpdateReminder(name, TimeSpan.Zero, interval);
     }
 
     public async Task StopTrackingAsync(string name, CancellationToken ct = default)
     {
-        trackingItems.Remove(name);
+        durableState.TrackingItems.Remove(name);
         await WriteStateAsync(ct);
         var reminder = await this.GetReminder(name);
         if (reminder is not null)
@@ -28,10 +28,10 @@ public abstract partial class Agent : IRemindable
 
     public virtual async Task ReceiveReminder(string reminderName, TickStatus status)
     {
-        if (trackingItems.TryGetValue(reminderName, out var item))
+        if (durableState.TrackingItems.TryGetValue(reminderName, out var item))
         {
             var updated = item with { LastCheckAt = DateTimeOffset.UtcNow };
-            trackingItems[reminderName] = updated;
+            durableState.TrackingItems[reminderName] = updated;
             await OnTrackingDueAsync(updated, AgentCancellation);
             await WriteStateAsync(AgentCancellation);
         }
@@ -69,7 +69,7 @@ public abstract partial class Agent : IRemindable
             }, ct);
         }
 
-        trackingItems[item.Id] = item with { LastResult = result };
+        durableState.TrackingItems[item.Id] = item with { LastResult = result };
     }
 
     [Description("Start tracking something on a schedule")]
@@ -87,7 +87,7 @@ public abstract partial class Agent : IRemindable
     [Description("Stop tracking by ID")]
     private async Task<string> StopTracking([Description("Tracking ID to stop")] string trackingId)
     {
-        if (!trackingItems.ContainsKey(trackingId)) return $"Tracking '{trackingId}' not found";
+        if (!durableState.TrackingItems.ContainsKey(trackingId)) return $"Tracking '{trackingId}' not found";
         await StopTrackingAsync(trackingId, AgentCancellation);
         return $"Tracking '{trackingId}' stopped";
     }
@@ -95,9 +95,9 @@ public abstract partial class Agent : IRemindable
     [Description("List all active tracking items")]
     private Task<string> ListTracking()
     {
-        if (!trackingItems.Any()) return Task.FromResult("No active tracking items");
+        if (!durableState.TrackingItems.Any()) return Task.FromResult("No active tracking items");
         var sb = new StringBuilder();
-        foreach (var kvp in trackingItems)
+        foreach (var kvp in durableState.TrackingItems)
         {
             var item = kvp.Value;
             var lastCheck = item.LastCheckAt?.ToString("g") ?? "never";

@@ -1,9 +1,7 @@
-using Core.Contracts;
-using IAW.Core.Tests;
 using IAW.Testing;
 using Xunit;
 
-namespace Core.Tests.Communication;
+namespace IAW.Core.Tests.Communication;
 
 public class AutoLoggingTests : AgentTest<TestAgent>
 {

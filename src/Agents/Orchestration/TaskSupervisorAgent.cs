@@ -5,17 +5,13 @@ using Core.Contracts;
 using Core.Models;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Orchestration;
 
 public class TaskSupervisorAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), ITaskSupervisor
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), ITaskSupervisor
 {
     protected override string DisplayName => "Task Supervisor";
     protected override string Instructions =>

@@ -6,18 +6,14 @@ using IAW.Agents.Infrastructure;
 using IAW.Agents.Messages;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 using Orleans.Streams;
 
 namespace IAW.Agents.Orchestration;
 
 public class DeployerAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IDeployer,
       IStreamConsumer<TestsPassedEvent>
 {

@@ -1,11 +1,9 @@
 using Core.Contracts;
 using Core.Messages;
-using IAW.Core;
-using IAW.Core.Tests;
 using IAW.Testing;
 using Xunit;
 
-namespace Core.Tests.Communication;
+namespace IAW.Core.Tests.Communication;
 
 public class TypedPublishTests : AgentTest<ProducerTestAgent>
 {
@@ -62,6 +60,6 @@ public class TypedPublishTests : AgentTest<ProducerTestAgent>
     [Fact]
     public void EventTypeToStreamName_HandlesMultiWordNames()
     {
-        Assert.Equal("step.progress", IAW.Core.Agent.EventTypeToStreamName(typeof(Core.Messages.Events.StepProgressEvent)));
+        Assert.Equal("step.progress", IAW.Core.Agent.EventTypeToStreamName(typeof(global::Core.Messages.Events.StepProgressEvent)));
     }
 }

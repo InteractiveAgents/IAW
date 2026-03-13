@@ -1,18 +1,14 @@
 using Core.Contracts;
-using ChatMessage = Core.Contracts.ChatMessage;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
+using IAW.Core;
 
-namespace IAW.Core;
+namespace Core.Agents;
 
 [GrainType("dynamic-agent-v3")]
 public class DynamicAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IDynamicAgent
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient), IDynamicAgent
 {
     protected override string Instructions =>
         State.TryGetValue("config-system-prompt", out var entry)

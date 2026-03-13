@@ -5,17 +5,13 @@ using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Infrastructure;
 
 public class AspireAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IAspire
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IAspire
 {
     protected override string DisplayName => "Aspire Agent";
     protected override string Instructions =>
@@ -150,7 +146,7 @@ public class AspireAgent(
                 resources.Add(new ResourceStatus(parts[0], parts[1], parts[2], endpoints));
             }
         }
-        return resources.ToArray();
+        return [.. resources];
     }
 
     private void IncrementResourceRestartCount(string resourceName)

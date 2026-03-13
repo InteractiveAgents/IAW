@@ -8,20 +8,20 @@ public abstract partial class Agent
 
     public async Task SetWorkspace(string path, CancellationToken ct = default)
     {
-        state[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path);
+        durableState.State[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path);
         await WriteStateAsync(ct);
     }
 
     public Task<AgentState> GetState(CancellationToken ct = default)
     {
         var entries = new Dictionary<string, StateEntry>();
-        foreach (var kvp in state)
+        foreach (var kvp in durableState.State)
             entries[kvp.Key] = kvp.Value;
         return Task.FromResult(new AgentState(entries));
     }
 
     protected string? GetWorkspacePath()
-        => state.TryGetValue(WorkspacePathKey, out var entry)
+        => durableState.State.TryGetValue(WorkspacePathKey, out var entry)
             ? entry.Value.ToString()
             : null;
 

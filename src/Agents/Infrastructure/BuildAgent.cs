@@ -5,17 +5,13 @@ using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Infrastructure;
 
 public partial class BuildAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IBuild
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IBuild
 {
     protected override string DisplayName => "Build Agent";
     protected override string Instructions =>
@@ -166,7 +162,7 @@ public partial class BuildAgent(
             if (trimmed.Contains(": error ") || trimmed.Contains(": warning "))
                 diagnostics.Add(trimmed);
         }
-        return diagnostics.ToArray();
+        return [.. diagnostics];
     }
 
     private void IncrementCounter(string key)

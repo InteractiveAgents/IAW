@@ -3,7 +3,7 @@ using IAW.Agents.CSharp;
 using IAW.Agents.Infrastructure;
 using Xunit;
 
-namespace Core.Tests.Orchestration;
+namespace IAW.Core.Tests.Orchestration;
 
 public class ScriptGeneratorTests
 {

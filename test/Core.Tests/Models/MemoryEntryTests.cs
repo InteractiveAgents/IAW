@@ -1,7 +1,7 @@
 using Core.Models;
 using Xunit;
 
-namespace Core.Tests.Models;
+namespace IAW.Core.Tests.Models;
 
 public class MemoryEntryTests
 {

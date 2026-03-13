@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
@@ -12,13 +11,10 @@ using Core.Communication.Messages;
 namespace IAW.Agents.CSharp;
 
 public partial class DotNetAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [AgentState] AgentDurableState durableState,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IHttpClientFactory httpClientFactory)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IDotNet
+    : Agent(durableState, chatClient), IDotNet
 {
     private const string EditorConfigUrl =
         "https://raw.githubusercontent.com/dotnet/runtime/main/.editorconfig";

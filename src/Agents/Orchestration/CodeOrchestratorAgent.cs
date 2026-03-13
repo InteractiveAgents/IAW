@@ -5,17 +5,13 @@ using Core.Contracts;
 using Core.Orchestration;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Orchestration;
 
 public class CodeOrchestratorAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), ICodeOrchestrator
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), ICodeOrchestrator
 {
     protected override string DisplayName => "Code Orchestrator";
     protected override string Instructions =>

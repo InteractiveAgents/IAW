@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Core.Agents;
 using Core.AI;
 using Core.Contracts;
 using ChatMessage = Core.Contracts.ChatMessage;
@@ -13,11 +14,8 @@ namespace IAW.Core;
 
 [GrainType("agent-v3")]
 public abstract partial class Agent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
     : DurableGrain, IAgent
 {
     private readonly UsageCaptureChatClient _usageCapture = new(chatClient);
@@ -26,9 +24,9 @@ public abstract partial class Agent(
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
     protected IChatClient ChatClient => chatClient;
-    protected IDurableList<ChatMessage> History => history;
-    protected IDurableDictionary<string, StateEntry> State => state;
-    protected IDurableList<AgentEvent> EventLog => eventLog;
+    protected IDurableList<ChatMessage> History => durableState.History;
+    protected IDurableDictionary<string, StateEntry> State => durableState.State;
+    protected IDurableList<AgentEvent> EventLog => durableState.EventLog;
     protected IStreamProvider StreamProvider => this.GetStreamProvider("agents");
     protected virtual IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() => [];
 
@@ -47,14 +45,14 @@ public abstract partial class Agent(
                 Instructions = Instructions,
                 Tools = [.. GetAllTools()]
             },
-            ChatHistoryProvider = new DurableChatHistoryProvider(history)
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History)
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);
 
         await SubscribeToStreamConsumerInterfaces();
 
-        foreach (var kvp in trackingItems)
+        foreach (var kvp in durableState.TrackingItems)
             await this.RegisterOrUpdateReminder(kvp.Key, TimeSpan.Zero, kvp.Value.Interval);
 
         await base.OnActivateAsync(cancellationToken);
@@ -76,7 +74,7 @@ public abstract partial class Agent(
         }
 
         var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
-        eventLog.Add(new AgentEvent(
+        durableState.EventLog.Add(new AgentEvent(
             "LlmStreamCall", this.GetPrimaryKeyString(), correlationId,
             DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
 
@@ -89,7 +87,7 @@ public abstract partial class Agent(
         var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
 
         var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
-        eventLog.Add(new AgentEvent(
+        durableState.EventLog.Add(new AgentEvent(
             "LlmCall", this.GetPrimaryKeyString(), correlationId,
             DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
 
@@ -100,13 +98,13 @@ public abstract partial class Agent(
     public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        IReadOnlyList<ChatMessage> snapshot = history.ToList();
+        IReadOnlyList<ChatMessage> snapshot = durableState.History.ToList();
         return Task.FromResult(snapshot);
     }
 
     public async Task ClearHistory(CancellationToken cancellationToken = default)
     {
-        history.Clear();
+        durableState.History.Clear();
         await WriteStateAsync(cancellationToken);
         _session = await _agent!.CreateSessionAsync(cancellationToken);
     }

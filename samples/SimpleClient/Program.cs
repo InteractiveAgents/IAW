@@ -1,4 +1,3 @@
-using Core.Contracts;
 using IAW.Agents.Orchestration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

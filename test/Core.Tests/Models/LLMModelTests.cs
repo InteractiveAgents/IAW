@@ -2,7 +2,7 @@ using Core.AI;
 using Core.AI.Models;
 using Xunit;
 
-namespace Core.Tests.Models;
+namespace IAW.Core.Tests.Models;
 
 public class LLMModelTests
 {

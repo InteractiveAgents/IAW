@@ -22,7 +22,7 @@ public static class WorkspaceFiles
         if (gitRoot is not null)
             return await EnumerateViaGitAsync(directory, gitRoot, pattern, ct);
 
-        return EnumerateWithExclusions(directory, pattern).ToArray();
+        return [.. EnumerateWithExclusions(directory, pattern)];
     }
 
     public static async Task<DirectoryComparison> CompareDirectoriesAsync(
@@ -61,7 +61,7 @@ public static class WorkspaceFiles
                 different.Add(new FileDifference(relativePath, infoA.Length, infoB.Length));
         }
 
-        return new DirectoryComparison(onlyInA, onlyInB, different.ToArray(), identical.ToArray());
+        return new DirectoryComparison(onlyInA, onlyInB, [.. different], [.. identical]);
     }
 
     static async Task<string[]> EnumerateViaGitAsync(
@@ -77,16 +77,15 @@ public static class WorkspaceFiles
 
         var output = await RunGitAsync(gitRoot, args, ct);
         if (output is null)
-            return EnumerateWithExclusions(directory, pattern).ToArray();
+            return [.. EnumerateWithExclusions(directory, pattern)];
 
         var matcher = CreatePatternMatcher(pattern);
 
-        return output
+        return [.. output
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => matcher(Path.GetFileName(line)))
             .Select(line => Path.GetFullPath(Path.Combine(gitRoot, line)))
-            .Where(File.Exists)
-            .ToArray();
+            .Where(File.Exists)];
     }
 
     static async Task<string?> RunGitAsync(string workingDir, string args, CancellationToken ct)

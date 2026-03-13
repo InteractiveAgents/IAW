@@ -3,7 +3,7 @@ using Core.Messages;
 using Core.Messages.Events;
 using Xunit;
 
-namespace Core.Tests.Communication;
+namespace IAW.Core.Tests.Communication;
 
 public class EventTypeTests
 {

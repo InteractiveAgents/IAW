@@ -1,7 +1,7 @@
 using Core.Orchestration;
 using Xunit;
 
-namespace Core.Tests.Orchestration;
+namespace IAW.Core.Tests.Orchestration;
 
 public class ScriptExecutorTests
 {

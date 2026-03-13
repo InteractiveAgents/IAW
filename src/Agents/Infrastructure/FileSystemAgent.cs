@@ -5,17 +5,13 @@ using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Infrastructure;
 
 public class FileSystemAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IFileSystem
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IFileSystem
 {
     protected override string DisplayName => "File System Agent";
     protected override string Instructions =>
@@ -88,7 +84,7 @@ public class FileSystemAgent(
                     matchingLines.Add($"{file}:{lineNum + 1}: {lines[lineNum].TrimStart()}");
             }
         }
-        return matchingLines.ToArray();
+        return [.. matchingLines];
     }
 
     public async Task<DirectoryComparison> CompareDirectoriesAsync(string dirA, string dirB, CancellationToken ct = default)

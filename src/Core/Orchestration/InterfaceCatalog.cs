@@ -36,7 +36,7 @@ public static class InterfaceCatalog
             .Where(t => t is { IsAbstract: false, IsClass: true } && AgentInterface.IsAssignableFrom(t))
             .ToList();
 
-        return agentInterfaces.Select(iface => BuildEntry(iface, concreteAgents)).ToList();
+        return [.. agentInterfaces.Select(iface => BuildEntry(iface, concreteAgents))];
     }
 
     public static string ComputeGrainId(Type interfaceType)

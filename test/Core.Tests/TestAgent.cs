@@ -12,12 +12,9 @@ namespace IAW.Core.Tests;
 public interface ITestAgent : IAgent;
 
 public class TestAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), ITestAgent
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient), ITestAgent
 {
     protected override string Instructions => "You are a test agent.";
     protected override string DisplayName => "Test Agent";
@@ -41,12 +38,9 @@ public record TestTaskMessage(
 }
 
 public class ReceiverTestAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IReceiverTestAgent,
       IReceiver<TestTaskMessage>
 {
@@ -75,12 +69,9 @@ public class ReceiverTestAgent(
 public interface IStreamTestAgent : IAgent;
 
 public class StreamTestAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IStreamTestAgent,
       IStreamConsumer<CodeChangedEvent>
 {
@@ -105,12 +96,9 @@ public interface ITrackingTestAgent : IAgent
 }
 
 public class TrackingTestAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), ITrackingTestAgent
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient), ITrackingTestAgent
 {
     protected override string Instructions => "Tracking test agent.";
     protected override string DisplayName => "Tracking Test";
@@ -145,12 +133,9 @@ public interface IProducerTestAgent : IAgent
 }
 
 public class ProducerTestAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IProducerTestAgent,
       IStreamProducer<CodeChangedEvent>
 {
@@ -172,12 +157,9 @@ public interface IRejectingReceiverAgent : IAgent
 }
 
 public class RejectingReceiverAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IRejectingReceiverAgent,
       IReceiver<TestTaskMessage>
 {
@@ -200,12 +182,9 @@ public class RejectingReceiverAgent(
 public interface IToolTestAgent : IAgent;
 
 public class ToolTestAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IToolTestAgent
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient)
+    : Agent(durableState, chatClient), IToolTestAgent
 {
     protected override string Instructions => "Tool test agent.";
     protected override string DisplayName => "Tool Test";

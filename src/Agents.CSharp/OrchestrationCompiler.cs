@@ -29,7 +29,7 @@ public static class OrchestrationCompiler
 
         return new CompilationResult(
             diagnostics.Length == 0,
-            diagnostics.Select(d => d.GetMessage()).ToArray());
+            [.. diagnostics.Select(d => d.GetMessage())]);
     }
 }
 

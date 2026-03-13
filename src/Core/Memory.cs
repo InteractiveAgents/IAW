@@ -1,21 +1,17 @@
 using Core.Contracts;
 using Core.Models;
-using ChatMessage = Core.Contracts.ChatMessage;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.VectorData;
 using Orleans.Journaling;
+using IAW.Core;
 
-namespace IAW.Core;
+namespace Core;
 
 public abstract class Memory(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [AgentState] AgentDurableState durableState,
     IChatClient chatClient,
-    [Memory("history")] IDurableList<ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IMemoryAgent
+    : Agent(durableState, chatClient), IMemoryAgent
 {
     protected IDurableList<MemoryEntry> Memories => memories;
     protected IEmbeddingGenerator<string, Embedding<float>> Embedder => embedder;

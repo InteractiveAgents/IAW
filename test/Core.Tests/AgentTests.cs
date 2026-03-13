@@ -1,7 +1,6 @@
 using Core.Contracts;
 using Core.Messages;
 using IAW.Testing;
-using Microsoft.Extensions.AI;
 using Xunit;
 
 namespace IAW.Core.Tests;

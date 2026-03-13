@@ -1,6 +1,7 @@
-using IAW.Core;
 using Core.Communication;
 using Core.Contracts;
+using Core.Agents;
+using IAW.Core;
 
 namespace Core.Registry;
 

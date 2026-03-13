@@ -23,10 +23,12 @@ builder.Host.UseOrleans(silo =>
 });
 
 builder.AddLlmProviders();
+builder.AddEmbeddingProvider();
 builder.AddServiceDefaults();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
 app.MapOrleansDashboard(routePrefix: "/dashboard");
 app.MapGet("/", () => "IAW Assistant Silo");
+
 app.Run();

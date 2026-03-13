@@ -3,7 +3,6 @@ using System.Xml.Linq;
 using IAW.Core;
 using IAW.Agents.CSharp.Models;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
@@ -11,13 +10,10 @@ using Core.AI.Models;
 namespace IAW.Agents.CSharp;
 
 public class NuGetAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [AgentState] AgentDurableState durableState,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IHttpClientFactory httpClientFactory)
-    : Agent(state, eventLog, chatClient, history, trackingItems), INuGet
+    : Agent(durableState, chatClient), INuGet
 {
     protected override string DisplayName => "NuGet Monitor";
     protected override string Instructions => "Monitors NuGet packages for new versions by parsing Directory.Packages.props";

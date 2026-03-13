@@ -1,7 +1,7 @@
-using IAW.Core;
+using Core;
 using Xunit;
 
-namespace Core.Tests;
+namespace IAW.Core.Tests;
 
 public class LLMAgentTests
 {

@@ -1,7 +1,7 @@
 using Core.Context;
 using Xunit;
 
-namespace Core.Tests.Context;
+namespace IAW.Core.Tests.Context;
 
 public class MemoryContextProviderTests
 {

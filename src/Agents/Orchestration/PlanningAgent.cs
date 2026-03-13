@@ -8,18 +8,14 @@ using Core.Orchestration;
 using Core.Registry;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Orchestration;
 
 public class PlanningAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [AgentState] AgentDurableState durableState,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IGrainFactory grainFactory)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IPlanning
+    : Agent(durableState, chatClient), IPlanning
 {
     protected override string DisplayName => "Orchestrator";
     protected override string Instructions => PlanningPrompts.System;

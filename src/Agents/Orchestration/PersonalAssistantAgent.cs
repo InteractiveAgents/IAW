@@ -11,7 +11,6 @@ using IAW.Agents.Messages;
 using IAW.Agents.Review;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
@@ -19,12 +18,9 @@ using System.Text.Json;
 namespace IAW.Agents.Orchestration;
 
 public class PersonalAssistantAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Sonnet46>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    [Llm<Sonnet46>] IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IPersonalAssistant,
       IReceiver<TaskCompletedMessage>,
       IReceiver<TaskFailedMessage>,

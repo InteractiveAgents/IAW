@@ -1,5 +1,4 @@
 using Core.AI;
-using Core.Contracts;
 using IAW.Agents.Orchestration;
 using Orleans.Dashboard;
 using Orleans.Journaling;
@@ -26,6 +25,7 @@ builder.Host.UseOrleans(silo =>
 });
 
 builder.AddLlmProviders();
+builder.AddEmbeddingProvider();
 builder.AddServiceDefaults();
 var app = builder.Build();
 

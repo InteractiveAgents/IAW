@@ -6,7 +6,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 using Core.Tools;
 using Core.Contracts;
 using Core.Communication;
@@ -17,12 +16,9 @@ using Core.Communication.Messages;
 namespace IAW.Agents.CSharp;
 
 public class RoslynAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IRoslyn, IReceiver<TestResultMessage>
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>
 {
     protected override string DisplayName => "Roslyn Code Intelligence";
     protected override string Instructions =>
@@ -309,53 +305,47 @@ public class RoslynAgent(
 
     private static List<string> DetectSingleton(SyntaxNode root)
     {
-        return root.DescendantNodes().OfType<PropertyDeclarationSyntax>()
+        return [.. root.DescendantNodes().OfType<PropertyDeclarationSyntax>()
             .Where(p => p.Modifiers.Any(SyntaxKind.StaticKeyword)
                      && p.Type.ToString().Contains(((TypeDeclarationSyntax?)p.Parent)?.Identifier.Text ?? ""))
-            .Select(p => $"Singleton pattern: {((TypeDeclarationSyntax?)p.Parent)?.Identifier.Text}.{p.Identifier.Text}")
-            .ToList();
+            .Select(p => $"Singleton pattern: {((TypeDeclarationSyntax?)p.Parent)?.Identifier.Text}.{p.Identifier.Text}")];
     }
 
     private static List<string> DetectFactory(SyntaxNode root)
     {
-        return root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+        return [.. root.DescendantNodes().OfType<MethodDeclarationSyntax>()
             .Where(m => m.Identifier.Text.StartsWith("Create", StringComparison.Ordinal)
                      || m.Identifier.Text.StartsWith("Build", StringComparison.Ordinal))
-            .Select(m => $"Factory method: {((TypeDeclarationSyntax?)m.Parent)?.Identifier.Text}.{m.Identifier.Text}")
-            .ToList();
+            .Select(m => $"Factory method: {((TypeDeclarationSyntax?)m.Parent)?.Identifier.Text}.{m.Identifier.Text}")];
     }
 
     private static List<string> DetectObserver(SyntaxNode root)
     {
-        return root.DescendantNodes().OfType<TypeDeclarationSyntax>()
+        return [.. root.DescendantNodes().OfType<TypeDeclarationSyntax>()
             .Where(t => t.BaseList?.Types.Any(bt => bt.ToString().Contains("IObserv")) == true)
-            .Select(t => $"Observer: {t.Identifier.Text}")
-            .ToList();
+            .Select(t => $"Observer: {t.Identifier.Text}")];
     }
 
     private static List<string> DetectDisposable(SyntaxNode root)
     {
-        return root.DescendantNodes().OfType<TypeDeclarationSyntax>()
+        return [.. root.DescendantNodes().OfType<TypeDeclarationSyntax>()
             .Where(t => t.BaseList?.Types.Any(bt => bt.ToString().Contains("IDisposable")) == true)
-            .Select(t => $"Disposable: {t.Identifier.Text}")
-            .ToList();
+            .Select(t => $"Disposable: {t.Identifier.Text}")];
     }
 
     private static List<string> DetectAsyncPatterns(SyntaxNode root)
     {
-        return root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+        return [.. root.DescendantNodes().OfType<MethodDeclarationSyntax>()
             .Where(m => m.Modifiers.Any(SyntaxKind.AsyncKeyword))
-            .Select(m => $"Async: {((TypeDeclarationSyntax?)m.Parent)?.Identifier.Text}.{m.Identifier.Text}")
-            .ToList();
+            .Select(m => $"Async: {((TypeDeclarationSyntax?)m.Parent)?.Identifier.Text}.{m.Identifier.Text}")];
     }
 
     private static List<string> DetectByName(SyntaxNode root, string patternName)
     {
-        return root.DescendantNodes().OfType<TypeDeclarationSyntax>()
+        return [.. root.DescendantNodes().OfType<TypeDeclarationSyntax>()
             .Where(t => t.Identifier.Text.Contains(patternName, StringComparison.OrdinalIgnoreCase)
                      || (t.BaseList?.Types.Any(bt => bt.ToString().Contains(patternName, StringComparison.OrdinalIgnoreCase)) == true))
-            .Select(t => $"Match: {t.Identifier.Text}")
-            .ToList();
+            .Select(t => $"Match: {t.Identifier.Text}")];
     }
 
     private record ProjectRef(string From, string To);

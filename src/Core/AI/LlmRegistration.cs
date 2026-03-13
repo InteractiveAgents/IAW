@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.ClientModel;
 using OllamaSharp;
+using Core.Contracts;
 using Core.Observability;
 
 namespace Core.AI;
@@ -24,6 +25,8 @@ public static class LlmRegistration
         // Register attribute mappers for ALL known models so Orleans can construct grains
         foreach (var model in LLMModel.All)
             RegisterAttributeMapper(builder.Services, model);
+
+        builder.Services.AddSingleton<IAttributeToFactoryMapper<AgentStateAttribute>, AgentStateMapper>();
 
         foreach (var model in modelsToRegister)
         {
@@ -187,8 +190,8 @@ public static class LlmRegistration
         if (!string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]))
         {
             var token = config[LlmConfig.GitHubModelsApiKey]!;
-            builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
-                (_, _) => new OpenAI.OpenAIClient(
+            builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
+                _ => new OpenAI.OpenAIClient(
                         new ApiKeyCredential(token),
                         new OpenAI.OpenAIClientOptions { Endpoint = new Uri(LlmConfig.GitHubModelsEndpoint) })
                     .GetEmbeddingClient("text-embedding-3-small")
@@ -197,15 +200,15 @@ public static class LlmRegistration
         else if (!string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]))
         {
             var apiKey = config[LlmConfig.OpenAiApiKey]!;
-            builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
-                (_, _) => new OpenAI.OpenAIClient(apiKey)
+            builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
+                _ => new OpenAI.OpenAIClient(apiKey)
                     .GetEmbeddingClient("text-embedding-3-small")
                     .AsIEmbeddingGenerator());
         }
         else
         {
-            builder.Services.AddKeyedSingleton<IEmbeddingGenerator<string, Embedding<float>>>("embedding",
-                (_, _) => throw new InvalidOperationException(
+            builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
+                _ => throw new InvalidOperationException(
                     "No embedding provider configured. Set AI:LLM:GitHubToken or AI:LLM:OpenAiApiKey."));
         }
 

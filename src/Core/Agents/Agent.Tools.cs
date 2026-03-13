@@ -23,7 +23,7 @@ public abstract partial class Agent
             () => GetWorkspacePath() ?? ".",
             path =>
             {
-                state[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path);
+                durableState.State[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path);
                 _cachedTools = null;
             });
         RegisterToolMethods(tools, workspaceTools);

@@ -47,11 +47,10 @@ public class FileTools(Func<string> getWorkspacePath)
         var fullPath = ResolvePath(directory);
         if (!Directory.Exists(fullPath))
             return [$"Directory not found: {fullPath}"];
-        return EnumerateFiles(fullPath, pattern)
+        return [.. EnumerateFiles(fullPath, pattern)
             .Select(f => Path.GetRelativePath(WorkspacePath, f))
             .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-            .Take(MaxResults)
-            .ToArray();
+            .Take(MaxResults)];
     }
 
     [Description("Search for a regex pattern in files")]

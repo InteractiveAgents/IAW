@@ -4,11 +4,11 @@ using Orleans.Journaling;
 using AiChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using AiChatRole = Microsoft.Extensions.AI.ChatRole;
 
-namespace IAW.Core;
+namespace Core.Agents;
 
 internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> history) : ChatHistoryProvider
 {
-    public override string StateKey => "orleans-durable-history";
+    public override IReadOnlyList<string> StateKeys => ["orleans-durable-history"];
 
     protected override ValueTask<IEnumerable<AiChatMessage>> ProvideChatHistoryAsync(
         InvokingContext context, CancellationToken cancellationToken = default)

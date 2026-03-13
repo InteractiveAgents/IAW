@@ -3,7 +3,6 @@ using IAW.Agents.Messages;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
-using Orleans.Journaling;
 using Orleans.Streams;
 using System.ComponentModel;
 using System.Text.Json;
@@ -15,12 +14,9 @@ using Core.Communication;
 namespace IAW.Agents.Review;
 
 public class SelfImprovementAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    [Llm<Sonnet46>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    [Llm<Sonnet46>] IChatClient chatClient)
+    : Agent(durableState, chatClient),
       ISelfImprovement,
       IReceiver<ReviewCompletedMessage>,
       IStreamConsumer<TestsPassedEvent>,

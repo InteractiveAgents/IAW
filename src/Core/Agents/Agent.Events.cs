@@ -9,7 +9,7 @@ namespace IAW.Core;
 public abstract partial class Agent
 {
     public Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<AgentEvent>>(eventLog.ToList());
+        => Task.FromResult<IReadOnlyList<AgentEvent>>(durableState.EventLog.ToList());
 
     protected async Task PublishAsync(string eventName, Dictionary<string, object>? payload = null, CancellationToken ct = default)
     {
@@ -21,7 +21,7 @@ public abstract partial class Agent
             eventName, this.GetPrimaryKeyString(), correlationId,
             DateTimeOffset.UtcNow, payload ?? []);
 
-        eventLog.Add(agentEvent);
+        durableState.EventLog.Add(agentEvent);
         await WriteStateAsync(ct);
 
         var streamId = StreamId.Create("agents", eventName);
@@ -42,7 +42,7 @@ public abstract partial class Agent
             streamName, evt.SourceAgentId, evt.CorrelationId,
             evt.Timestamp, new Dictionary<string, object> { ["typed_payload"] = evt });
 
-        eventLog.Add(agentEvent);
+        durableState.EventLog.Add(agentEvent);
         await WriteStateAsync(ct);
 
         var streamId = StreamId.Create("agents", streamName);
@@ -67,7 +67,7 @@ public abstract partial class Agent
         var stream = StreamProvider.GetStream<TEvent>(streamId);
         await stream.OnNextAsync(evt);
 
-        eventLog.Add(new AgentEvent(
+        durableState.EventLog.Add(new AgentEvent(
             typeof(TEvent).Name, evt.SourceAgentId, evt.CorrelationId,
             evt.Timestamp, new Dictionary<string, object> { ["taskId"] = taskId }));
         await WriteStateAsync(ct);

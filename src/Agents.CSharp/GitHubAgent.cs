@@ -2,7 +2,6 @@ using IAW.Core;
 using IAW.Agents.CSharp.Models;
 using Microsoft.Extensions.AI;
 using Octokit;
-using Orleans.Journaling;
 using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
@@ -10,13 +9,10 @@ using Core.AI.Models;
 namespace IAW.Agents.CSharp;
 
 public class GitHubAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
+    [AgentState] AgentDurableState durableState,
     [Llm<Claude45Haiku>] IChatClient chatClient,
-    [Memory("history")] IDurableList<global::Core.Contracts.ChatMessage> history,
-    [Memory("tracking")] IDurableDictionary<string, TrackingItem> trackingItems,
     IGitHubClient gitHubClient)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IGitHub
+    : Agent(durableState, chatClient), IGitHub
 {
     protected override string DisplayName => "GitHub Monitor";
     protected override string Instructions => "Monitors GitHub repositories for new releases and manages issues";

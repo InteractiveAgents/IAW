@@ -1,9 +1,9 @@
 using System.Reflection;
-using IAW.Core;
 using Core.Communication;
 using Core.Contracts;
 using Core.Messages;
 using Xunit;
+using Core.Agents;
 
 namespace IAW.Core.Tests;
 

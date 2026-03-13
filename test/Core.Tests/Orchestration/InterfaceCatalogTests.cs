@@ -1,11 +1,10 @@
-using Core.Contracts;
 using Core.Orchestration;
 using IAW.Agents.CSharp;
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Orchestration;
 using Xunit;
 
-namespace Core.Tests.Orchestration;
+namespace IAW.Core.Tests.Orchestration;
 
 public class InterfaceCatalogTests
 {
