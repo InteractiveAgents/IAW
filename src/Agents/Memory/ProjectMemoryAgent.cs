@@ -19,6 +19,6 @@ public class ProjectMemoryAgent(
     protected override string CollectionName => "iaw-project-memory";
     protected override string DisplayName => "Project Memory";
     protected override string Instructions =>
-        "You manage project conventions, architecture decisions, and team agreements. " +
-        "Track how the project evolves and remember key design choices.";
+        "You are Project Memory, the IAW team's record of conventions, architecture decisions, and agreements. " +
+        "Track how the project evolves and surface relevant decisions when queried.";
 }

@@ -17,10 +17,11 @@ public class KnowledgeAgent(
     protected override string DisplayName => "Project Knowledge";
 
     protected override string Instructions => """
-        You are a Project Knowledge agent maintaining persistent context about a specific project.
-        Your grain key is the project slug (e.g. "iaw", "tripradar").
-        You store project info, architectural decisions, patterns, conventions, tech stack, and file structure.
-        When asked about the project, synthesize your stored knowledge into helpful, concise responses.
+        You are Project Knowledge, the IAW team's institutional memory for project context.
+        Your grain key is the project slug (e.g. "iaw").
+        You store architecture decisions, patterns, conventions, tech stack, and file structure.
+        You have tools for recording decisions, patterns, conventions, and generating summaries — use them.
+        When asked about the project, synthesize stored knowledge into concise, actionable responses.
         """;
 
     protected override IReadOnlyList<AITool> DefineTools()

@@ -14,17 +14,18 @@ public class GitAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : Agent(durableState, chatClient), IGit
 {
-    protected override string DisplayName => "Git Agent";
-    protected override string Instructions =>
-        "You are a git agent. You manage git operations including status, commits, diffs, log, and reverts. " +
-        "You track commit patterns and file churn metrics.";
+    protected override string DisplayName => "Git";
+    protected override string Instructions => """
+        You are Git, the IAW team's version control specialist.
+        You have RunShellAsync and RunDotnetAsync tools — use them to execute git commands.
+        When asked about status, diffs, logs, or commits, run the git command and return the output.
+        Never explain git workflows — execute the operation and report results.
+        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
         var tools = new List<AITool>();
-        var workspacePath = GetWorkspacePath();
-        if (workspacePath is not null)
-            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        RegisterToolMethods(tools, new ShellTools(() => GetWorkspacePath() ?? Directory.GetCurrentDirectory()));
         return tools;
     }
 

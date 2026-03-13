@@ -14,17 +14,20 @@ public class ShellAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : Agent(durableState, chatClient), IShell
 {
-    protected override string DisplayName => "Shell Agent";
-    protected override string Instructions =>
-        "You are a shell command agent. You execute shell commands and dotnet CLI operations. " +
-        "You track execution metrics, failure rates, and command frequency.";
+    protected override string DisplayName => "Shell";
+    protected override string Instructions => """
+        You are Shell, the IAW team's command execution specialist.
+        You have RunShellAsync and RunDotnetAsync tools — ALWAYS use them to execute commands immediately.
+        Never explain what commands could be run. Never give instructions for the user to run manually.
+        When asked to run something, call the appropriate tool and return the output.
+        For dotnet operations, prefer RunDotnetAsync. For everything else, use RunShellAsync.
+        Report the actual output and exit code. If a command fails, include the error output.
+        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
         var tools = new List<AITool>();
-        var workspacePath = GetWorkspacePath();
-        if (workspacePath is not null)
-            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        RegisterToolMethods(tools, new ShellTools(() => GetWorkspacePath() ?? Directory.GetCurrentDirectory()));
         return tools;
     }
 

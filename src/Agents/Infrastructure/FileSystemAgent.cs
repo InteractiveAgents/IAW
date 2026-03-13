@@ -13,20 +13,21 @@ public class FileSystemAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : Agent(durableState, chatClient), IFileSystem
 {
-    protected override string DisplayName => "File System Agent";
-    protected override string Instructions =>
-        "You are a file system agent. You read, write, list, and search files within the workspace. " +
-        "You track all file access metrics and publish events for every operation.";
+    protected override string DisplayName => "FileSystem";
+    protected override string Instructions => """
+        You are FileSystem, the IAW team's file operations specialist.
+        You have tools for ReadFileAsync, WriteFileAsync, ListFiles, SearchCode, and RunShellAsync.
+        ALWAYS use your tools to perform file operations — never describe what could be done.
+        When asked to read, write, list, or search files, call the appropriate tool and return the result.
+        All paths must stay within the workspace boundary.
+        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
+        Func<string> workspace = () => GetWorkspacePath() ?? Directory.GetCurrentDirectory();
         var tools = new List<AITool>();
-        var workspacePath = GetWorkspacePath();
-        if (workspacePath is not null)
-        {
-            RegisterToolMethods(tools, new FileTools(() => workspacePath));
-            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
-        }
+        RegisterToolMethods(tools, new FileTools(workspace));
+        RegisterToolMethods(tools, new ShellTools(workspace));
         return tools;
     }
 

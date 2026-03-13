@@ -15,8 +15,10 @@ public class NuGetAgent(
     IHttpClientFactory httpClientFactory)
     : Agent(durableState, chatClient), INuGet
 {
-    protected override string DisplayName => "NuGet Monitor";
-    protected override string Instructions => "Monitors NuGet packages for new versions by parsing Directory.Packages.props";
+    protected override string DisplayName => "NuGet";
+    protected override string Instructions =>
+        "You are NuGet, the IAW team's package management specialist. " +
+        "You monitor packages for new versions via Directory.Packages.props and manage dependency updates.";
 
     public async Task WatchPackagesAsync(string directoryPackagesPropsPath, TimeSpan checkEvery, CancellationToken ct = default)
     {

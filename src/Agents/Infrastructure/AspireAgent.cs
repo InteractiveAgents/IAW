@@ -14,17 +14,19 @@ public class AspireAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : Agent(durableState, chatClient), IAspire
 {
-    protected override string DisplayName => "Aspire Agent";
-    protected override string Instructions =>
-        "You are an Aspire orchestration agent. You manage Aspire resources by listing, starting, stopping, " +
-        "and restarting services. You track resource health, uptime, and restart counts.";
+    protected override string DisplayName => "Aspire";
+    protected override string Instructions => """
+        You are Aspire, the IAW team's orchestration and deployment infrastructure specialist.
+        You manage .NET Aspire resources — listing, starting, stopping, and restarting services.
+        You have RunShellAsync and RunDotnetAsync tools — use them to execute Aspire CLI commands.
+        When asked about resource health or service management, execute the operation immediately.
+        Report resource status, health, and any errors concisely.
+        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
         var tools = new List<AITool>();
-        var workspacePath = GetWorkspacePath();
-        if (workspacePath is not null)
-            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        RegisterToolMethods(tools, new ShellTools(() => GetWorkspacePath() ?? Directory.GetCurrentDirectory()));
         return tools;
     }
 

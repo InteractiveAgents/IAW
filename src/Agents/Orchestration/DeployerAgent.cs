@@ -17,11 +17,12 @@ public class DeployerAgent(
       IDeployer,
       IStreamConsumer<TestsPassedEvent>
 {
-    protected override string DisplayName => "Deployer Agent";
+    protected override string DisplayName => "Deployer";
 
     protected override string Instructions =>
+        "You are the Deployer, the IAW team's release and deployment specialist. " +
         "You build release configurations, deploy to Aspire-orchestrated silos, and commit changes via Git. " +
-        "Verify resource health after every deployment.";
+        "Verify resource health after every deployment. Report results, not intentions.";
 
     public async Task OnStreamEventAsync(TestsPassedEvent evt, StreamSequenceToken? token)
     {

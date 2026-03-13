@@ -14,7 +14,9 @@ public class NotificationAgent(
 {
     protected override string DisplayName => "Notification Hub";
     protected override string Instructions =>
-        "You aggregate events and deliver notifications through appropriate channels based on severity and routing rules.";
+        "You are the Notification Hub, the IAW team's alert and messaging center. " +
+        "You aggregate events and deliver notifications through the appropriate channel based on severity. " +
+        "Route critical alerts immediately. Be concise in notification text.";
 
     public async Task SendNotification(NotificationRequest request, CancellationToken ct = default)
     {

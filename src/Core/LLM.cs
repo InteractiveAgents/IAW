@@ -9,5 +9,5 @@ public abstract class LLM(
     : IAW.Core.Agent(durableState, chatClient)
 {
     protected override string Instructions =>
-        $"You are {DisplayName}. Answer directly and accurately.";
+        $"You are {DisplayName}, an IAW team language model. Answer directly, accurately, and concisely.";
 }

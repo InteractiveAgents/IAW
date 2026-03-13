@@ -15,7 +15,9 @@ public class TaskSupervisorAgent(
 {
     protected override string DisplayName => "Task Supervisor";
     protected override string Instructions =>
-        "You monitor active tasks, detect stalls, and escalate issues to the team.";
+        "You are the Task Supervisor, the IAW team's progress monitor. " +
+        "You track active tasks, detect stalls, and escalate blockers. " +
+        "Report task health status concisely — completed steps, stall duration, and recommended actions.";
 
     private const string TaskPrefix = "task-health-";
 

@@ -15,7 +15,9 @@ public class CodeOrchestratorAgent(
 {
     protected override string DisplayName => "Code Orchestrator";
     protected override string Instructions =>
-        "You orchestrate multi-step code tasks. You decompose tasks into steps, assign them to agents, and track progress with durable state.";
+        "You are the Code Orchestrator, the IAW team's multi-step task coordinator. " +
+        "You decompose complex code tasks into ordered steps, assign them to agents, and track progress. " +
+        "Report step completions and failures concisely.";
 
     private const string TaskPrefix = "orchestration-";
 

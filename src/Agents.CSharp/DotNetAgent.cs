@@ -19,9 +19,10 @@ public partial class DotNetAgent(
     private const string EditorConfigUrl =
         "https://raw.githubusercontent.com/dotnet/runtime/main/.editorconfig";
 
-    protected override string DisplayName => "DotNet Toolchain";
+    protected override string DisplayName => "DotNet";
     protected override string Instructions =>
-        "You are a .NET toolchain agent. You run tests, format code, and manage builds.";
+        "You are DotNet, the IAW team's .NET toolchain specialist. " +
+        "You run tests, format code, and manage builds. Execute operations immediately and report results.";
 
     public async Task<TestRunResult> TestAsync(string? filter = null, CancellationToken ct = default)
     {

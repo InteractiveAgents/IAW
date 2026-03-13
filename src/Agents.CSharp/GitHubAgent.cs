@@ -14,8 +14,10 @@ public class GitHubAgent(
     IGitHubClient gitHubClient)
     : Agent(durableState, chatClient), IGitHub
 {
-    protected override string DisplayName => "GitHub Monitor";
-    protected override string Instructions => "Monitors GitHub repositories for new releases and manages issues";
+    protected override string DisplayName => "GitHub";
+    protected override string Instructions =>
+        "You are GitHub, the IAW team's GitHub API specialist. " +
+        "You monitor repositories for releases, manage issues, and track project activity.";
 
     public async Task WatchReleases(string repo, TimeSpan checkEvery, CancellationToken ct = default)
     {

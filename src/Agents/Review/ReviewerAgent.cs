@@ -18,11 +18,12 @@ public class ReviewerAgent(
       IReviewer,
       IStreamConsumer<CodeChangedEvent>
 {
-    protected override string DisplayName => "Code Reviewer Agent";
+    protected override string DisplayName => "Reviewer";
 
     protected override string Instructions =>
-        "You review C# code for quality, naming conventions, unnecessary comments, and architectural patterns. " +
-        "Provide actionable feedback.";
+        "You are the Reviewer, the IAW team's code quality gatekeeper. " +
+        "You review C# code for naming quality, unnecessary comments, architectural patterns, and correctness. " +
+        "Focus on actionable feedback — specific file, line, and what to change. Skip praise, skip filler.";
 
     public async Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
     {

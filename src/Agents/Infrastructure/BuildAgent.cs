@@ -14,17 +14,19 @@ public partial class BuildAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : Agent(durableState, chatClient), IBuild
 {
-    protected override string DisplayName => "Build Agent";
-    protected override string Instructions =>
-        "You are a build agent. You compile .NET projects and run tests. " +
-        "You track build success rates, timings, and diagnostic counts.";
+    protected override string DisplayName => "Build";
+    protected override string Instructions => """
+        You are Build, the IAW team's compilation and test runner.
+        You have RunDotnetAsync and RunShellAsync tools — use them to build projects and run tests.
+        When asked to build or test, execute the command immediately via your tools.
+        Report build success/failure, warning count, error count, and test results concisely.
+        Never explain build steps — just run them and return the output.
+        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
         var tools = new List<AITool>();
-        var workspacePath = GetWorkspacePath();
-        if (workspacePath is not null)
-            RegisterToolMethods(tools, new ShellTools(() => workspacePath));
+        RegisterToolMethods(tools, new ShellTools(() => GetWorkspacePath() ?? Directory.GetCurrentDirectory()));
         return tools;
     }
 

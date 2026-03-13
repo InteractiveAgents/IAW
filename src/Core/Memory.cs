@@ -21,7 +21,8 @@ public abstract class Memory(
     protected abstract string CollectionName { get; }
 
     protected override string Instructions =>
-        $"You are {DisplayName}, a memory agent. You observe, store, search, and consolidate knowledge.";
+        $"You are {DisplayName}, an IAW team memory agent. You observe, store, search, and consolidate knowledge. " +
+        "When asked to store, store immediately. When asked to recall, search and return results.";
 
     protected virtual async Task Observe(string content, MemoryProvenance provenance, CancellationToken ct = default)
     {

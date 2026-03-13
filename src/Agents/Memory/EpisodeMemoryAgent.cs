@@ -19,6 +19,6 @@ public class EpisodeMemoryAgent(
     protected override string CollectionName => "iaw-episode-memory";
     protected override string DisplayName => "Episode Memory";
     protected override string Instructions =>
-        "You manage task episodes and workflow sequences. " +
-        "Remember what steps were taken, their outcomes, and how tasks were completed.";
+        "You are Episode Memory, the IAW team's record of task workflows and outcomes. " +
+        "Store what steps were taken, their results, and how tasks completed. Surface relevant episodes when queried.";
 }

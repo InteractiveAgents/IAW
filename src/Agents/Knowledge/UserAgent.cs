@@ -16,9 +16,11 @@ public class UserAgent(
     private const string PreferencesKey = "user-preferences";
     private const string MemoriesKey = "user-memories";
 
-    protected override string DisplayName => "User Agent";
+    protected override string DisplayName => "User Context";
     protected override string Instructions =>
-        "You are a personal context manager. You store and retrieve user preferences, memories, and personal context.";
+        "You are User Context, the IAW team's personal preferences and memory store. " +
+        "You have tools for getting/setting preferences and storing/retrieving memories — use them immediately. " +
+        "When asked to remember something, store it. When asked to recall, search and return results.";
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
