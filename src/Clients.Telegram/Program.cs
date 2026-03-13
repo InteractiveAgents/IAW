@@ -56,6 +56,7 @@ app.MapPost("/webhook", async (
     HttpContext context,
     TelegramBotService botService,
     IOptions<TelegramBotOptions> options,
+    ILogger<Program> logger,
     CancellationToken ct) =>
 {
     var secret = options.Value.WebhookSecretToken;
@@ -70,7 +71,13 @@ app.MapPost("/webhook", async (
     if (update is null)
         return Results.BadRequest();
 
-    await botService.HandleUpdateAsync(update, ct);
+    // Fire-and-forget — return 200 to Telegram immediately,
+    // process the update in the background so webhook doesn't timeout
+    _ = Task.Run(async () =>
+    {
+        try { await botService.HandleUpdateAsync(update, CancellationToken.None); }
+        catch (Exception ex) { logger.LogError(ex, "Background update processing failed"); }
+    });
     return Results.Ok();
 });
 

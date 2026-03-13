@@ -24,6 +24,18 @@ public sealed class TelegramBotService(
 
     public async Task HandleUpdateAsync(Update update, CancellationToken ct)
     {
+        try
+        {
+            await HandleUpdateCoreAsync(update, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled error in HandleUpdateAsync");
+        }
+    }
+
+    private async Task HandleUpdateCoreAsync(Update update, CancellationToken ct)
+    {
         var message = update.Message;
         var chatId = message?.Chat.Id
             ?? update.CallbackQuery?.Message?.Chat.Id ?? 0L;
@@ -49,9 +61,10 @@ public sealed class TelegramBotService(
         if (string.IsNullOrEmpty(text)) return;
 
         var pa = clusterClient.GetGrain<IPersonalAssistant>("personal-assistant");
-        var threadId = message?.MessageThreadId ?? _assistantTopicId;
+        var threadId = message?.MessageThreadId;
 
         // Send placeholder, then progressively edit with streamed response
+        logger.LogInformation("Processing message from chat {ChatId}: {Text}", chatId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: threadId);
         var buffer = new StringBuilder();
         var lastEditAt = DateTimeOffset.MinValue;
@@ -70,7 +83,7 @@ public sealed class TelegramBotService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error streaming response from PersonalAssistant");
+            logger.LogError(ex, "Error streaming response from PersonalAssistant for chat {ChatId}", chatId);
             buffer.Append("\n\n[Error communicating with assistant]");
         }
 
@@ -127,13 +140,16 @@ public sealed class TelegramBotService(
 
     private async Task EditSafe(long chatId, int messageId, string text)
     {
+        if (string.IsNullOrWhiteSpace(text)) return;
         try
         {
             await botClient.EditMessageTextAsync(chatId, messageId, text);
         }
-        catch (BotRequestException ex) when (ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase))
+        catch (BotRequestException ex) when (
+            ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
         {
-            // Telegram rejects edits with identical text — safe to ignore
+            // Safe to ignore: identical text or empty text during streaming warmup
         }
     }
 

@@ -42,12 +42,19 @@ builder.AddProject<Projects.MCP>("mcp")
     .WithHttpEndpoint(port: 5300, name: "mcp-direct", isProxied: false)
     .WaitFor(assistant);
 
+// Ngrok tunnel for Telegram webhook
+var ngrokAuthToken = builder.AddParameter("ngrok-auth-token", secret: true);
+var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
+
 // Telegram client
 var botToken = builder.AddParameter("bot-token", secret: true);
-builder.AddProject<Projects.Telegram>("telegram")
+var telegram = builder.AddProject<Projects.Telegram>("telegram")
     .WithReference(iaw.AsClient())
     .WithEnvironment("Orleans__PrimaryGateway", assistant.GetEndpoint("orleans-gateway"))
     .WithEnvironment("Telegram__BotToken", botToken)
+    .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
     .WaitFor(assistant);
+
+ngrok.WithTunnelEndpoint(telegram, "http");
 
 builder.Build().Run();
