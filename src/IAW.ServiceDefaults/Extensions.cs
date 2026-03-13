@@ -66,7 +66,7 @@ public static class Extensions
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()
                     .AddMeter("IAW")
-                    .AddMeter("Microsoft.Extensions.AI")
+                    .AddMeter("Experimental.Microsoft.Extensions.AI")
                     .AddMeter("Microsoft.Orleans");
             })
             .WithTracing(tracing =>
@@ -74,7 +74,7 @@ public static class Extensions
                 tracing.SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(traceSampleRatio)));
                 tracing.AddSource(builder.Environment.ApplicationName)
                     .AddSource("IAW")
-                    .AddSource("Microsoft.Extensions.AI")
+                    .AddSource("Experimental.Microsoft.Extensions.AI")
                     .AddSource("Microsoft.Orleans.Application")
                     .AddAspNetCoreInstrumentation(tracing =>
                         // Exclude health check requests from tracing
