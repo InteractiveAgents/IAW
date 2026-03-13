@@ -6,14 +6,16 @@ using AiChatRole = Microsoft.Extensions.AI.ChatRole;
 
 namespace Core.Agents;
 
-internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> history) : ChatHistoryProvider
+internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> history, int maxMessages) : ChatHistoryProvider
 {
     public override IReadOnlyList<string> StateKeys => ["orleans-durable-history"];
 
     protected override ValueTask<IEnumerable<AiChatMessage>> ProvideChatHistoryAsync(
         InvokingContext context, CancellationToken cancellationToken = default)
     {
+        var skip = Math.Max(0, history.Count - maxMessages);
         IEnumerable<AiChatMessage> messages = history
+            .Skip(skip)
             .Select(m => new AiChatMessage(new AiChatRole(m.Role), m.Content));
 
         return ValueTask.FromResult(messages);
