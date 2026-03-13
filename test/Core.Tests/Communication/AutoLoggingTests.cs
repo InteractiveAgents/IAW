@@ -40,13 +40,13 @@ public class AutoLoggingTests : AgentTest<TestAgent>
     }
 
     [Fact]
-    public async Task GetResponseStream_auto_logs_LlmStreamCall()
+    public async Task GetResponseStream_auto_logs_LlmCall()
     {
         var ct = TestContext.Current.CancellationToken;
         var agent = Agent(UniqueId("autolog-stream"));
         await foreach (var _ in agent.GetResponseStream("hello", ct)) { }
         var log = await agent.GetEventLog(ct);
-        Assert.Contains(log, e => e.EventName == "LlmStreamCall");
+        Assert.Contains(log, e => e.EventName == "LlmCall");
     }
 
     [Fact]

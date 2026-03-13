@@ -1,9 +1,13 @@
+using Orleans.Runtime;
+
 namespace Core.Contracts;
 
 public interface IAgent : IGrainWithStringKey
 {
     // Conversation
     IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
+
+    [ResponseTimeout("00:05:00")]
     Task<string> GetResponse(string prompt, CancellationToken ct);
     Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken ct);
     Task ClearHistory(CancellationToken ct);

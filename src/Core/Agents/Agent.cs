@@ -86,7 +86,7 @@ public abstract partial class Agent(
 
             var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
             durableState.EventLog.Add(new AgentEvent(
-                "LlmStreamCall", this.GetPrimaryKeyString(), correlationId,
+                "LlmCall", this.GetPrimaryKeyString(), correlationId,
                 DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
 
             await WriteStateAsync(cancellationToken);
@@ -103,31 +103,10 @@ public abstract partial class Agent(
 
     public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
     {
-        AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            prompt = await EnrichWithContext(prompt, cancellationToken);
-            var response = await _agent!.RunAsync(prompt, _session, cancellationToken: cancellationToken);
-
-            var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
-            durableState.EventLog.Add(new AgentEvent(
-                "LlmCall", this.GetPrimaryKeyString(), correlationId,
-                DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
-
-            await WriteStateAsync(cancellationToken);
-            return response.Text ?? string.Empty;
-        }
-        catch (Exception)
-        {
-            AgentTelemetry.ConversationErrors.Add(1, new TagList { { "agent.type", GetType().Name } });
-            throw;
-        }
-        finally
-        {
-            AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
-                new TagList { { "agent.type", GetType().Name } });
-        }
+        var sb = new System.Text.StringBuilder();
+        await foreach (var chunk in GetResponseStream(prompt, cancellationToken))
+            sb.Append(chunk);
+        return sb.ToString();
     }
 
     public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
