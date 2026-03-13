@@ -15,7 +15,7 @@ public class LLMModelTests
     [Fact]
     public void Opus46_is_anthropic_provider()
     {
-        Assert.Equal(ProviderType.Anthropic, Opus46.Instance.Provider);
+        Assert.Equal("anthropic", Opus46.Instance.Provider);
     }
 
     [Fact]
@@ -27,7 +27,7 @@ public class LLMModelTests
     [Fact]
     public void Gpt52_is_openai_provider()
     {
-        Assert.Equal(ProviderType.OpenAI, Gpt52.Instance.Provider);
+        Assert.Equal("openai", Gpt52.Instance.Provider);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public class LLMModelTests
     [Fact]
     public void Gpt53_is_openai_provider()
     {
-        Assert.Equal(ProviderType.OpenAI, Gpt53.Instance.Provider);
+        Assert.Equal("openai", Gpt53.Instance.Provider);
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public class LLMModelTests
     [Fact]
     public void Gemini31_is_openai_provider()
     {
-        Assert.Equal(ProviderType.OpenAI, Gemini31.Instance.Provider);
+        Assert.Equal("openai", Gemini31.Instance.Provider);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class LLMModelTests
     [Fact]
     public void GrokLatest_is_openai_provider()
     {
-        Assert.Equal(ProviderType.OpenAI, GrokLatest.Instance.Provider);
+        Assert.Equal("openai", GrokLatest.Instance.Provider);
     }
 
     [Fact]
@@ -87,5 +87,40 @@ public class LLMModelTests
         Assert.Equal(ModelCapabilities.FullyCapable, Gpt53.Instance.Capabilities);
         Assert.Equal(ModelCapabilities.FullyCapable, Gemini31.Instance.Capabilities);
         Assert.Equal(ModelCapabilities.FullyCapable, GrokLatest.Instance.Capabilities);
+    }
+
+    [Fact]
+    public void RegisterCustomModel_AppearsInRegistry()
+    {
+        var id = $"test-register-{Guid.NewGuid():N}";
+        var model = LLMModel.Register(id, "openai", "My Fine-Tuned GPT");
+        Assert.Contains(LLMModel.All, m => m.Id == id);
+        Assert.Equal($"openai-{id}", model.ServiceKey);
+    }
+
+    [Fact]
+    public void RegisterCustomModel_WithCapabilities()
+    {
+        var id = $"test-caps-{Guid.NewGuid():N}";
+        var model = LLMModel.Register(id, "ollama", "Custom Local", ModelCapabilities.ChatOnly);
+        Assert.Equal("ollama", model.Provider);
+        Assert.True(model.IsLocal);
+        Assert.Equal(ModelCapabilities.ChatOnly, model.Capabilities);
+    }
+
+    [Fact]
+    public void RegisterCustomModel_DefaultsToFullyCapable()
+    {
+        var id = $"test-default-{Guid.NewGuid():N}";
+        var model = LLMModel.Register(id, "custom-provider", "Default Caps");
+        Assert.Equal(ModelCapabilities.FullyCapable, model.Capabilities);
+    }
+
+    [Fact]
+    public void RegisterDuplicateModel_Throws()
+    {
+        var id = $"test-dup-{Guid.NewGuid():N}";
+        LLMModel.Register(id, "openai", "First");
+        Assert.Throws<InvalidOperationException>(() => LLMModel.Register(id, "openai", "Second"));
     }
 }

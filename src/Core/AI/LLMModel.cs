@@ -4,10 +4,10 @@ public abstract class LLMModel
 {
     public abstract string Id { get; }
     public abstract string DisplayName { get; }
-    public abstract ProviderType Provider { get; }
+    public abstract string Provider { get; }
     public abstract ModelCapabilities Capabilities { get; }
 
-    public bool IsLocal => Provider == ProviderType.Ollama;
+    public bool IsLocal => Provider.Equals("ollama", StringComparison.OrdinalIgnoreCase);
 
     public string ServiceKey
     {
@@ -16,7 +16,7 @@ public abstract class LLMModel
             var normalizedId = Id.ToLowerInvariant()
                 .Replace(".", "")
                 .Replace(":", "-");
-            return $"{Provider.ToString().ToLowerInvariant()}-{normalizedId}";
+            return $"{Provider.ToLowerInvariant()}-{normalizedId}";
         }
     }
 
@@ -31,6 +31,16 @@ public abstract class LLMModel
     protected LLMModel()
     {
         lock (_lock) { _registry.Add(this); }
+    }
+
+    public static LLMModel Register(string id, string provider, string displayName, ModelCapabilities? capabilities = null)
+    {
+        lock (_lock)
+        {
+            if (_registry.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Model '{id}' is already registered.");
+        }
+        return new ConfiguredLLMModel(id, provider, displayName, capabilities ?? ModelCapabilities.FullyCapable);
     }
 
     public static void EnsureAllModelsLoaded()
@@ -48,5 +58,13 @@ public abstract class LLMModel
         _ = Models.Qwen25.Instance;
         _ = Models.GitHubGpt4oMini.Instance;
         _ = Models.GitHubGpt4o.Instance;
+    }
+
+    private sealed class ConfiguredLLMModel(string id, string provider, string displayName, ModelCapabilities capabilities) : LLMModel
+    {
+        public override string Id => id;
+        public override string Provider => provider;
+        public override string DisplayName => displayName;
+        public override ModelCapabilities Capabilities => capabilities;
     }
 }

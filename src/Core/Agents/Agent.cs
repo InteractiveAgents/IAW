@@ -59,31 +59,46 @@ public abstract partial class Agent(
         await base.OnActivateAsync(cancellationToken);
     }
 
-    public async IAsyncEnumerable<string> GetResponseStream(
+    public IAsyncEnumerable<string> GetResponseStream(
+        string prompt,
+        CancellationToken cancellationToken)
+    {
+        AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
+        return StreamResponseCore(prompt, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<string> StreamResponseCore(
         string prompt,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
         var sw = Stopwatch.StartNew();
-
-        prompt = await EnrichWithContext(prompt, cancellationToken);
-        await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
+        var completed = false;
+        try
         {
-            if (chunk.Text is not { } text)
-                continue;
+            prompt = await EnrichWithContext(prompt, cancellationToken);
+            await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
+            {
+                if (chunk.Text is not { } text)
+                    continue;
 
-            yield return text;
+                yield return text;
+            }
+
+            var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
+            durableState.EventLog.Add(new AgentEvent(
+                "LlmStreamCall", this.GetPrimaryKeyString(), correlationId,
+                DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
+
+            await WriteStateAsync(cancellationToken);
+            completed = true;
         }
-
-        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
-        durableState.EventLog.Add(new AgentEvent(
-            "LlmStreamCall", this.GetPrimaryKeyString(), correlationId,
-            DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
-
-        await WriteStateAsync(cancellationToken);
-
-        AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
-            new TagList { { "agent.type", GetType().Name } });
+        finally
+        {
+            if (!completed)
+                AgentTelemetry.ConversationErrors.Add(1, new TagList { { "agent.type", GetType().Name } });
+            AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
+                new TagList { { "agent.type", GetType().Name } });
+        }
     }
 
     public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)

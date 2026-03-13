@@ -1,6 +1,7 @@
 using Core.Contracts;
 using Core.Models;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Orleans.Journaling;
 using IAW.Core;
 
@@ -10,7 +11,8 @@ public abstract class Memory(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
-    IEmbeddingGenerator<string, Embedding<float>> embedder)
+    IEmbeddingGenerator<string, Embedding<float>> embedder,
+    ILogger logger)
     : Agent(durableState, chatClient), IMemoryAgent
 {
     protected IDurableList<MemoryEntry> Memories => memories;
@@ -29,9 +31,10 @@ public abstract class Memory(
             var result = await Embedder.GenerateAsync([content], cancellationToken: ct);
             embedding = result[0].Vector.ToArray();
         }
-        catch
+        catch (Exception ex)
         {
-            // embedder unavailable — fall back to keyword-only
+            logger.LogWarning(ex, "Embedding generation failed during Observe for {AgentId}, storing without embedding",
+                this.GetPrimaryKeyString());
         }
 
         var entry = new MemoryEntry(
@@ -54,9 +57,10 @@ public abstract class Memory(
             var result = await Embedder.GenerateAsync([query], cancellationToken: ct);
             queryEmbedding = result[0].Vector.ToArray();
         }
-        catch
+        catch (Exception ex)
         {
-            // embedder unavailable — keyword fallback
+            logger.LogWarning(ex, "Embedding generation failed during Search for {AgentId}, using keyword fallback",
+                this.GetPrimaryKeyString());
         }
 
         var scored = new List<(MemoryEntry Entry, float Score)>();
