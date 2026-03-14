@@ -7,11 +7,14 @@ using Core.Ingestion;
 using Core.Services;
 using ChatMessage = Core.Contracts.ChatMessage;
 using Core.Observability;
+using Grpc.Core;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Journaling;
 using Orleans.Streams;
+using Qdrant.Client;
+using Qdrant.Client.Grpc;
 
 namespace IAW.Core;
 
@@ -251,6 +254,8 @@ public abstract partial class Agent(
                         var chunks = await new PdfIngestionSource().ExtractChunksAsync(stream, file.FileName, ct);
                         var text = string.Join("\n", chunks.Select(c => c.Text));
                         attachments.Add($"[Document: {file.FileName}]\n{text}");
+
+                        _ = IngestChunksAsync(chunks, file, blobStorage, ct);
                     }
                     else
                     {
@@ -270,6 +275,59 @@ public abstract partial class Agent(
 
         if (attachments.Count == 0) return prompt;
         return $"{string.Join("\n\n", attachments)}\n\n{prompt}";
+    }
+
+    private async Task IngestChunksAsync(
+        IReadOnlyList<IngestedChunk> chunks, FileContent file, BlobFileStorage blobStorage, CancellationToken ct)
+    {
+        var embeddingGenerator = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
+        var qdrantClient = ServiceProvider.GetService<QdrantClient>();
+        if (embeddingGenerator is null || qdrantClient is null || chunks.Count == 0) return;
+
+        try
+        {
+            var projectId = this.GetPrimaryKeyString();
+            var collectionName = $"project-{projectId.Replace("/", "-")}";
+            var texts = chunks.Select(c => c.Text).ToList();
+            var embeddings = await embeddingGenerator.GenerateAsync(texts, cancellationToken: ct);
+
+            var vectorSize = (uint)embeddings[0].Vector.Length;
+            var exists = await qdrantClient.CollectionExistsAsync(collectionName, ct);
+            if (!exists)
+            {
+                try
+                {
+                    await qdrantClient.CreateCollectionAsync(
+                        collectionName,
+                        new VectorParams { Size = vectorSize, Distance = Distance.Cosine },
+                        cancellationToken: ct);
+                }
+                catch (RpcException ex) when (ex.StatusCode == StatusCode.AlreadyExists) { }
+            }
+
+            var points = new List<PointStruct>();
+            for (var i = 0; i < chunks.Count; i++)
+            {
+                var chunk = chunks[i];
+                points.Add(new PointStruct
+                {
+                    Id = (PointId)Guid.NewGuid(),
+                    Vectors = embeddings[i].Vector.ToArray(),
+                    Payload =
+                    {
+                        ["text"] = chunk.Text,
+                        ["fileName"] = chunk.FileName,
+                        ["pageNumber"] = chunk.PageNumber
+                    }
+                });
+            }
+
+            await qdrantClient.UpsertAsync(collectionName, points, cancellationToken: ct);
+        }
+        catch
+        {
+            // ingestion failure should not break the conversation
+        }
     }
 
     protected static string BuildSafeErrorMessage(Exception ex)
