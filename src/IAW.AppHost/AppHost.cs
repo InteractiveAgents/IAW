@@ -8,6 +8,7 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
     .WithLLM<Sonnet46>()
     .WithLLM<GitHubGpt4oMini>()
+    .WithVoice2Text()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
 
 var storage = builder.AddAzureStorage("storage")
