@@ -1,3 +1,4 @@
+using Core.Contracts;
 using IAW.Agents.Projects;
 using IAW.Testing;
 using Xunit;
@@ -43,5 +44,107 @@ public class ProjectTests : AgentTest<Project>
         await project.ClearHistory(ct);
         var history = await project.GetHistory(ct);
         Assert.Empty(history);
+    }
+
+    [Fact]
+    public async Task AddTask_CreatesTaskWithCorrectFields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-add-task"));
+
+        var task = await project.AddTask("Build login page", TaskPriority.High, ct);
+
+        Assert.NotNull(task);
+        Assert.NotEmpty(task.Id);
+        Assert.Equal(8, task.Id.Length);
+        Assert.Equal("Build login page", task.Description);
+        Assert.Equal(TaskPriority.High, task.Priority);
+        Assert.Equal(ProjectTaskStatus.Pending, task.Status);
+        Assert.True(task.CreatedAt > DateTimeOffset.MinValue);
+    }
+
+    [Fact]
+    public async Task GetTasks_ReturnsAddedTasks()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-get-tasks"));
+
+        await project.AddTask("Task A", TaskPriority.Low, ct);
+        await project.AddTask("Task B", TaskPriority.Critical, ct);
+
+        var tasks = await project.GetTasks(ct);
+
+        Assert.Equal(2, tasks.Count);
+        Assert.Contains(tasks, t => t.Description == "Task A" && t.Priority == TaskPriority.Low);
+        Assert.Contains(tasks, t => t.Description == "Task B" && t.Priority == TaskPriority.Critical);
+    }
+
+    [Fact]
+    public async Task UpdateTask_ChangesStatusToDone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-update-done"));
+
+        var task = await project.AddTask("Fix bug", TaskPriority.Medium, ct);
+        await project.UpdateTask(task.Id, ProjectTaskStatus.Done, ct);
+
+        var tasks = await project.GetTasks(ct);
+        var updated = Assert.Single(tasks);
+
+        Assert.Equal(ProjectTaskStatus.Done, updated.Status);
+        Assert.NotNull(updated.CompletedAt);
+    }
+
+    [Fact]
+    public async Task UpdateTask_ChangesStatusToInProgress_NoCompletedAt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-update-ip"));
+
+        var task = await project.AddTask("Refactor module", TaskPriority.High, ct);
+        await project.UpdateTask(task.Id, ProjectTaskStatus.InProgress, ct);
+
+        var tasks = await project.GetTasks(ct);
+        var updated = Assert.Single(tasks);
+
+        Assert.Equal(ProjectTaskStatus.InProgress, updated.Status);
+        Assert.Null(updated.CompletedAt);
+    }
+
+    [Fact]
+    public async Task UpdateTask_Cancelled_SetsCompletedAt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-update-cancel"));
+
+        var task = await project.AddTask("Abandoned feature", TaskPriority.Low, ct);
+        await project.UpdateTask(task.Id, ProjectTaskStatus.Cancelled, ct);
+
+        var tasks = await project.GetTasks(ct);
+        var updated = Assert.Single(tasks);
+
+        Assert.Equal(ProjectTaskStatus.Cancelled, updated.Status);
+        Assert.NotNull(updated.CompletedAt);
+    }
+
+    [Fact]
+    public async Task UpdateTask_InvalidId_ThrowsKeyNotFound()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-update-bad"));
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => project.UpdateTask("nonexistent", ProjectTaskStatus.Done, ct));
+    }
+
+    [Fact]
+    public async Task GetTasks_EmptyByDefault()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-empty-tasks"));
+
+        var tasks = await project.GetTasks(ct);
+
+        Assert.Empty(tasks);
     }
 }
