@@ -103,29 +103,7 @@ public sealed class TelegramBotService(
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        var buffer = new StringBuilder();
-        var lastEditAt = DateTimeOffset.MinValue;
-
-        try
-        {
-            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
-            {
-                buffer.Append(chunk);
-                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
-                {
-                    await EditSafe(chatId, sent.MessageId, buffer.ToString());
-                    lastEditAt = DateTimeOffset.UtcNow;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error streaming response from project for user {TelegramId}", telegramId);
-            buffer.Append("\n\n[Error communicating with assistant]");
-        }
-
-        if (buffer.Length > 0)
-            await EditSafe(chatId, sent.MessageId, buffer.ToString());
+        await StreamResponseAsync(chatId, sent.MessageId, project, chatMessage, telegramId, ct);
     }
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -229,21 +207,7 @@ public sealed class TelegramBotService(
                 Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
             };
 
-            var buffer = new StringBuilder();
-            var lastEditAt = DateTimeOffset.MinValue;
-
-            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
-            {
-                buffer.Append(chunk);
-                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
-                {
-                    await EditSafe(chatId, sent.MessageId, buffer.ToString());
-                    lastEditAt = DateTimeOffset.UtcNow;
-                }
-            }
-
-            if (buffer.Length > 0)
-                await EditSafe(chatId, sent.MessageId, buffer.ToString());
+            await StreamResponseAsync(chatId, sent.MessageId, project, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -281,27 +245,41 @@ public sealed class TelegramBotService(
             if (!string.IsNullOrEmpty(message.Caption))
                 chatMessage.Parts.Add(new TextContent(message.Caption));
 
-            var buffer = new StringBuilder();
-            var lastEditAt = DateTimeOffset.MinValue;
-
-            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
-            {
-                buffer.Append(chunk);
-                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
-                {
-                    await EditSafe(chatId, sent.MessageId, buffer.ToString());
-                    lastEditAt = DateTimeOffset.UtcNow;
-                }
-            }
-
-            if (buffer.Length > 0)
-                await EditSafe(chatId, sent.MessageId, buffer.ToString());
+            await StreamResponseAsync(chatId, sent.MessageId, project, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Document processing failed for user {TelegramId}", telegramId);
             await EditSafe(chatId, sent.MessageId, "[Error processing document]");
         }
+    }
+
+    private async Task StreamResponseAsync(
+        long chatId, int messageId, IProject project, ChatMessage chatMessage, long telegramId, CancellationToken ct)
+    {
+        var buffer = new StringBuilder();
+        var lastEditAt = DateTimeOffset.MinValue;
+
+        try
+        {
+            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
+            {
+                buffer.Append(chunk);
+                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
+                {
+                    await EditSafe(chatId, messageId, buffer.ToString());
+                    lastEditAt = DateTimeOffset.UtcNow;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error streaming response from project for user {TelegramId}", telegramId);
+            buffer.Append("\n\n[Error communicating with assistant]");
+        }
+
+        if (buffer.Length > 0)
+            await EditSafe(chatId, messageId, buffer.ToString());
     }
 
     private async Task<Stream> DownloadTelegramFileAsync(string fileId, CancellationToken ct)

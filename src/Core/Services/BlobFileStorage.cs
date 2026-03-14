@@ -3,24 +3,24 @@ using Azure.Storage.Blobs.Models;
 
 namespace Core.Services;
 
-public sealed class BlobFileStorage(BlobServiceClient blobServiceClient)
+public sealed class BlobFileStorage
 {
     private const string ContainerName = "files";
-    private BlobContainerClient? _containerClient;
+    private readonly Lazy<Task<BlobContainerClient>> _container;
 
-    private async Task<BlobContainerClient> GetContainerAsync()
+    public BlobFileStorage(BlobServiceClient blobServiceClient)
     {
-        if (_containerClient is not null) return _containerClient;
-
-        var container = blobServiceClient.GetBlobContainerClient(ContainerName);
-        await container.CreateIfNotExistsAsync(PublicAccessType.None);
-        _containerClient = container;
-        return container;
+        _container = new Lazy<Task<BlobContainerClient>>(async () =>
+        {
+            var container = blobServiceClient.GetBlobContainerClient(ContainerName);
+            await container.CreateIfNotExistsAsync(PublicAccessType.None);
+            return container;
+        });
     }
 
     public async Task<string> UploadAsync(Stream stream, string path, string contentType)
     {
-        var container = await GetContainerAsync();
+        var container = await _container.Value;
         var blobClient = container.GetBlobClient(path);
 
         var uploadOptions = new BlobUploadOptions
@@ -34,18 +34,8 @@ public sealed class BlobFileStorage(BlobServiceClient blobServiceClient)
 
     public async Task<Stream> DownloadAsync(string blobUri)
     {
-        var uri = new Uri(blobUri);
-        // Extract blob path from the URI (everything after the container name)
-        var container = await GetContainerAsync();
-        var blobName = uri.AbsolutePath
-            .TrimStart('/')
-            .Substring(ContainerName.Length + 1) // skip "files/"
-            .TrimStart('/');
-
-        // Handle the account name prefix in the path (e.g., /devstoreaccount1/files/...)
-        if (blobName.Contains(ContainerName + "/"))
-            blobName = blobName[(blobName.IndexOf(ContainerName + "/") + ContainerName.Length + 1)..];
-
+        var container = await _container.Value;
+        var blobName = new BlobUriBuilder(new Uri(blobUri)).BlobName;
         var blobClient = container.GetBlobClient(blobName);
         var response = await blobClient.DownloadStreamingAsync();
         return response.Value.Content;
