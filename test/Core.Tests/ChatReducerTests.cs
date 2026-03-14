@@ -144,6 +144,47 @@ public class ChatReducerTests
         Assert.False(ChatReducer.IsNonReducible(msg));
     }
 
+    [Fact]
+    public void Reduce_EvictsImagesFromOldMessages()
+    {
+        var history = new List<ChatMessage>();
+        history.Add(new ChatMessage { Role = "user", Parts = [new ImageContent("blob://x", "image/jpeg", "A sunset photo")] });
+        for (var i = 0; i < 20; i++)
+            history.Add(new ChatMessage { Role = "user", Content = $"Recent {i}", Parts = [new TextContent($"Recent {i}")] });
+
+        var result = _reducer.Reduce(history, summary: null, recentWindow: 20);
+
+        var pinnedMsg = result[0];
+        Assert.DoesNotContain(pinnedMsg.Parts, p => p is ImageContent);
+        Assert.Contains(pinnedMsg.Parts, p => p is TextContent tc && tc.Text.Contains("A sunset photo"));
+    }
+
+    [Fact]
+    public void Reduce_PreservesImagesInRecentWindow()
+    {
+        var history = new List<ChatMessage>();
+        for (var i = 0; i < 5; i++)
+            history.Add(new ChatMessage { Role = "user", Content = $"Msg {i}", Parts = [new TextContent($"Msg {i}")] });
+        history.Add(new ChatMessage { Role = "user", Parts = [new ImageContent("blob://y", "image/png", "A chart")] });
+
+        var result = _reducer.Reduce(history, summary: null, recentWindow: 20);
+
+        Assert.Contains(result, m => m.Parts.Any(p => p is ImageContent));
+    }
+
+    [Fact]
+    public void Reduce_EvictImages_FallsBackToMimeType_WhenNoCaption()
+    {
+        var history = new List<ChatMessage>();
+        history.Add(new ChatMessage { Role = "user", Parts = [new ImageContent("blob://x", "image/jpeg", null)] });
+        for (var i = 0; i < 20; i++)
+            history.Add(new ChatMessage { Role = "user", Content = $"Recent {i}", Parts = [new TextContent($"Recent {i}")] });
+
+        var result = _reducer.Reduce(history, summary: null, recentWindow: 20);
+        var pinnedMsg = result[0];
+        Assert.Contains(pinnedMsg.Parts, p => p is TextContent tc && tc.Text.Contains("image/jpeg"));
+    }
+
     private static List<ChatMessage> CreateMessages(int count)
     {
         return Enumerable.Range(0, count)

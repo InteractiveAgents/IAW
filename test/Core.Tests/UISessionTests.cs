@@ -14,7 +14,8 @@ public sealed class UISessionTestSiloConfigurator : ISiloConfigurator
     {
         siloBuilder
             .AddMemoryGrainStorage("Default")
-            .AddMemoryGrainStorage("PubSubStore");
+            .AddMemoryGrainStorage("PubSubStore")
+            .UseInMemoryReminderService();
 
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();

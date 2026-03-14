@@ -24,7 +24,8 @@ public sealed class UISessionStateMapper : IAttributeToFactoryMapper<UISessionSt
                 services.GetRequiredKeyedService<IDurableDictionary<string, WizardState>>("ui-wizards"),
                 services.GetRequiredKeyedService<IDurableDictionary<string, string>>("ui-pending-free-text"),
                 services.GetRequiredKeyedService<IDurableDictionary<string, PaginatorState>>("ui-paginators"),
-                services.GetRequiredKeyedService<IDurableDictionary<string, MenuState>>("ui-menus"));
+                services.GetRequiredKeyedService<IDurableDictionary<string, MenuState>>("ui-menus"),
+                services.GetRequiredKeyedService<IDurableDictionary<string, FormState>>("ui-forms"));
         };
     }
 }

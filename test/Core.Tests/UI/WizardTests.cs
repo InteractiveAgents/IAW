@@ -14,7 +14,8 @@ public sealed class WizardTestSiloConfigurator : ISiloConfigurator
     {
         siloBuilder
             .AddMemoryGrainStorage("Default")
-            .AddMemoryGrainStorage("PubSubStore");
+            .AddMemoryGrainStorage("PubSubStore")
+            .UseInMemoryReminderService();
 
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();
@@ -119,6 +120,8 @@ public class WizardTests : IAsyncLifetime
 
         Assert.Equal("Pick a size", result.NewText);
         Assert.Null(result.Toast);
+        Assert.NotNull(result.Buttons);
+        Assert.Equal(2, result.Buttons.Count);
     }
 
     [Fact]
@@ -159,12 +162,56 @@ public class WizardTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task HasPendingFreeTextInput_ClearedOnButtonStep()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var session = Session("wiz-10");
+        var steps = new WizardStep[]
+        {
+            new("color", "Pick a color",
+                Buttons(new Button("Red", "wz:w10:Red", null))),
+            new("name", "What's your name?", NoOptions()),
+            new("size", "Pick a size",
+                Buttons(new Button("S", "wz:w10:S", null)))
+        };
+        await session.StartWizard("w10", steps, "my-topic", ct);
+
+        // advance step 0 → step 1 (free text): sets PendingFreeText
+        await session.AdvanceWizard("w10", "Red", ct);
+        Assert.True(await session.HasPendingFreeTextInput("my-topic", ct));
+
+        // advance step 1 → step 2 (button): clears PendingFreeText
+        await session.AdvanceWizard("w10", "Alice", ct);
+        Assert.False(await session.HasPendingFreeTextInput("my-topic", ct));
+    }
+
+    [Fact]
     public async Task HasPendingFreeTextInput_FalseByDefault()
     {
         var ct = TestContext.Current.CancellationToken;
         var session = Session("wiz-7");
         var pending = await session.HasPendingFreeTextInput("nonexistent", ct);
         Assert.False(pending);
+    }
+
+    [Fact]
+    public async Task StartWizard_Idempotent_ReturnsExisting()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var session = Session("wiz-9");
+        var steps = new WizardStep[]
+        {
+            new("name", "What's your name?", NoOptions()),
+            new("color", "Pick a color",
+                Buttons(new Button("Red", "wz:w9:Red", null)))
+        };
+        var first = await session.StartWizard("w9", steps, "proj", ct);
+        await session.AdvanceWizard("w9", "Alice", ct);
+
+        var second = await session.StartWizard("w9", steps, "proj", ct);
+
+        Assert.Equal(1, second.CurrentStep);
+        Assert.Equal("Alice", second.Collected["name"]);
     }
 
     [Fact]

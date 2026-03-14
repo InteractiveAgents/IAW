@@ -14,4 +14,6 @@ public interface IUISession : IGrainWithStringKey
     Task<PaginatorState> NavigatePaginator(string paginatorId, string direction, CancellationToken ct);
     Task<MenuState> StartMenu(string menuId, MenuNode root, string projectSlug, CancellationToken ct);
     Task<MenuState> NavigateMenu(string menuId, string action, CancellationToken ct);
+    Task<FormState> StartForm(string formId, FormField[] fields, string projectSlug, CancellationToken ct);
+    Task<FormState> AdvanceForm(string formId, string value, CancellationToken ct);
 }

@@ -16,11 +16,11 @@ internal sealed class ChatReducer
 
         var recentStart = Math.Max(0, fullHistory.Count - recentWindow);
 
-        // pin non-reducible messages from the older portion (before recent window)
+        // pin non-reducible messages from the older portion, evicting images to text placeholders
         for (var i = 0; i < recentStart; i++)
         {
             if (IsNonReducible(fullHistory[i]))
-                result.Add(fullHistory[i]);
+                result.Add(EvictImages(fullHistory[i]));
         }
 
         // add recent window verbatim
@@ -28,6 +28,20 @@ internal sealed class ChatReducer
             result.Add(fullHistory[i]);
 
         return result;
+    }
+
+    static ChatMessage EvictImages(ChatMessage message)
+    {
+        if (!message.Parts.Any(p => p is ImageContent))
+            return message;
+
+        var evictedParts = message.Parts.Select<ContentPart, ContentPart>(p => p switch
+        {
+            ImageContent ic => new TextContent($"[Image: {ic.Caption ?? ic.MimeType}]"),
+            _ => p
+        }).ToList();
+
+        return message with { Parts = evictedParts };
     }
 
     public static bool IsNonReducible(ChatMessage message)

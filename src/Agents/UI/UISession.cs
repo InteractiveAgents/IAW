@@ -7,8 +7,51 @@ namespace IAW.Agents.UI;
 [GrainType("ui-session-v1")]
 public class UISession(
     [UISessionState] UISessionDurableState state)
-    : DurableGrain, IUISession
+    : DurableGrain, IUISession, IRemindable
 {
+    static readonly TimeSpan PaginatorTimeout = TimeSpan.FromMinutes(30);
+    static readonly TimeSpan MenuTimeout = TimeSpan.FromMinutes(10);
+    static readonly TimeSpan WizardFormTimeout = TimeSpan.FromMinutes(60);
+
+    public override async Task OnActivateAsync(CancellationToken ct)
+    {
+        await base.OnActivateAsync(ct);
+        await this.RegisterOrUpdateReminder("widget-cleanup", TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+    }
+
+    public async Task ReceiveReminder(string reminderName, TickStatus status)
+    {
+        if (reminderName != "widget-cleanup") return;
+
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var key in state.Paginators.Keys.ToList())
+            if (now - state.Paginators[key].CreatedAt > PaginatorTimeout)
+                state.Paginators.Remove(key);
+
+        foreach (var key in state.Menus.Keys.ToList())
+            if (now - state.Menus[key].CreatedAt > MenuTimeout)
+                state.Menus.Remove(key);
+
+        foreach (var key in state.Wizards.Keys.ToList())
+            if (now - state.Wizards[key].CreatedAt > WizardFormTimeout)
+            {
+                state.Wizards.Remove(key);
+                foreach (var ftKey in state.PendingFreeText.Keys.ToList())
+                    if (state.PendingFreeText[ftKey] == key)
+                        state.PendingFreeText.Remove(ftKey);
+            }
+
+        foreach (var key in state.Forms.Keys.ToList())
+            if (now - state.Forms[key].CreatedAt > WizardFormTimeout)
+            {
+                state.Forms.Remove(key);
+                foreach (var ftKey in state.PendingFreeText.Keys.ToList())
+                    if (state.PendingFreeText[ftKey] == key)
+                        state.PendingFreeText.Remove(ftKey);
+            }
+
+    }
     public Task RegisterApproval(string approvalId, string question, string[] options, string projectSlug, CancellationToken ct)
     {
         state.PendingApprovals[approvalId] = new PendingApproval(
@@ -61,6 +104,26 @@ public class UISession(
         {
             var updated = await NavigateMenu(id, action, ct);
             return RenderMenuResult(updated);
+        }
+
+        if (type == "fm" && state.Forms.ContainsKey(id))
+        {
+            var form = state.Forms[id];
+            var currentField = form.Fields[form.CurrentField];
+
+            if (currentField.Type == FormFieldType.MultiChoice && action != "__done__")
+            {
+                var toggled = ToggleMultiChoiceSelection(form, action);
+                state.Forms[id] = toggled;
+                return RenderMultiChoiceResult(toggled);
+            }
+
+            var advanced = await AdvanceForm(id, action, ct);
+            if (advanced.CurrentField >= advanced.Fields.Count)
+                return new CallbackResult(null, null, "Form completed");
+
+            var nextField = advanced.Fields[advanced.CurrentField];
+            return RenderFormFieldResult(advanced, nextField);
         }
 
         return new CallbackResult(null, null, "Unknown callback");
@@ -136,6 +199,9 @@ public class UISession(
 
     public Task<PaginatorState> StartPaginator(string paginatorId, string[] items, int pageSize, string projectSlug, CancellationToken ct)
     {
+        if (pageSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(pageSize), "Page size must be positive.");
+
         if (state.Paginators.TryGetValue(paginatorId, out var existing))
             return Task.FromResult(existing);
 
@@ -162,10 +228,13 @@ public class UISession(
         {
             "next" => Math.Min(paginator.CurrentPage + 1, maxPage),
             "prev" => Math.Max(paginator.CurrentPage - 1, 0),
-            _ => paginator.CurrentPage
+            _ => (int?)null
         };
 
-        var updated = paginator with { CurrentPage = newPage };
+        if (newPage is null || newPage == paginator.CurrentPage)
+            return Task.FromResult(paginator);
+
+        var updated = paginator with { CurrentPage = newPage.Value };
         state.Paginators[paginatorId] = updated;
         return Task.FromResult(updated);
     }
@@ -174,6 +243,8 @@ public class UISession(
     {
         if (state.Menus.TryGetValue(menuId, out var existing))
             return Task.FromResult(existing);
+
+        ValidateMenuLabels(root);
 
         var menuState = new MenuState
         {
@@ -212,6 +283,152 @@ public class UISession(
         var navigated = menu with { BreadCrumb = newCrumb };
         state.Menus[menuId] = navigated;
         return Task.FromResult(navigated);
+    }
+
+    public Task<FormState> StartForm(string formId, FormField[] fields, string projectSlug, CancellationToken ct)
+    {
+        if (fields.Length == 0)
+            throw new ArgumentException("Form must have at least one field.", nameof(fields));
+
+        foreach (var f in fields)
+            if (f.Type is FormFieldType.SingleChoice or FormFieldType.MultiChoice && (f.Options is null || f.Options.Count == 0))
+                throw new ArgumentException($"Field '{f.Name}' of type {f.Type} must have options.", nameof(fields));
+
+        if (state.Forms.TryGetValue(formId, out var existing))
+            return Task.FromResult(existing);
+
+        var formState = new FormState
+        {
+            Id = formId,
+            ProjectSlug = projectSlug,
+            Fields = fields.ToList(),
+            CurrentField = 0,
+            Values = new Dictionary<string, string>(),
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        state.Forms[formId] = formState;
+
+        var firstField = fields[0];
+        if (firstField.Type == FormFieldType.FreeText)
+            state.PendingFreeText[projectSlug] = formId;
+
+        return Task.FromResult(formState);
+    }
+
+    public Task<FormState> AdvanceForm(string formId, string value, CancellationToken ct)
+    {
+        if (!state.Forms.TryGetValue(formId, out var form))
+            throw new KeyNotFoundException($"Form '{formId}' not found.");
+
+        var currentField = form.Fields[form.CurrentField];
+
+        var storedValue = currentField.Type == FormFieldType.MultiChoice
+            ? ResolveMultiChoiceValue(form, value)
+            : value;
+
+        var updatedValues = new Dictionary<string, string>(form.Values)
+        {
+            [currentField.Name] = storedValue
+        };
+
+        var nextFieldIndex = form.CurrentField + 1;
+        var updatedForm = form with
+        {
+            CurrentField = nextFieldIndex,
+            Values = updatedValues
+        };
+
+        if (nextFieldIndex >= form.Fields.Count)
+        {
+            state.Forms.Remove(formId);
+            foreach (var key in state.PendingFreeText.Keys.ToList())
+                if (state.PendingFreeText[key] == formId)
+                    state.PendingFreeText.Remove(key);
+        }
+        else
+        {
+            var nextField = form.Fields[nextFieldIndex];
+            if (nextField.Type == FormFieldType.FreeText)
+                state.PendingFreeText[form.ProjectSlug] = formId;
+            else if (state.PendingFreeText.ContainsKey(form.ProjectSlug))
+                state.PendingFreeText.Remove(form.ProjectSlug);
+
+            state.Forms[formId] = updatedForm;
+        }
+
+        return Task.FromResult(updatedForm);
+    }
+
+    static FormState ToggleMultiChoiceSelection(FormState form, string value)
+    {
+        var currentField = form.Fields[form.CurrentField];
+        var existingCsv = form.Values.TryGetValue(currentField.Name, out var csv) ? csv : "";
+        var selected = string.IsNullOrEmpty(existingCsv)
+            ? new HashSet<string>()
+            : new HashSet<string>(existingCsv.Split(','));
+
+        if (!selected.Remove(value))
+            selected.Add(value);
+
+        var updatedValues = new Dictionary<string, string>(form.Values)
+        {
+            [currentField.Name] = string.Join(",", selected)
+        };
+
+        return form with { Values = updatedValues };
+    }
+
+    static string ResolveMultiChoiceValue(FormState form, string _)
+    {
+        var currentField = form.Fields[form.CurrentField];
+        return form.Values.TryGetValue(currentField.Name, out var csv) ? csv : "";
+    }
+
+    static CallbackResult RenderFormFieldResult(FormState form, FormField field)
+    {
+        if (field.Type == FormFieldType.FreeText)
+            return new CallbackResult(field.Prompt, null, null);
+
+        var buttons = field.Options?.Select(o =>
+            new Button(o.Text, $"fm:{form.Id}:{o.CallbackData.Split(':').Last()}", o.Url)).ToList();
+
+        if (field.Type == FormFieldType.MultiChoice)
+            buttons?.Add(new Button("Done", $"fm:{form.Id}:__done__", null));
+
+        return new CallbackResult(field.Prompt, null, null, buttons);
+    }
+
+    static CallbackResult RenderMultiChoiceResult(FormState form)
+    {
+        var field = form.Fields[form.CurrentField];
+        var selectedCsv = form.Values.TryGetValue(field.Name, out var csv) ? csv : "";
+        var selected = string.IsNullOrEmpty(selectedCsv)
+            ? new HashSet<string>()
+            : new HashSet<string>(selectedCsv.Split(','));
+
+        var buttons = field.Options?.Select(o =>
+        {
+            var val = o.CallbackData.Split(':').Last();
+            var prefix = selected.Contains(val) ? "\u2705 " : "";
+            return new Button($"{prefix}{o.Text}", $"fm:{form.Id}:{val}", o.Url);
+        }).ToList();
+
+        buttons?.Add(new Button("Done", $"fm:{form.Id}:__done__", null));
+
+        var selectedText = selected.Count > 0
+            ? $"{field.Prompt}\n\nSelected: {string.Join(", ", selected)}"
+            : field.Prompt;
+
+        return new CallbackResult(selectedText, null, null, buttons);
+    }
+
+    static void ValidateMenuLabels(MenuNode node)
+    {
+        if (node.Label == "__back__")
+            throw new ArgumentException("Menu node label '__back__' is reserved.");
+        if (node.Children is null) return;
+        foreach (var child in node.Children)
+            ValidateMenuLabels(child);
     }
 
     static MenuNode? ResolveMenuNode(MenuNode root, IReadOnlyList<string> breadCrumb)
@@ -258,7 +475,12 @@ public class UISession(
             return new CallbackResult(null, currentNode.Action, null);
 
         if (currentNode.Children is null || currentNode.Children.Count == 0)
-            return new CallbackResult(currentNode.Label, null, null);
+        {
+            var backBtn = menu.BreadCrumb.Count > 0
+                ? new List<Button> { new("\u25c0 Back", $"mn:{menu.Id}:__back__", null) }
+                : null;
+            return new CallbackResult(currentNode.Label, null, null, backBtn);
+        }
 
         var buttons = currentNode.Children
             .Select(c => new Button(c.Label, $"mn:{menu.Id}:{c.Label}", null))

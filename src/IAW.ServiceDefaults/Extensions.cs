@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
+using Orleans.Dashboard;
+using Orleans.Journaling;
 using System.Diagnostics;
 
 namespace ServiceDefaults;
@@ -121,6 +123,26 @@ public static class Extensions
             // Add a default liveness check to ensure app is responsive
             .AddCheck("self", () => HealthCheckResult.Healthy(), ["live"]);
 
+        return builder;
+    }
+
+    public static TBuilder AddIAW<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
+    {
+        builder.UseOrleans(silo =>
+        {
+            silo.Configure<Orleans.Configuration.EndpointOptions>(ep =>
+                ep.AdvertisedIPAddress = System.Net.IPAddress.Loopback);
+            silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
+            silo.AddStateMachineStorage();
+            silo.AddDashboard();
+        });
+
+        return builder;
+    }
+
+    public static TBuilder AddIAWClient<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
+    {
+        builder.UseOrleansClient(client => client.UseLocalhostClustering());
         return builder;
     }
 

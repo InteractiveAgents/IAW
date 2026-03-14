@@ -28,7 +28,6 @@ internal sealed class UsageCaptureChatClient(IChatClient inner) : IChatClient
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         long inputTokens = 0, outputTokens = 0, totalTokens = 0;
-
         await foreach (var update in inner.GetStreamingResponseAsync(messages, options, cancellationToken))
         {
             foreach (var content in update.Contents)

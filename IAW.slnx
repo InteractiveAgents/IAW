@@ -10,9 +10,6 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Samples/Samples.csproj" />
-    <Project Path="samples/SimpleClient/SimpleClient.csproj" />
-    <Project Path="samples/Pipeline/Pipeline.csproj" />
-    <Project Path="samples/Monitor/Monitor.csproj" />
   </Folder>
   <Project Path="src/Core/Core.csproj" />
   <Project Path="src/IAW.Assistant/IAW.Assistant.csproj" />

@@ -14,7 +14,8 @@ public sealed class MenuTestSiloConfigurator : ISiloConfigurator
     {
         siloBuilder
             .AddMemoryGrainStorage("Default")
-            .AddMemoryGrainStorage("PubSubStore");
+            .AddMemoryGrainStorage("PubSubStore")
+            .UseInMemoryReminderService();
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();
         siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<UISessionStateAttribute>, UISessionStateMapper>();

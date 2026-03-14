@@ -126,7 +126,19 @@ public sealed class TelegramBotService(
 
         if (result.NewText is not null && callbackQuery.Message is not null)
         {
-            await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
+            if (result.Buttons is { Count: > 0 })
+            {
+                var buttons = result.Buttons.Select(b =>
+                    new InlineKeyboardButton(b.Text) { CallbackData = b.CallbackData }
+                ).ToArray();
+                var keyboard = new InlineKeyboardMarkup([buttons]);
+                await botClient.EditMessageTextAsync(chatId, callbackQuery.Message.MessageId,
+                    result.NewText, replyMarkup: keyboard);
+            }
+            else
+            {
+                await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
+            }
         }
     }
 
@@ -165,6 +177,25 @@ public sealed class TelegramBotService(
 
         await botClient.SendMessageAsync(chatId, text,
             messageThreadId: _notificationsTopicId, parseMode: FormatStyles.MarkdownV2);
+    }
+
+    public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)
+    {
+        var chatId = options.Value.ChatId;
+        if (chatId == 0) return;
+
+        if (stepOptions.Length > 0)
+        {
+            var buttons = stepOptions.Select(opt =>
+                new InlineKeyboardButton(opt) { CallbackData = $"wz:{wizardId}:{opt}" }
+            ).ToArray();
+            var keyboard = new InlineKeyboardMarkup([buttons]);
+            await botClient.SendMessageAsync(chatId, prompt, replyMarkup: keyboard);
+        }
+        else
+        {
+            await botClient.SendMessageAsync(chatId, prompt);
+        }
     }
 
     public async Task SendApprovalAsync(string approvalId, string question, string[] approvalOptions, string projectSlug, CancellationToken ct)

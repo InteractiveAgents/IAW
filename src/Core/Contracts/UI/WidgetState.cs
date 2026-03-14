@@ -6,6 +6,7 @@ public abstract record WidgetState
     [Id(0)] public string Id { get; init; } = string.Empty;
     [Id(1)] public string ProjectSlug { get; init; } = string.Empty;
     [Id(2)] public int MessageId { get; init; }
+    [Id(3)] public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
 [GenerateSerializer]
