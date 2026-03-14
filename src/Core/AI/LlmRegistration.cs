@@ -40,6 +40,7 @@ public static class LlmRegistration
         builder.Services.AddSingleton<IAttributeToFactoryMapper<AgentStateAttribute>, AgentStateMapper>();
         builder.Services.AddSingleton<IAttributeToFactoryMapper<UserProfileStateAttribute>, UserProfileStateMapper>();
         builder.Services.AddSingleton<IAttributeToFactoryMapper<ProjectStateAttribute>, ProjectStateMapper>();
+        builder.Services.AddSingleton<IAttributeToFactoryMapper<UISessionStateAttribute>, UISessionStateMapper>();
 
         foreach (var model in modelsToRegister)
         {
