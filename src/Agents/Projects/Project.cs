@@ -1,9 +1,12 @@
 using System.ComponentModel;
 using Core.AI;
 using Core.AI.Models;
+using Core.Context;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
+using Qdrant.Client;
 
 namespace IAW.Agents.Projects;
 
@@ -19,6 +22,14 @@ public class Project(
         Be concise and actionable in your responses.
         """;
     protected override string DisplayName => "Project";
+
+    protected override IReadOnlyList<IAgentContextProvider> GetContextProviders()
+    {
+        var qdrant = ServiceProvider.GetService<QdrantClient>();
+        var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
+        if (qdrant is null || embeddings is null) return [];
+        return [new RAGContextProvider(qdrant, embeddings)];
+    }
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
