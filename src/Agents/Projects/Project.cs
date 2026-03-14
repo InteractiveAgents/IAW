@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -18,6 +19,31 @@ public class Project(
         Be concise and actionable in your responses.
         """;
     protected override string DisplayName => "Project";
+
+    protected override IReadOnlyList<AITool> DefineTools()
+    {
+        return
+        [
+            AIFunctionFactory.Create(RequestApprovalTool, nameof(RequestApprovalTool),
+                "Ask the user to approve or decline something. Returns when approval is requested."),
+        ];
+    }
+
+    [Description("Request user approval with a question and a set of options")]
+    private async Task<string> RequestApprovalTool(
+        [Description("The question to ask the user")] string question,
+        [Description("Available options for the user to choose from")] string[] options)
+    {
+        var approvalId = Guid.NewGuid().ToString("N")[..8];
+        await PublishAsync("approval.requested", new Dictionary<string, object>
+        {
+            ["approvalId"] = approvalId,
+            ["question"] = question,
+            ["options"] = options,
+            ["projectSlug"] = this.GetPrimaryKeyString()
+        });
+        return $"Approval requested (id: {approvalId}). Waiting for user response.";
+    }
 
     public Task<ProjectDashboard> GetDashboard(CancellationToken ct) =>
         throw new NotImplementedException("Implemented in Slice 4");
@@ -40,8 +66,10 @@ public class Project(
     public Task RegisterFile(FileReference fileRef, CancellationToken ct) =>
         throw new NotImplementedException("Implemented in Slice 3");
 
-    public Task RequestApproval(string question, string[] options, CancellationToken ct) =>
-        throw new NotImplementedException("Implemented in Slice 2");
+    public async Task RequestApproval(string question, string[] options, CancellationToken ct)
+    {
+        await RequestApprovalTool(question, options);
+    }
 
     public Task<ProjectContext> GetProjectContext(CancellationToken ct) =>
         Task.FromResult(new ProjectContext());
