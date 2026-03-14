@@ -49,6 +49,12 @@ public class Project(
                 "Update the status of an existing task."),
             AIFunctionFactory.Create(ListTasksTool, nameof(ListTasksTool),
                 "List all tasks in the project."),
+            AIFunctionFactory.Create(ScheduleJobTool, nameof(ScheduleJobTool),
+                "Schedule a recurring job that runs on a timer."),
+            AIFunctionFactory.Create(CancelJobTool, nameof(CancelJobTool),
+                "Cancel an active scheduled job."),
+            AIFunctionFactory.Create(ListJobsTool, nameof(ListJobsTool),
+                "List all scheduled jobs."),
         ];
     }
 
@@ -96,7 +102,13 @@ public class Project(
     }
 
     public Task<ProjectDashboard> GetDashboard(CancellationToken ct) =>
-        throw new NotImplementedException("Implemented in Slice 4");
+        Task.FromResult(new ProjectDashboard
+        {
+            Tasks = durableState.Tasks.ToList(),
+            Jobs = durableState.Schedules.Values.ToList(),
+            Files = durableState.Files.Values.ToList(),
+            GeneratedAt = DateTimeOffset.UtcNow
+        });
 
     public async Task<ProjectTask> AddTask(string description, TaskPriority priority, CancellationToken ct)
     {
@@ -109,10 +121,11 @@ public class Project(
             CreatedAt = DateTimeOffset.UtcNow
         };
         durableState.Tasks.Add(task);
+        await PublishDashboardChanged();
         return task;
     }
 
-    public Task UpdateTask(string taskId, ProjectTaskStatus status, CancellationToken ct)
+    public async Task UpdateTask(string taskId, ProjectTaskStatus status, CancellationToken ct)
     {
         var index = -1;
         for (var i = 0; i < durableState.Tasks.Count; i++)
@@ -128,20 +141,45 @@ public class Project(
             CompletedAt = status is ProjectTaskStatus.Done or ProjectTaskStatus.Cancelled
                 ? DateTimeOffset.UtcNow : existing.CompletedAt
         };
-        return Task.CompletedTask;
+        await PublishDashboardChanged();
     }
 
     public Task<IReadOnlyList<ProjectTask>> GetTasks(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ProjectTask>>(durableState.Tasks.ToList());
 
-    public Task<ScheduledJob> ScheduleJob(string name, TimeSpan interval, string description, CancellationToken ct) =>
-        throw new NotImplementedException("Implemented in Slice 4");
+    public async Task<ScheduledJob> ScheduleJob(string name, TimeSpan interval, string description, CancellationToken ct)
+    {
+        var job = new ScheduledJob
+        {
+            Id = Guid.NewGuid().ToString("N")[..8],
+            Name = name,
+            Description = description,
+            Interval = interval,
+            NextRunAt = DateTimeOffset.UtcNow + interval,
+            Active = true
+        };
+        durableState.Schedules[job.Id] = job;
+        var trackingItem = new TrackingItem(job.Id, job.Description, interval, DateTimeOffset.UtcNow, null, null);
+        await StartTrackingAsync(job.Id, trackingItem, interval, ct);
+        await PublishDashboardChanged();
+        return job;
+    }
 
-    public Task CancelJob(string jobId, CancellationToken ct) =>
-        throw new NotImplementedException("Implemented in Slice 4");
+    public async Task CancelJob(string jobId, CancellationToken ct)
+    {
+        if (!durableState.Schedules.TryGetValue(jobId, out var job))
+            throw new KeyNotFoundException($"Job {jobId} not found");
 
-    public Task RegisterFile(FileReference fileRef, CancellationToken ct) =>
-        throw new NotImplementedException("Implemented in Slice 3");
+        durableState.Schedules[jobId] = job with { Active = false };
+        await StopTrackingAsync(jobId, ct);
+        await PublishDashboardChanged();
+    }
+
+    public async Task RegisterFile(FileReference fileRef, CancellationToken ct)
+    {
+        durableState.Files[fileRef.FileName] = fileRef;
+        await PublishDashboardChanged();
+    }
 
     public async Task RequestApproval(string question, string[] options, CancellationToken ct)
     {
@@ -150,4 +188,68 @@ public class Project(
 
     public Task<ProjectContext> GetProjectContext(CancellationToken ct) =>
         Task.FromResult(new ProjectContext());
+
+    protected override async Task OnTrackingDueAsync(TrackingItem item, CancellationToken ct)
+    {
+        if (!durableState.Schedules.TryGetValue(item.Id, out var job) || !job.Active)
+        {
+            await base.OnTrackingDueAsync(item, ct);
+            return;
+        }
+
+        var response = await GetResponse(item.Description, ct);
+        durableState.Schedules[job.Id] = job with
+        {
+            LastRunAt = DateTimeOffset.UtcNow,
+            NextRunAt = DateTimeOffset.UtcNow + job.Interval,
+            LastResult = response
+        };
+        await PublishDashboardChanged();
+    }
+
+    [Description("Schedule a recurring job")]
+    private async Task<string> ScheduleJobTool(
+        [Description("Job name")] string name,
+        [Description("Interval in minutes between runs")] int intervalMinutes,
+        [Description("What the job should do each run")] string description)
+    {
+        var interval = TimeSpan.FromMinutes(intervalMinutes);
+        var job = await ScheduleJob(name, interval, description, CancellationToken.None);
+        return $"Job '{job.Id}' scheduled: {job.Name} — runs every {intervalMinutes} minutes";
+    }
+
+    [Description("Cancel a scheduled job")]
+    private async Task<string> CancelJobTool(
+        [Description("Job ID to cancel")] string jobId)
+    {
+        await CancelJob(jobId, CancellationToken.None);
+        return $"Job '{jobId}' cancelled";
+    }
+
+    [Description("List all scheduled jobs")]
+    private Task<string> ListJobsTool()
+    {
+        var jobs = durableState.Schedules.Values;
+        if (!jobs.Any()) return Task.FromResult("No scheduled jobs.");
+        var lines = jobs.Select(j =>
+            $"[{j.Id}] {j.Name}: {j.Description} (every {j.Interval.TotalMinutes}min, active: {j.Active}, last: {j.LastRunAt?.ToString("g") ?? "never"})");
+        return Task.FromResult(string.Join("\n", lines));
+    }
+
+    private async Task PublishDashboardChanged()
+    {
+        var dashboard = new ProjectDashboard
+        {
+            Tasks = durableState.Tasks.ToList(),
+            Jobs = durableState.Schedules.Values.ToList(),
+            Files = durableState.Files.Values.ToList(),
+            GeneratedAt = DateTimeOffset.UtcNow
+        };
+        var markdown = DashboardRenderer.Render(dashboard);
+        await PublishAsync("dashboard.changed", new Dictionary<string, object>
+        {
+            ["projectKey"] = this.GetPrimaryKeyString(),
+            ["renderedMarkdown"] = markdown
+        });
+    }
 }

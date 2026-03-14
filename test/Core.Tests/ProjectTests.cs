@@ -147,4 +147,49 @@ public class ProjectTests : AgentTest<Project>
 
         Assert.Empty(tasks);
     }
+
+    [Fact]
+    public async Task ScheduleJob_CreatesJobWithCorrectFields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-schedule-job"));
+
+        var interval = TimeSpan.FromMinutes(30);
+        var job = await project.ScheduleJob("Daily report", interval, "Generate a daily status report", ct);
+
+        Assert.NotNull(job);
+        Assert.NotEmpty(job.Id);
+        Assert.Equal(8, job.Id.Length);
+        Assert.Equal("Daily report", job.Name);
+        Assert.Equal("Generate a daily status report", job.Description);
+        Assert.Equal(interval, job.Interval);
+        Assert.True(job.Active);
+        Assert.True(job.NextRunAt > DateTimeOffset.UtcNow);
+        Assert.Null(job.LastRunAt);
+        Assert.Null(job.LastResult);
+    }
+
+    [Fact]
+    public async Task CancelJob_DeactivatesJob()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-cancel-job"));
+
+        var job = await project.ScheduleJob("Cleanup", TimeSpan.FromMinutes(60), "Clean temp files", ct);
+        await project.CancelJob(job.Id, ct);
+
+        var dashboard = await project.GetDashboard(ct);
+        var cancelledJob = dashboard.Jobs.Single(j => j.Id == job.Id);
+        Assert.False(cancelledJob.Active);
+    }
+
+    [Fact]
+    public async Task CancelJob_InvalidId_ThrowsKeyNotFound()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var project = (IProject)Agent(UniqueId("project-cancel-bad"));
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(
+            () => project.CancelJob("nonexistent", ct));
+    }
 }
