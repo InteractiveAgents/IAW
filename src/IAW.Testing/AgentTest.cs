@@ -25,6 +25,7 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
         siloBuilder.AddStateMachineStorage();
 
         siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<AgentStateAttribute>, AgentStateMapper>();
+        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<UserProfileStateAttribute>, UserProfileStateMapper>();
 
         LLMModel.EnsureAllModelsLoaded();
         var mockClient = new MockChatClient().ReturnsText("mock-response");
