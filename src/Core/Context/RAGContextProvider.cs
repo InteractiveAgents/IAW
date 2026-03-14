@@ -25,7 +25,7 @@ public class RAGContextProvider(
 
             return results
                 .Select(r =>
-                    $"[document: {r.Payload["fileName"]}, page {r.Payload["pageNumber"].IntegerValue}] {r.Payload["text"]}")
+                    $"[document: {r.Payload["fileName"]}, page {r.Payload["pageNumber"]}] {r.Payload["text"]}")
                 .ToList();
         }
         catch

@@ -23,12 +23,18 @@ public class Project(
         """;
     protected override string DisplayName => "Project";
 
+    private IReadOnlyList<IAgentContextProvider>? _contextProviders;
+
     protected override IReadOnlyList<IAgentContextProvider> GetContextProviders()
     {
+        if (_contextProviders is not null) return _contextProviders;
+
         var qdrant = ServiceProvider.GetService<QdrantClient>();
         var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
-        if (qdrant is null || embeddings is null) return [];
-        return [new RAGContextProvider(qdrant, embeddings)];
+        _contextProviders = qdrant is not null && embeddings is not null
+            ? [new RAGContextProvider(qdrant, embeddings)]
+            : [];
+        return _contextProviders;
     }
 
     protected override IReadOnlyList<AITool> DefineTools()
