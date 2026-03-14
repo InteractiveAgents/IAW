@@ -1,8 +1,10 @@
 using System.Text;
 using Core.Contracts;
+using Core.Contracts.UI;
 using Microsoft.Extensions.Options;
 using Telegram.BotAPI;
 using Telegram.BotAPI.AvailableMethods;
+using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
 using Telegram.BotAPI.UpdatingMessages;
 using TelegramClient.Services;
@@ -35,19 +37,25 @@ public sealed class TelegramBotService(
 
     private async Task HandleUpdateCoreAsync(Update update, CancellationToken ct)
     {
+        if (update.CallbackQuery is { } callbackQuery)
+        {
+            await HandleCallbackQueryAsync(callbackQuery, ct);
+            return;
+        }
+
         var message = update.Message;
-        var chatId = message?.Chat.Id
-            ?? update.CallbackQuery?.Message?.Chat.Id ?? 0L;
+        if (message is null) return;
+
+        var chatId = message.Chat.Id;
         if (chatId == 0) return;
 
-        var from = message?.From ?? update.CallbackQuery?.From;
+        var from = message.From;
         if (from is null) return;
 
-        var text = message?.Text
-            ?? update.CallbackQuery?.Data;
+        var text = message.Text;
 
         // Voice message: download -> OGG-to-WAV -> Whisper transcription
-        if (message?.Voice is not null && string.IsNullOrEmpty(text))
+        if (message.Voice is not null && string.IsNullOrEmpty(text))
         {
             try
             {
@@ -63,7 +71,16 @@ public sealed class TelegramBotService(
         if (string.IsNullOrEmpty(text)) return;
 
         var telegramId = from.Id;
-        var topicId = message?.MessageThreadId;
+        var topicId = message.MessageThreadId;
+
+        // Check UISession for pending free-text input (placeholder for Slice 6)
+        var topicKey = topicId?.ToString() ?? "general";
+        var session = clusterClient.GetGrain<IUISession>(telegramId.ToString());
+        if (await session.HasPendingFreeTextInput(topicKey, ct))
+        {
+            // Future: route to UISession free-text handler
+        }
+
         var project = await ResolveProjectAsync(telegramId, topicId, ct);
         var chatMessage = BuildChatMessage(text);
 
@@ -93,6 +110,30 @@ public sealed class TelegramBotService(
 
         if (buffer.Length > 0)
             await EditSafe(chatId, sent.MessageId, buffer.ToString());
+    }
+
+    private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var from = callbackQuery.From;
+        var chatId = callbackQuery.Message?.Chat.Id ?? 0L;
+        if (chatId == 0) return;
+
+        var session = clusterClient.GetGrain<IUISession>(from.Id.ToString());
+        var result = await session.HandleCallback(callbackQuery.Id, callbackQuery.Data ?? "", ct);
+
+        try
+        {
+            await botClient.AnswerCallbackQueryAsync(callbackQuery.Id, text: result.Toast);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to answer callback query");
+        }
+
+        if (result.NewText is not null && callbackQuery.Message is not null)
+        {
+            await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
+        }
     }
 
     private async Task<IProject> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
@@ -130,6 +171,23 @@ public sealed class TelegramBotService(
 
         await botClient.SendMessageAsync(chatId, text,
             messageThreadId: _notificationsTopicId, parseMode: FormatStyles.MarkdownV2);
+    }
+
+    public async Task SendApprovalAsync(string approvalId, string question, string[] approvalOptions, string projectSlug, CancellationToken ct)
+    {
+        var chatId = options.Value.ChatId;
+        if (chatId == 0) return;
+
+        var buttons = approvalOptions.Select(opt =>
+            new InlineKeyboardButton(opt) { CallbackData = $"ap:{approvalId}:{opt}" }
+        ).ToArray();
+        var keyboard = new InlineKeyboardMarkup([buttons]);
+
+        var telegramId = projectSlug.Split('/')[0];
+        var session = clusterClient.GetGrain<IUISession>(telegramId);
+        await session.RegisterApproval(approvalId, question, approvalOptions, projectSlug, ct);
+
+        await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard);
     }
 
     private async Task<string> TranscribeVoiceAsync(string fileId, CancellationToken ct)
