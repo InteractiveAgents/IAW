@@ -10,9 +10,18 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<GitHubGpt4oMini>()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
 
+var storage = builder.AddAzureStorage("storage")
+    .RunAsEmulator(e => e.WithDataVolume("iaw-blobs"));
+var blobs = storage.AddBlobs("file-storage");
+
+var qdrant = builder.AddQdrant("qdrant")
+    .WithDataVolume("iaw-qdrant");
+
 // Production silo — hosts all agents, memory, LLM
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
     .WithReference(iaw)
+    .WithReference(blobs)
+    .WithReference(qdrant)
     .WithLLMEnvironment(builder)
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30000; })
     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; })
@@ -33,12 +42,10 @@ builder.AddProject<Projects.Samples>("samples")
 builder.AddProject<Projects.DevUI>("devui")
     .WithReference(iaw.AsClient())
     .WithLLMEnvironment(builder)
-    .WithEnvironment("Orleans__PrimaryGateway", assistant.GetEndpoint("orleans-gateway"))
     .WaitFor(assistant);
 
 builder.AddProject<Projects.MCP>("mcp")
     .WithReference(iaw.AsClient())
-    .WithEnvironment("Orleans__PrimaryGateway", assistant.GetEndpoint("orleans-gateway"))
     .WithHttpEndpoint(port: 5300, name: "mcp-direct", isProxied: false)
     .WaitFor(assistant);
 
@@ -50,7 +57,8 @@ var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
 var botToken = builder.AddParameter("bot-token", secret: true);
 var telegram = builder.AddProject<Projects.Telegram>("telegram")
     .WithReference(iaw.AsClient())
-    .WithEnvironment("Orleans__PrimaryGateway", assistant.GetEndpoint("orleans-gateway"))
+    .WithReference(blobs)
+    .WithReference(qdrant)
     .WithEnvironment("Telegram__BotToken", botToken)
     .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
     .WaitFor(assistant);
