@@ -1,178 +1,86 @@
 # Telegram Bot
 
-The `TelegramConversation` is an IAW agent that bridges Telegram with the Orleans agent runtime. It extends the `AgentV2` base class (via the V1 `Agent` adapter) and implements `ITelegramConversation`, giving it full access to agent messages, memory, events, and notifications alongside Telegram-specific messaging capabilities.
+The IAW Telegram client connects your agent runtime to Telegram, letting users chat with agents, receive approval prompts with inline buttons, upload documents and photos, and send voice messages — all through a standard Telegram chat.
 
-## Overview
+## Architecture
 
-The bot uses Telegram's **forum topics** feature to organize conversations into channels:
+The Telegram client runs as a separate ASP.NET Core process that connects to the Orleans silo as a client:
 
-- **Assistant** -- routes messages to the `personal-assistant` agent via the `AgentRouter`
-- **Notifications** -- receives agent alerts
-- **Team** -- engineering team collaboration
-- **Settings** -- configuration (coming soon)
+```
+Telegram API → Ngrok → /webhook endpoint → TelegramBotService
+                                                ↓
+                                          IProject grain (Orleans silo)
+                                                ↓
+                                          Agent.GetResponseStream()
+                                                ↓
+                                          LLM (Sonnet 4.6)
+```
 
-When a user sends `/start`, the bot creates these forum topics in the group chat and presents an inline keyboard for navigation.
+Key components:
 
-## Features
+| Component | Role |
+|-----------|------|
+| `TelegramBotService` | Handles webhook updates, streams responses, renders UI buttons |
+| `StreamSubscriber` | Listens to Orleans streams for approval/wizard/notification events |
+| `WebhookSetupService` | Auto-discovers ngrok URL and registers the Telegram webhook |
 
-- **LLM-powered conversations** via `AgentRouter` with Qdrant-based semantic routing
-- **Voice message transcription** using Whisper (via `IVoiceTranscriptionService`)
-- **Monitor subscriptions** with scheduled ticks and notifications
-- **User preference tracking** with notification-based persistence
+Each Telegram user gets their own `IProject` grain (keyed by `{telegramId}/{projectName}`), which provides per-user conversation history, tasks, scheduled jobs, and context enrichment.
 
 ## Setup
 
-### 1. Create a Bot with BotFather
+### 1. Create a Bot
 
 1. Open [@BotFather](https://t.me/BotFather) in Telegram
 2. Send `/newbot` and follow the prompts
 3. Copy the bot token
 
-### 2. Enable Topics in Your Group
+### 2. Configure Aspire Secrets
 
-1. Create a Telegram group (or supergroup)
-2. Go to group settings and enable **Topics**
-3. Add your bot to the group and make it an admin
+The bot token and ngrok auth token are Aspire secret parameters. Set them with:
 
-### 3. Configure in Aspire
+```bash
+dotnet user-secrets set "Parameters:bot-token" "YOUR_BOT_TOKEN"
+dotnet user-secrets set "Parameters:ngrok-auth-token" "YOUR_NGROK_TOKEN"
+```
 
-The bot token is passed as an Aspire secret parameter. In your AppHost:
+### 3. Run with Aspire
+
+```bash
+dotnet run --project src/IAW.AppHost/Aspire.csproj
+```
+
+The AppHost configures the Telegram client automatically:
 
 ```csharp
-var qdrant = builder.AddQdrant("qdrant")
-    .WithLifetime(ContainerLifetime.Persistent);
-
+var ngrok = builder.AddNgrok("ngrok").WithAuthToken(ngrokAuthToken);
 var botToken = builder.AddParameter("bot-token", secret: true);
 
-builder.AddProject<Projects.TelegramBot>("telegram-bot")
-    .WithReference(iaw)
+builder.AddProject<Projects.Telegram>("telegram")
+    .WithReference(iaw.AsClient())
+    .WithReference(blobs)
     .WithReference(qdrant)
-    .WithLLMEnvironment(builder)
     .WithEnvironment("Telegram__BotToken", botToken)
-    .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"));
+    .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
+    .WaitFor(assistant);
+
+ngrok.WithTunnelEndpoint(telegram, "http");
 ```
 
-### 4. Webhook Setup
+On startup, `WebhookSetupService` queries the ngrok API for the public tunnel URL and registers it as the Telegram webhook.
 
-The `WebhookSetupService` hosted service auto-discovers the ngrok tunnel URL via the `Telegram__NgrokApiUrl` environment variable and registers the webhook with Telegram automatically on startup.
+## Message Flow
 
-## How It Works
+1. Telegram sends a POST to `/webhook` via the ngrok tunnel
+2. The webhook handler returns 200 immediately and processes the update in the background
+3. `TelegramBotService` checks for pending UI inputs (`IUISession`), resolves the user's `IProject` grain, and calls `project.GetResponseStream()`
+4. Response chunks stream back and are rendered via `editMessageText` with 500ms throttling
+5. If the response exceeds 4000 characters, it splits into continuation messages
 
-### /start Flow
+## Per-User Projects
 
-1. User sends `/start` in the group
-2. Bot sets an eyes reaction on the message
-3. Bot creates forum topics (Assistant, Notifications, Team, Settings) and persists the registry in agent memory
-4. Bot sends a welcome message with an inline keyboard
-5. Bot sends a prompt in the Assistant topic
+Each Telegram user gets an isolated `IProject` grain with:
 
-### Message Routing
-
-When a text message arrives, the bot checks which forum topic it belongs to:
-
-- **Assistant topic**: routes through `AgentRouter` for semantic agent matching
-- **Settings topic**: handles preference changes
-- **Other/General**: routes to assistant as a general message
-
-### Voice Messages
-
-When a voice message arrives:
-1. The bot downloads the Telegram voice file (OGG format)
-2. `IAudioConverter` converts OGG to WAV
-3. `IVoiceTranscriptionService` transcribes the audio using Whisper
-4. The transcribed text is processed as a regular text message
-
-### Monitor Subscriptions
-
-Users can request tracking by using keywords like "track" or "monitor" in their messages. The bot:
-1. Detects tracking intent via regex
-2. Parses the desired interval (e.g. "every 30 seconds")
-3. Creates a monitor grain with `StartScheduleAsync`
-4. Delivers periodic updates back to the Telegram thread
-
-## ITelegramConversation Interface
-
-```csharp
-public interface ITelegramConversation : IAgent
-{
-    [OneWay]
-    Task HandleUpdate(TelegramBotUpdate update, CancellationToken ct = default);
-
-    Task<TelegramSendResult> SendText(
-        long chatId, string text, int? threadId = null, CancellationToken ct = default);
-
-    Task<TelegramSendResult> SendMarkdown(
-        long chatId, string markdown, int? threadId = null, CancellationToken ct = default);
-
-    Task<TelegramSendResult> SendKeyboard(
-        long chatId, string text, TelegramInlineButton[][] buttons,
-        int? threadId = null, CancellationToken ct = default);
-
-    Task<TelegramSendResult> EditMessage(
-        long chatId, int messageId, string text,
-        TelegramInlineButton[][]? buttons = null, CancellationToken ct = default);
-
-    Task SendTyping(long chatId, int? threadId = null, CancellationToken ct = default);
-    Task SetReaction(long chatId, int messageId, string emoji, CancellationToken ct = default);
-    Task PinMessage(long chatId, int messageId, int? threadId = null, CancellationToken ct = default);
-    Task<int> CreateTopic(long chatId, string name, CancellationToken ct = default);
-    Task<TelegramTopicRegistry> EnsureTopics(long chatId, CancellationToken ct = default);
-    Task SetWebhook(string url, string? secretToken = null, CancellationToken ct = default);
-    Task AnswerCallback(string callbackQueryId, string? text = null, CancellationToken ct = default);
-}
-```
-
-## Contract Types
-
-### TelegramBotUpdate
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramBotUpdate
-{
-    [Id(0)] public long ChatId { get; set; }
-    [Id(1)] public int MessageId { get; set; }
-    [Id(2)] public int? ThreadId { get; set; }
-    [Id(3)] public string? Text { get; set; }
-    [Id(4)] public string? CallbackQueryId { get; set; }
-    [Id(5)] public string? CallbackData { get; set; }
-    [Id(6)] public string? Username { get; set; }
-    [Id(7)] public string? FirstName { get; set; }
-    [Id(8)] public long? FromUserId { get; set; }
-    [Id(9)] public string? VoiceFileId { get; set; }
-    [Id(10)] public int VoiceDuration { get; set; }
-    [Id(11)] public string? CorrelationId { get; set; }
-    [Id(12)] public string? TraceId { get; set; }
-    [Id(13)] public string? ParentSpanId { get; set; }
-    [Id(14)] public bool TraceSampled { get; set; }
-}
-```
-
-### TelegramSendResult
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramSendResult
-{
-    [Id(0)] public bool Success { get; set; }
-    [Id(1)] public int MessageId { get; set; }
-    [Id(2)] public string? Error { get; set; }
-
-    public static TelegramSendResult Ok(int messageId);
-    public static TelegramSendResult Fail(string error);
-}
-```
-
-### TelegramTopicRegistry
-
-```csharp
-[GenerateSerializer]
-public sealed class TelegramTopicRegistry
-{
-    [Id(0)] public int AssistantThreadId { get; set; }
-    [Id(1)] public int NotificationsThreadId { get; set; }
-    [Id(2)] public int SettingsThreadId { get; set; }
-    [Id(3)] public Dictionary<string, int> TaskTopics { get; set; } = [];
-    [Id(4)] public int TeamThreadId { get; set; }
-}
-```
+- **Conversation history** — durable chat history with automatic summarization at 40 messages
+- **Context enrichment** — user preferences, project tasks, and RAG context are injected into prompts
+- **Tools** — the LLM can call `RequestApprovalTool`, `AddTaskTool`, `ScheduleJobTool`, and others
+- **Scheduled jobs** — recurring tasks that run on Orleans reminders and deliver results back to the user

@@ -60,6 +60,7 @@ export default defineConfig({
           items: [
             { text: 'MCP Server', link: '/guide/mcp' },
             { text: 'Telegram Bot', link: '/guide/telegram' },
+            { text: 'Telegram Features', link: '/guide/telegram-features' },
             { text: 'Testing', link: '/guide/testing' }
           ]
         }
