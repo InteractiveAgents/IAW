@@ -50,7 +50,7 @@ public abstract partial class Agent(
                 Instructions = Instructions,
                 Tools = [.. GetAllTools()]
             },
-            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, blobStorage, new ChatReducer())
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, blobStorage, new ChatReducer(), new HistorySummarizer(chatClient))
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);

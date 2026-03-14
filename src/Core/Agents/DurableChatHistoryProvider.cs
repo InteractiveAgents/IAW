@@ -11,8 +11,10 @@ internal sealed class DurableChatHistoryProvider(
     IDurableList<ChatMessage> history,
     int maxMessages,
     BlobFileStorage? blobStorage = null,
-    ChatReducer? reducer = null) : ChatHistoryProvider
+    ChatReducer? reducer = null,
+    HistorySummarizer? summarizer = null) : ChatHistoryProvider
 {
+    private ChatMessage? _lastSummary;
     public override IReadOnlyList<string> StateKeys => ["orleans-durable-history"];
 
     protected override async ValueTask<IEnumerable<AiChatMessage>> ProvideChatHistoryAsync(
@@ -23,7 +25,11 @@ internal sealed class DurableChatHistoryProvider(
         if (reducer is not null)
         {
             var allMessages = history.ToList();
-            sourceMessages = reducer.Reduce(allMessages, summary: null, recentWindow: maxMessages);
+
+            if (summarizer is not null)
+                _lastSummary = await summarizer.SummarizeIfNeededAsync(allMessages, _lastSummary, cancellationToken);
+
+            sourceMessages = reducer.Reduce(allMessages, summary: _lastSummary, recentWindow: maxMessages);
         }
         else
         {
