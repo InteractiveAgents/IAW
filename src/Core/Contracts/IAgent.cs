@@ -6,6 +6,7 @@ public interface IAgent : IGrainWithStringKey
 {
     // Conversation
     IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
+    IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
 
     [ResponseTimeout("00:05:00")]
     Task<string> GetResponse(string prompt, CancellationToken ct);

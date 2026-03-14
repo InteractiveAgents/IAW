@@ -21,6 +21,7 @@ public abstract partial class Agent(
     private readonly UsageCaptureChatClient _usageCapture = new(chatClient);
     private AIAgent? _agent;
     private AgentSession? _session;
+    private IReadOnlyList<ContentPart>? _currentMessageParts;
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
     protected virtual int MaxHistoryMessages => 100;
@@ -63,8 +64,22 @@ public abstract partial class Agent(
         string prompt,
         CancellationToken cancellationToken)
     {
+        var message = new ChatMessage
+        {
+            Role = "user",
+            Content = prompt,
+            Parts = new List<ContentPart> { new global::Core.Contracts.TextContent(prompt) }
+        };
+        return GetResponseStream(message, cancellationToken);
+    }
+
+    public IAsyncEnumerable<string> GetResponseStream(
+        ChatMessage message,
+        CancellationToken cancellationToken)
+    {
         AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
-        return StreamResponseCore(prompt, cancellationToken);
+        _currentMessageParts = message.Parts;
+        return StreamResponseCore(message.Text, cancellationToken);
     }
 
     private async IAsyncEnumerable<string> StreamResponseCore(
@@ -72,7 +87,7 @@ public abstract partial class Agent(
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var activity = AgentTelemetry.ActivitySource.StartActivity(
-            $"invoke_agent {this.GetPrimaryKeyString()}", ActivityKind.Internal);
+            $"invoke_agent {this.GetPrimaryKeyString()}", ActivityKind.Server);
         activity?.SetTag("gen_ai.operation.name", "invoke_agent");
         activity?.SetTag("gen_ai.provider.name", "iaw");
         activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
@@ -90,6 +105,7 @@ public abstract partial class Agent(
                 if (chunk.Text is not { } text)
                     continue;
                 yield return text;
+                Activity.Current = activity; // restore after yield (dotnet/runtime#47802)
             }
 
             if (_usageCapture.LastUsage is { } usage)
