@@ -1,6 +1,7 @@
 using System.Text;
 using Core.Contracts;
 using Core.Contracts.UI;
+using Core.Services;
 using Microsoft.Extensions.Options;
 using Telegram.BotAPI;
 using Telegram.BotAPI.AvailableMethods;
@@ -17,6 +18,7 @@ public sealed class TelegramBotService(
     IVoiceTranscriptionService voiceService,
     IAudioConverter audioConverter,
     IHttpClientFactory httpClientFactory,
+    BlobFileStorage blobFileStorage,
     IOptions<TelegramBotOptions> options,
     ILogger<TelegramBotService> logger)
 {
@@ -68,10 +70,24 @@ public sealed class TelegramBotService(
             }
         }
 
-        if (string.IsNullOrEmpty(text)) return;
-
         var telegramId = from.Id;
         var topicId = message.MessageThreadId;
+
+        // Photo message: download highest-res photo -> upload to blob -> send as ImageContent
+        if (message.Photo is not null && message.Photo.Any())
+        {
+            await HandlePhotoAsync(message, telegramId, topicId, ct);
+            return;
+        }
+
+        // Document message: download -> upload to blob -> send as FileContent
+        if (message.Document is not null)
+        {
+            await HandleDocumentAsync(message, telegramId, topicId, ct);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(text)) return;
 
         // Check UISession for pending free-text input (placeholder for Slice 6)
         var topicKey = topicId?.ToString() ?? "general";
@@ -81,7 +97,7 @@ public sealed class TelegramBotService(
             // Future: route to UISession free-text handler
         }
 
-        var project = await ResolveProjectAsync(telegramId, topicId, ct);
+        var (project, _) = await ResolveProjectAsync(telegramId, topicId, ct);
         var chatMessage = BuildChatMessage(text);
 
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
@@ -136,7 +152,7 @@ public sealed class TelegramBotService(
         }
     }
 
-    private async Task<IProject> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
+    private async Task<(IProject Project, string Slug)> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
     {
         var userProfileId = telegramId.ToString();
         var userProfile = clusterClient.GetGrain<IUserProfile>(userProfileId);
@@ -150,7 +166,7 @@ public sealed class TelegramBotService(
         }
 
         var grainId = $"{userProfileId}/{projectSlug}";
-        return clusterClient.GetGrain<IProject>(grainId);
+        return (clusterClient.GetGrain<IProject>(grainId), projectSlug);
     }
 
     private static ChatMessage BuildChatMessage(string text) => new()
@@ -188,6 +204,117 @@ public sealed class TelegramBotService(
         await session.RegisterApproval(approvalId, question, approvalOptions, projectSlug, ct);
 
         await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard);
+    }
+
+    private async Task HandlePhotoAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
+    {
+        var chatId = message.Chat.Id;
+        var highestResPhoto = message.Photo!.Last(); // last element is highest resolution
+
+        logger.LogInformation("Processing photo from user {TelegramId}, file {FileId}", telegramId, highestResPhoto.FileId);
+        var sent = await botClient.SendMessageAsync(chatId, "Processing image...", messageThreadId: topicId);
+
+        try
+        {
+            await using var photoStream = await DownloadTelegramFileAsync(highestResPhoto.FileId, ct);
+
+            var (project, projectSlug) = await ResolveProjectAsync(telegramId, topicId, ct);
+            var blobPath = $"{telegramId}/{projectSlug}/{Guid.NewGuid()}-photo.jpg";
+
+            var blobUri = await blobFileStorage.UploadAsync(photoStream, blobPath, "image/jpeg");
+
+            var chatMessage = new ChatMessage
+            {
+                Role = "user",
+                Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
+            };
+
+            var buffer = new StringBuilder();
+            var lastEditAt = DateTimeOffset.MinValue;
+
+            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
+            {
+                buffer.Append(chunk);
+                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
+                {
+                    await EditSafe(chatId, sent.MessageId, buffer.ToString());
+                    lastEditAt = DateTimeOffset.UtcNow;
+                }
+            }
+
+            if (buffer.Length > 0)
+                await EditSafe(chatId, sent.MessageId, buffer.ToString());
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Photo processing failed for user {TelegramId}", telegramId);
+            await EditSafe(chatId, sent.MessageId, "[Error processing image]");
+        }
+    }
+
+    private async Task HandleDocumentAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
+    {
+        var chatId = message.Chat.Id;
+        var document = message.Document!;
+
+        logger.LogInformation("Processing document from user {TelegramId}, file {FileName}", telegramId, document.FileName);
+        var sent = await botClient.SendMessageAsync(chatId, "Processing document...", messageThreadId: topicId);
+
+        try
+        {
+            await using var docStream = await DownloadTelegramFileAsync(document.FileId, ct);
+
+            var (project, projectSlug) = await ResolveProjectAsync(telegramId, topicId, ct);
+            var safeFileName = document.FileName ?? "document";
+            var blobPath = $"{telegramId}/{projectSlug}/{Guid.NewGuid()}-{safeFileName}";
+            var mimeType = document.MimeType ?? "application/octet-stream";
+
+            var blobUri = await blobFileStorage.UploadAsync(docStream, blobPath, mimeType);
+
+            var chatMessage = new ChatMessage
+            {
+                Role = "user",
+                Parts = [new FileContent(blobUri, safeFileName, mimeType, document.FileSize ?? 0, Ingested: false)]
+            };
+
+            // Include caption as text if provided
+            if (!string.IsNullOrEmpty(message.Caption))
+                chatMessage.Parts.Add(new TextContent(message.Caption));
+
+            var buffer = new StringBuilder();
+            var lastEditAt = DateTimeOffset.MinValue;
+
+            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
+            {
+                buffer.Append(chunk);
+                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
+                {
+                    await EditSafe(chatId, sent.MessageId, buffer.ToString());
+                    lastEditAt = DateTimeOffset.UtcNow;
+                }
+            }
+
+            if (buffer.Length > 0)
+                await EditSafe(chatId, sent.MessageId, buffer.ToString());
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Document processing failed for user {TelegramId}", telegramId);
+            await EditSafe(chatId, sent.MessageId, "[Error processing document]");
+        }
+    }
+
+    private async Task<Stream> DownloadTelegramFileAsync(string fileId, CancellationToken ct)
+    {
+        var file = await botClient.GetFileAsync(fileId);
+        var downloadUrl = $"{botClient.Options.ServerAddress}/file/bot{options.Value.BotToken}/{file.FilePath}";
+
+        using var http = httpClientFactory.CreateClient();
+        var memoryStream = new MemoryStream();
+        await using var responseStream = await http.GetStreamAsync(downloadUrl, ct);
+        await responseStream.CopyToAsync(memoryStream, ct);
+        memoryStream.Position = 0;
+        return memoryStream;
     }
 
     private async Task<string> TranscribeVoiceAsync(string fileId, CancellationToken ct)

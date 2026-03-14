@@ -1,4 +1,4 @@
-using System.Net;
+using Core.Services;
 using Microsoft.Extensions.Options;
 using ServiceDefaults;
 using Telegram.BotAPI;
@@ -8,32 +8,9 @@ using TelegramClient.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
+builder.AddIAWClient();
 
-// Orleans CLIENT — same pattern as DevUI and MCP
-var gatewayAddress = builder.Configuration["Orleans:PrimaryGateway"];
-var clusterId = builder.Configuration.GetValue("Orleans:ClusterId", "dev");
-var serviceId = builder.Configuration.GetValue("Orleans:ServiceId", "dev");
-
-builder.UseOrleansClient(client =>
-{
-    client.Configure<Orleans.Configuration.ClusterOptions>(options =>
-    {
-        options.ClusterId = clusterId;
-        options.ServiceId = serviceId;
-    });
-
-    if (!string.IsNullOrEmpty(gatewayAddress))
-    {
-        var uri = new Uri(gatewayAddress);
-        client.UseStaticClustering(new IPEndPoint(IPAddress.Loopback, uri.Port));
-    }
-    else
-    {
-        client.UseLocalhostClustering();
-    }
-
-    client.AddMemoryStreams("agents");
-});
+builder.AddAzureBlobServiceClient("file-storage");
 
 builder.Services.Configure<TelegramBotOptions>(builder.Configuration.GetSection("Telegram"));
 builder.Services.AddSingleton<ITelegramBotClient>(sp =>
@@ -48,6 +25,7 @@ builder.Services.AddHostedService<StreamSubscriber>();
 builder.Services.AddHostedService<WebhookSetupService>();
 builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
 builder.Services.AddSingleton<IVoiceTranscriptionService, VoiceTranscriptionService>();
+builder.Services.AddSingleton<BlobFileStorage>();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
@@ -77,7 +55,7 @@ app.MapPost("/webhook", async (
     {
         try { await botService.HandleUpdateAsync(update, CancellationToken.None); }
         catch (Exception ex) { logger.LogError(ex, "Background update processing failed"); }
-    });
+    }, ct);
     return Results.Ok();
 });
 

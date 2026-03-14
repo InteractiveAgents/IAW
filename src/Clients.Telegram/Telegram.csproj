@@ -15,6 +15,7 @@
     <PackageReference Include="Concentus.Oggfile" />
     <PackageReference Include="NAudio" />
     <PackageReference Include="OpenAI" />
+    <PackageReference Include="Aspire.Azure.Storage.Blobs" />
   </ItemGroup>
 
   <ItemGroup>
