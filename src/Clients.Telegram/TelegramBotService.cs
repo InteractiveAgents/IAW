@@ -103,7 +103,7 @@ public sealed class TelegramBotService(
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        await StreamResponseAsync(chatId, sent.MessageId, project, chatMessage, telegramId, ct);
+        await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
     }
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -207,7 +207,7 @@ public sealed class TelegramBotService(
                 Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
             };
 
-            await StreamResponseAsync(chatId, sent.MessageId, project, chatMessage, telegramId, ct);
+            await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -245,7 +245,7 @@ public sealed class TelegramBotService(
             if (!string.IsNullOrEmpty(message.Caption))
                 chatMessage.Parts.Add(new TextContent(message.Caption));
 
-            await StreamResponseAsync(chatId, sent.MessageId, project, chatMessage, telegramId, ct);
+            await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -255,9 +255,11 @@ public sealed class TelegramBotService(
     }
 
     private async Task StreamResponseAsync(
-        long chatId, int messageId, IProject project, ChatMessage chatMessage, long telegramId, CancellationToken ct)
+        long chatId, int messageId, int? topicId, IProject project, ChatMessage chatMessage, long telegramId, CancellationToken ct)
     {
+        const int maxChars = 4000; // leave margin below Telegram's 4096 hard limit
         var buffer = new StringBuilder();
+        var currentMessageId = messageId;
         var lastEditAt = DateTimeOffset.MinValue;
 
         try
@@ -265,9 +267,21 @@ public sealed class TelegramBotService(
             await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
             {
                 buffer.Append(chunk);
+
+                if (buffer.Length > maxChars)
+                {
+                    await EditSafe(chatId, currentMessageId, buffer.ToString());
+
+                    var continuation = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
+                    currentMessageId = continuation.MessageId;
+                    buffer.Clear();
+                    lastEditAt = DateTimeOffset.MinValue;
+                    continue;
+                }
+
                 if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
                 {
-                    await EditSafe(chatId, messageId, buffer.ToString());
+                    await EditSafe(chatId, currentMessageId, buffer.ToString());
                     lastEditAt = DateTimeOffset.UtcNow;
                 }
             }
@@ -279,7 +293,7 @@ public sealed class TelegramBotService(
         }
 
         if (buffer.Length > 0)
-            await EditSafe(chatId, messageId, buffer.ToString());
+            await EditSafe(chatId, currentMessageId, buffer.ToString());
     }
 
     private async Task<Stream> DownloadTelegramFileAsync(string fileId, CancellationToken ct)
