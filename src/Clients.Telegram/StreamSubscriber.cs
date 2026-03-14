@@ -42,7 +42,7 @@ public sealed class StreamSubscriber(
                 {
                     var approvalId = evt.Payload.GetValueOrDefault("approvalId")?.ToString() ?? "";
                     var question = evt.Payload.GetValueOrDefault("question")?.ToString() ?? "";
-                    var approvalOptions = evt.Payload.GetValueOrDefault("options") as string[] ?? [];
+                    var approvalOptions = ResolveStringArray(evt.Payload.GetValueOrDefault("options"));
                     var projectSlug = evt.Payload.GetValueOrDefault("projectSlug")?.ToString() ?? "";
                     await botService.SendApprovalAsync(approvalId, question, approvalOptions, projectSlug, ct);
                 }
@@ -76,12 +76,7 @@ public sealed class StreamSubscriber(
                 {
                     var wizardId = evt.Payload.GetValueOrDefault("wizardId")?.ToString() ?? "";
                     var prompt = evt.Payload.GetValueOrDefault("prompt")?.ToString() ?? "";
-                    var optionsPayload = evt.Payload.GetValueOrDefault("options") switch
-                    {
-                        string[] arr => arr,
-                        IEnumerable<string> seq => seq.ToArray(),
-                        _ => Array.Empty<string>()
-                    };
+                    var optionsPayload = ResolveStringArray(evt.Payload.GetValueOrDefault("options"));
                     var projectSlug = evt.Payload.GetValueOrDefault("projectSlug")?.ToString() ?? "";
                     await botService.SendWizardStepAsync(wizardId, prompt, optionsPayload, projectSlug, ct);
                 }
@@ -101,6 +96,15 @@ public sealed class StreamSubscriber(
         // Keep alive
         await Task.Delay(Timeout.Infinite, ct);
     }
+
+    private static string[] ResolveStringArray(object? value) => value switch
+    {
+        string[] arr => arr,
+        object[] objs => objs.Select(o => o?.ToString() ?? "").ToArray(),
+        IEnumerable<string> seq => seq.ToArray(),
+        IEnumerable<object> seq => seq.Select(o => o?.ToString() ?? "").ToArray(),
+        _ => []
+    };
 
     private void ScheduleDebouncedDashboardUpdate(string projectKey, string renderedMarkdown, CancellationToken ct)
     {

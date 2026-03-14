@@ -181,8 +181,7 @@ public sealed class TelegramBotService(
 
     public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)
     {
-        var chatId = options.Value.ChatId;
-        if (chatId == 0) return;
+        if (!TryResolveChatId(projectSlug, out var chatId)) return;
 
         if (stepOptions.Length > 0)
         {
@@ -200,8 +199,7 @@ public sealed class TelegramBotService(
 
     public async Task SendApprovalAsync(string approvalId, string question, string[] approvalOptions, string projectSlug, CancellationToken ct)
     {
-        var chatId = options.Value.ChatId;
-        if (chatId == 0) return;
+        if (!TryResolveChatId(projectSlug, out var chatId)) return;
 
         var buttons = approvalOptions.Select(opt =>
             new InlineKeyboardButton(opt) { CallbackData = $"ap:{approvalId}:{opt}" }
@@ -213,6 +211,16 @@ public sealed class TelegramBotService(
         await session.RegisterApproval(approvalId, question, approvalOptions, projectSlug, ct);
 
         await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard);
+    }
+
+    private bool TryResolveChatId(string projectSlug, out long chatId)
+    {
+        var telegramId = projectSlug.Split('/')[0];
+        if (long.TryParse(telegramId, out chatId) && chatId != 0)
+            return true;
+
+        chatId = options.Value.ChatId;
+        return chatId != 0;
     }
 
     private async Task HandlePhotoAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
