@@ -1,4 +1,5 @@
 using Core.Contracts;
+using Core.Services;
 using Microsoft.Agents.AI;
 using Orleans.Journaling;
 using AiChatMessage = Microsoft.Extensions.AI.ChatMessage;
@@ -6,11 +7,14 @@ using AiChatRole = Microsoft.Extensions.AI.ChatRole;
 
 namespace Core.Agents;
 
-internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> history, int maxMessages) : ChatHistoryProvider
+internal sealed class DurableChatHistoryProvider(
+    IDurableList<ChatMessage> history,
+    int maxMessages,
+    BlobFileStorage? blobStorage = null) : ChatHistoryProvider
 {
     public override IReadOnlyList<string> StateKeys => ["orleans-durable-history"];
 
-    protected override ValueTask<IEnumerable<AiChatMessage>> ProvideChatHistoryAsync(
+    protected override async ValueTask<IEnumerable<AiChatMessage>> ProvideChatHistoryAsync(
         InvokingContext context, CancellationToken cancellationToken = default)
     {
         var skip = Math.Max(0, history.Count - maxMessages);
@@ -31,8 +35,7 @@ internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> histo
                             contents.Add(new Microsoft.Extensions.AI.TextContent(tc.Text));
                             break;
                         case ImageContent ic:
-                            contents.Add(new Microsoft.Extensions.AI.TextContent(
-                                $"[Image: {ic.Caption ?? ic.MimeType}]"));
+                            await AppendImageContent(contents, ic);
                             break;
                         case FileContent fc:
                             contents.Add(new Microsoft.Extensions.AI.TextContent(
@@ -48,7 +51,35 @@ internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> histo
             }
         }
 
-        return ValueTask.FromResult<IEnumerable<AiChatMessage>>(messages);
+        return messages;
+    }
+
+    private async Task AppendImageContent(List<Microsoft.Extensions.AI.AIContent> contents, ImageContent ic)
+    {
+        if (blobStorage is not null && !string.IsNullOrEmpty(ic.BlobUri))
+        {
+            try
+            {
+                using var stream = await blobStorage.DownloadAsync(ic.BlobUri);
+                using var memoryStream = new MemoryStream();
+                await stream.CopyToAsync(memoryStream);
+                var imageBytes = memoryStream.ToArray();
+
+                contents.Add(new Microsoft.Extensions.AI.DataContent(imageBytes, ic.MimeType));
+
+                if (!string.IsNullOrEmpty(ic.Caption))
+                    contents.Add(new Microsoft.Extensions.AI.TextContent(ic.Caption));
+
+                return;
+            }
+            catch
+            {
+                // blob download failed — fall back to text placeholder
+            }
+        }
+
+        contents.Add(new Microsoft.Extensions.AI.TextContent(
+            $"[Image: {ic.Caption ?? ic.MimeType}]"));
     }
 
     protected override ValueTask StoreChatHistoryAsync(

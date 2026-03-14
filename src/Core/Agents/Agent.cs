@@ -3,10 +3,12 @@ using System.Runtime.CompilerServices;
 using Core.Agents;
 using Core.AI;
 using Core.Contracts;
+using Core.Services;
 using ChatMessage = Core.Contracts.ChatMessage;
 using Core.Observability;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Orleans.Journaling;
 using Orleans.Streams;
 
@@ -39,6 +41,7 @@ public abstract partial class Agent(
         activity?.SetTag("agent.id", this.GetPrimaryKeyString());
         AgentTelemetry.Activations.Add(1, new TagList { { "agent.type", GetType().Name } });
 
+        var blobStorage = ServiceProvider.GetService<BlobFileStorage>();
         _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
             Name = this.GetPrimaryKeyString(),
@@ -47,7 +50,7 @@ public abstract partial class Agent(
                 Instructions = Instructions,
                 Tools = [.. GetAllTools()]
             },
-            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages)
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, blobStorage)
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);

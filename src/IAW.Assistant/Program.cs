@@ -1,30 +1,16 @@
 using Core.AI;
+using Core.Services;
 using Orleans.Dashboard;
-using Orleans.Journaling;
 using ServiceDefaults;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var siloPort = builder.Configuration.GetValue("Orleans:Endpoints:SiloPort", 11_111);
-var gatewayPort = builder.Configuration.GetValue("Orleans:Endpoints:GatewayPort", 30_000);
-var clusterId = builder.Configuration.GetValue("Orleans:ClusterId", "dev");
-var serviceId = builder.Configuration.GetValue("Orleans:ServiceId", "dev");
-
-builder.Host.UseOrleans(silo =>
-{
-    silo.UseLocalhostClustering(
-        siloPort: siloPort,
-        gatewayPort: gatewayPort,
-        serviceId: serviceId,
-        clusterId: clusterId);
-    silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
-    silo.AddStateMachineStorage();
-    silo.AddDashboard();
-});
-
+builder.AddServiceDefaults();
+builder.AddIAW();
 builder.AddLlmProviders();
 builder.AddEmbeddingProvider();
-builder.AddServiceDefaults();
+builder.AddAzureBlobServiceClient("file-storage");
+builder.Services.AddSingleton<BlobFileStorage>();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
