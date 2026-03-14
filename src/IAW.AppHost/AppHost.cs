@@ -67,4 +67,8 @@ var telegram = builder.AddProject<Projects.Telegram>("telegram")
 
 ngrok.WithTunnelEndpoint(telegram, "http");
 
+// Documentation website (VitePress)
+builder.AddViteApp("website", "../../website")
+    .WithExternalHttpEndpoints();
+
 builder.Build().Run();
