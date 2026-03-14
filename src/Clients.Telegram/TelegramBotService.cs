@@ -1,6 +1,5 @@
 using System.Text;
 using Core.Contracts;
-using IAW.Agents.Orchestration;
 using Microsoft.Extensions.Options;
 using Telegram.BotAPI;
 using Telegram.BotAPI.AvailableMethods;
@@ -41,6 +40,9 @@ public sealed class TelegramBotService(
             ?? update.CallbackQuery?.Message?.Chat.Id ?? 0L;
         if (chatId == 0) return;
 
+        var from = message?.From ?? update.CallbackQuery?.From;
+        if (from is null) return;
+
         var text = message?.Text
             ?? update.CallbackQuery?.Data;
 
@@ -60,18 +62,20 @@ public sealed class TelegramBotService(
 
         if (string.IsNullOrEmpty(text)) return;
 
-        var pa = clusterClient.GetGrain<IPersonalAssistant>("personal-assistant");
-        var threadId = message?.MessageThreadId;
+        var telegramId = from.Id;
+        var topicId = message?.MessageThreadId;
+        var project = await ResolveProjectAsync(telegramId, topicId, ct);
+        var chatMessage = BuildChatMessage(text);
 
-        // Send placeholder, then progressively edit with streamed response
-        logger.LogInformation("Processing message from chat {ChatId}: {Text}", chatId, text);
-        var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: threadId);
+        logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
+            telegramId, topicId, text);
+        var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
         var buffer = new StringBuilder();
         var lastEditAt = DateTimeOffset.MinValue;
 
         try
         {
-            await foreach (var chunk in pa.GetResponseStream(text, ct))
+            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
             {
                 buffer.Append(chunk);
                 if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
@@ -83,13 +87,36 @@ public sealed class TelegramBotService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error streaming response from PersonalAssistant for chat {ChatId}", chatId);
+            logger.LogError(ex, "Error streaming response from project for user {TelegramId}", telegramId);
             buffer.Append("\n\n[Error communicating with assistant]");
         }
 
         if (buffer.Length > 0)
             await EditSafe(chatId, sent.MessageId, buffer.ToString());
     }
+
+    private async Task<IProject> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
+    {
+        var userProfileId = telegramId.ToString();
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userProfileId);
+        var topicKey = topicId?.ToString() ?? "general";
+
+        var projectSlug = await userProfile.ResolveProject(topicKey, ct);
+        if (projectSlug is null)
+        {
+            projectSlug = topicId is null ? "general" : $"topic-{topicId}";
+            await userProfile.RegisterProject(projectSlug, topicKey, ct);
+        }
+
+        var grainId = $"{userProfileId}/{projectSlug}";
+        return clusterClient.GetGrain<IProject>(grainId);
+    }
+
+    private static ChatMessage BuildChatMessage(string text) => new()
+    {
+        Role = "user",
+        Parts = new List<ContentPart> { new TextContent(text) }
+    };
 
     public async Task SendNotificationAsync(AgentEvent evt, CancellationToken ct)
     {
