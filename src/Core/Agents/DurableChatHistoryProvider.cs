@@ -16,7 +16,7 @@ internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> histo
         var skip = Math.Max(0, history.Count - maxMessages);
         IEnumerable<AiChatMessage> messages = history
             .Skip(skip)
-            .Select(m => new AiChatMessage(new AiChatRole(m.Role), m.Content));
+            .Select(m => new AiChatMessage(new AiChatRole(m.Role), m.Text));
 
         return ValueTask.FromResult(messages);
     }
