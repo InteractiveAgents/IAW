@@ -10,17 +10,30 @@ namespace Core.Agents;
 internal sealed class DurableChatHistoryProvider(
     IDurableList<ChatMessage> history,
     int maxMessages,
-    BlobFileStorage? blobStorage = null) : ChatHistoryProvider
+    BlobFileStorage? blobStorage = null,
+    ChatReducer? reducer = null) : ChatHistoryProvider
 {
     public override IReadOnlyList<string> StateKeys => ["orleans-durable-history"];
 
     protected override async ValueTask<IEnumerable<AiChatMessage>> ProvideChatHistoryAsync(
         InvokingContext context, CancellationToken cancellationToken = default)
     {
-        var skip = Math.Max(0, history.Count - maxMessages);
+        IEnumerable<ChatMessage> sourceMessages;
+
+        if (reducer is not null)
+        {
+            var allMessages = history.ToList();
+            sourceMessages = reducer.Reduce(allMessages, summary: null, recentWindow: maxMessages);
+        }
+        else
+        {
+            var skip = Math.Max(0, history.Count - maxMessages);
+            sourceMessages = history.Skip(skip);
+        }
+
         var messages = new List<AiChatMessage>();
 
-        foreach (var msg in history.Skip(skip))
+        foreach (var msg in sourceMessages)
         {
             var role = new AiChatRole(msg.Role);
 
