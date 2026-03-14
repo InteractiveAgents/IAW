@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using Core.Agents;
 using Core.AI;
 using Core.Contracts;
+using Core.Ingestion;
 using Core.Services;
 using ChatMessage = Core.Contracts.ChatMessage;
 using Core.Observability;
@@ -102,6 +103,7 @@ public abstract partial class Agent(
         try
         {
             prompt = await EnrichWithContext(prompt, cancellationToken);
+            prompt = await ResolveAttachments(prompt, cancellationToken);
 
             await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
             {
@@ -226,6 +228,48 @@ public abstract partial class Agent(
         if (contextParts.Count == 0) return prompt;
 
         return $"[Relevant context from memory]\n{string.Join("\n", contextParts)}\n\n[User message]\n{prompt}";
+    }
+
+    private async Task<string> ResolveAttachments(string prompt, CancellationToken ct)
+    {
+        if (_currentMessageParts is null or { Count: 0 })
+            return prompt;
+
+        var blobStorage = ServiceProvider.GetService<BlobFileStorage>();
+        if (blobStorage is null) return prompt;
+
+        var attachments = new List<string>();
+        foreach (var part in _currentMessageParts)
+        {
+            if (part is FileContent file)
+            {
+                try
+                {
+                    if (file.MimeType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await using var stream = await blobStorage.DownloadAsync(file.BlobUri);
+                        var chunks = await new PdfIngestionSource().ExtractChunksAsync(stream, file.FileName, ct);
+                        var text = string.Join("\n", chunks.Select(c => c.Text));
+                        attachments.Add($"[Document: {file.FileName}]\n{text}");
+                    }
+                    else
+                    {
+                        attachments.Add($"[Attached file: {file.FileName} ({file.MimeType}, {file.SizeBytes} bytes)]");
+                    }
+                }
+                catch
+                {
+                    attachments.Add($"[Attached file: {file.FileName} — could not read content]");
+                }
+            }
+            else if (part is ImageContent image)
+            {
+                attachments.Add($"[Attached image: {image.Caption ?? "no caption"} ({image.MimeType})]");
+            }
+        }
+
+        if (attachments.Count == 0) return prompt;
+        return $"{string.Join("\n\n", attachments)}\n\n{prompt}";
     }
 
     protected static string BuildSafeErrorMessage(Exception ex)
