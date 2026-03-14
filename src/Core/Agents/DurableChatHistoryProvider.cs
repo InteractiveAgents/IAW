@@ -14,11 +14,41 @@ internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> histo
         InvokingContext context, CancellationToken cancellationToken = default)
     {
         var skip = Math.Max(0, history.Count - maxMessages);
-        IEnumerable<AiChatMessage> messages = history
-            .Skip(skip)
-            .Select(m => new AiChatMessage(new AiChatRole(m.Role), m.Text));
+        var messages = new List<AiChatMessage>();
 
-        return ValueTask.FromResult(messages);
+        foreach (var msg in history.Skip(skip))
+        {
+            var role = new AiChatRole(msg.Role);
+
+            if (msg.Parts.Count > 0)
+            {
+                var contents = new List<Microsoft.Extensions.AI.AIContent>();
+                foreach (var part in msg.Parts)
+                {
+                    switch (part)
+                    {
+                        case Contracts.TextContent tc:
+                            contents.Add(new Microsoft.Extensions.AI.TextContent(tc.Text));
+                            break;
+                        case ImageContent ic:
+                            contents.Add(new Microsoft.Extensions.AI.TextContent(
+                                $"[Image: {ic.Caption ?? ic.MimeType}]"));
+                            break;
+                        case FileContent fc:
+                            contents.Add(new Microsoft.Extensions.AI.TextContent(
+                                $"[File: {fc.FileName}{(fc.Ingested ? " (indexed)" : "")}]"));
+                            break;
+                    }
+                }
+                messages.Add(new AiChatMessage(role, contents));
+            }
+            else
+            {
+                messages.Add(new AiChatMessage(role, msg.Content ?? string.Empty));
+            }
+        }
+
+        return ValueTask.FromResult<IEnumerable<AiChatMessage>>(messages);
     }
 
     protected override ValueTask StoreChatHistoryAsync(
@@ -26,19 +56,23 @@ internal sealed class DurableChatHistoryProvider(IDurableList<ChatMessage> histo
     {
         foreach (var message in context.RequestMessages)
         {
+            var text = message.Text ?? string.Empty;
             history.Add(new ChatMessage
             {
                 Role = message.Role.Value,
-                Content = message.Text ?? string.Empty
+                Content = text,
+                Parts = [new Contracts.TextContent(text)]
             });
         }
 
         foreach (var message in context.ResponseMessages ?? [])
         {
+            var text = message.Text ?? string.Empty;
             history.Add(new ChatMessage
             {
                 Role = message.Role.Value,
-                Content = message.Text ?? string.Empty
+                Content = text,
+                Parts = [new Contracts.TextContent(text)]
             });
         }
 
