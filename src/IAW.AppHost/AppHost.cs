@@ -61,6 +61,7 @@ var telegram = builder.AddProject<Projects.Telegram>("telegram")
     .WithReference(iaw.AsClient())
     .WithReference(blobs)
     .WithReference(qdrant)
+    .WithLLMEnvironment(builder)
     .WithEnvironment("Telegram__BotToken", botToken)
     .WithEnvironment("Telegram__NgrokApiUrl", ngrok.GetEndpoint("http"))
     .WaitFor(assistant);
@@ -69,6 +70,7 @@ ngrok.WithTunnelEndpoint(telegram, "http");
 
 // Documentation website (VitePress)
 builder.AddViteApp("website", "../../website")
+    .WithNpm()
     .WithExternalHttpEndpoints();
 
 builder.Build().Run();
