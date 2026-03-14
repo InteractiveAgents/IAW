@@ -113,35 +113,35 @@ public class ChatReducerTests
     public void IsNonReducible_FileContent_ReturnsTrue()
     {
         var msg = new ChatMessage { Role = "user", Parts = [new FileContent("blob://x", "doc.pdf", "application/pdf", 1024, false)] };
-        Assert.True(_reducer.IsNonReducible(msg));
+        Assert.True(ChatReducer.IsNonReducible(msg));
     }
 
     [Fact]
     public void IsNonReducible_ImageContent_ReturnsTrue()
     {
         var msg = new ChatMessage { Role = "user", Parts = [new ImageContent("blob://x", "image/jpeg", "A photo")] };
-        Assert.True(_reducer.IsNonReducible(msg));
+        Assert.True(ChatReducer.IsNonReducible(msg));
     }
 
     [Fact]
     public void IsNonReducible_RememberKeyword_ReturnsTrue()
     {
         var msg = new ChatMessage { Role = "user", Content = "Please remember that I prefer dark mode", Parts = [new TextContent("Please remember that I prefer dark mode")] };
-        Assert.True(_reducer.IsNonReducible(msg));
+        Assert.True(ChatReducer.IsNonReducible(msg));
     }
 
     [Fact]
     public void IsNonReducible_ApprovalKeyword_ReturnsTrue()
     {
         var msg = new ChatMessage { Role = "user", Content = "Waiting for approval", Parts = [new TextContent("Waiting for approval")] };
-        Assert.True(_reducer.IsNonReducible(msg));
+        Assert.True(ChatReducer.IsNonReducible(msg));
     }
 
     [Fact]
     public void IsNonReducible_NormalMessage_ReturnsFalse()
     {
         var msg = new ChatMessage { Role = "user", Content = "What's the weather?", Parts = [new TextContent("What's the weather?")] };
-        Assert.False(_reducer.IsNonReducible(msg));
+        Assert.False(ChatReducer.IsNonReducible(msg));
     }
 
     private static List<ChatMessage> CreateMessages(int count)

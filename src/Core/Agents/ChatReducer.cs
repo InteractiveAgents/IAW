@@ -30,7 +30,7 @@ internal sealed class ChatReducer
         return result;
     }
 
-    public bool IsNonReducible(ChatMessage message)
+    public static bool IsNonReducible(ChatMessage message)
     {
         if (message.Parts.Any(p => p is FileContent))
             return true;

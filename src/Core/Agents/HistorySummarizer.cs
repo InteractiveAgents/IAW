@@ -9,6 +9,8 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
     private const int SummarizationThreshold = 40;
     private const int RecentWindow = 20;
 
+    private int _lastSummarizedOldEnd;
+
     public async Task<ChatMessage?> SummarizeIfNeededAsync(
         IReadOnlyList<ChatMessage> history,
         ChatMessage? existingSummary,
@@ -18,12 +20,15 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
             return existingSummary;
 
         var oldEnd = history.Count - RecentWindow;
-        var reducer = new ChatReducer();
+
+        // skip re-summarization if old window hasn't grown
+        if (existingSummary is not null && oldEnd <= _lastSummarizedOldEnd)
+            return existingSummary;
 
         var messagesToSummarize = new List<ChatMessage>();
         for (var i = 0; i < oldEnd; i++)
         {
-            if (!reducer.IsNonReducible(history[i]))
+            if (!ChatReducer.IsNonReducible(history[i]))
                 messagesToSummarize.Add(history[i]);
         }
 
@@ -49,6 +54,7 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
             var response = await chatClient.GetResponseAsync(messages, cancellationToken: ct);
             var summaryText = response.Text ?? "";
 
+            _lastSummarizedOldEnd = oldEnd;
             return new ChatMessage
             {
                 Role = "system",
@@ -56,9 +62,12 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
                 Parts = [new Contracts.TextContent($"[Conversation summary] {summaryText}")]
             };
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch
         {
-            // summarization failed — return existing summary unchanged
             return existingSummary;
         }
     }
