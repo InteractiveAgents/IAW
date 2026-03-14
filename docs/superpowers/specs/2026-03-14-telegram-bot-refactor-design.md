@@ -41,9 +41,9 @@ public sealed record ChatMessage
 }
 
 [GenerateSerializer]
-[JsonDerivedType(typeof(TextContent))]
-[JsonDerivedType(typeof(ImageContent))]
-[JsonDerivedType(typeof(FileContent))]
+[JsonDerivedType(typeof(TextContent))]   // for JSON serialization (MCP, HTTP APIs)
+[JsonDerivedType(typeof(ImageContent))]  // Orleans polymorphism handled by [GenerateSerializer]
+[JsonDerivedType(typeof(FileContent))]   // on each concrete type — no extra config needed
 public abstract record ContentPart;
 
 [GenerateSerializer]
@@ -88,8 +88,15 @@ public abstract class EmbeddingModel
     public abstract int Dimensions { get; }
     public abstract string DisplayName { get; }
 
-    // same ServiceKey formula as LLMModel: "{provider}-{normalizedId}"
-    public string ServiceKey => $"{Provider}-{Id.Replace('.', '-').Replace(':', '-')}";
+    // exact same ServiceKey formula as LLMModel
+    public string ServiceKey
+    {
+        get
+        {
+            var normalizedId = Id.ToLowerInvariant().Replace(".", "").Replace(":", "-");
+            return $"{Provider.ToLowerInvariant()}-{normalizedId}";
+        }
+    }
 
     protected EmbeddingModel()
     {
@@ -754,7 +761,72 @@ Telegram enforces a 4096-character limit for text messages. Both dashboard conte
 
 ---
 
-## 8. Key Dependencies
+## 8. Implementation Details
+
+### 8.1 Project Grain Durable State Composition
+
+The `Agent` base class takes `[AgentState] AgentDurableState` via constructor injection. `Project` extends `Agent` but needs additional durable collections (tasks, schedules, files, projectMeta). Two approaches:
+
+**Chosen approach:** Create a `ProjectDurableState` that extends `AgentDurableState` with the additional collections, and a corresponding `[ProjectState]` attribute + `ProjectStateMapper`. The `Project` constructor takes `[ProjectState] ProjectDurableState` which the mapper resolves, creating both the base agent collections and the project-specific ones from the same journaling factory.
+
+```csharp
+public sealed class ProjectDurableState : AgentDurableState
+{
+    public required IDurableList<ProjectTask> Tasks { get; init; }
+    public required IDurableDictionary<string, ScheduledJob> Schedules { get; init; }
+    public required IDurableDictionary<string, FileReference> Files { get; init; }
+    public required IDurableDictionary<string, string> ProjectMeta { get; init; }
+}
+```
+
+### 8.2 Non-Agent DurableGrain Pattern (UserProfile, UISession)
+
+`UserProfile` and `UISession` extend `DurableGrain` but are not agents (no LLM, no tools). They need their own state injection pattern:
+
+```csharp
+// attribute + mapper for each grain type, or a generic [DurableState] attribute
+public class UserProfile(
+    [UserProfileState] UserProfileDurableState state)
+    : DurableGrain, IUserProfile
+{
+    // state.Preferences, state.Projects, state.Memories available
+}
+```
+
+Each non-Agent durable grain type gets its own state class + attribute + mapper. This establishes the pattern for any future non-Agent grains that need journaled state.
+
+### 8.3 EnrichWithContext Migration
+
+The current `EnrichWithContext(string prompt)` method and `IAgentContextProvider.GetContextAsync()` returning `IReadOnlyList<string>` are **preserved unchanged**. The string-based `GetResponseStream(string)` overload continues to use them as-is.
+
+The new `GetResponseStream(ChatMessage)` overload:
+1. Extracts the text from the ChatMessage via `.Text`
+2. Passes the text to existing context providers (they still return strings)
+3. Wraps context strings as `TextContent` parts prepended to the message
+4. Passes multimodal parts (images, file references) through to the M.E.AI `ChatMessage` conversion
+5. `IAgentContextProvider` interface does NOT change — context is always text-based
+
+This avoids breaking existing providers while supporting multimodal messages.
+
+### 8.4 Dynamic Project Discovery
+
+Dynamically-created `Project` grains are not statically discoverable by `InterfaceCatalog` (which scans types at startup). For MCP `agent_list_all` and DevUI:
+- `UserProfile.GetProjects()` returns the list of active projects for a user
+- A new MCP tool `project_list(telegramId)` queries this
+- DevUI adds a project browser that queries `UserProfile` grains
+- The existing `AgentRegistryGrain` is not used for dynamic Project grains — it remains for static infrastructure agents (Roslyn, DotNet, GitHub, etc.)
+
+### 8.5 Stream Re-subscription on Telegram Client Restart
+
+When the Telegram client (Orleans client, not a silo) restarts:
+1. On startup, enumerate all `UserProfile` grains with active projects (stored in a lightweight registry or by querying known user IDs from Telegram webhook state)
+2. For each active project, re-subscribe to its Orleans streams (dashboard changes, notifications, approvals)
+3. Recover `pinnedMessageId` for each project via `Project.GetDashboard()`
+4. The Telegram client should persist its known user/project set to survive restarts (can be stored in the Azurite blob or a local file)
+
+---
+
+## 9. Key Dependencies
 
 | Package | Purpose |
 |---------|---------|
@@ -770,7 +842,7 @@ Telegram enforces a 4096-character limit for text messages. Both dashboard conte
 
 ---
 
-## 9. Retired Components
+## 10. Retired Components
 
 - `PersonalAssistantAgent` — replaced by `Project` grain
 - `IPersonalAssistant` — replaced by `IProject`
