@@ -204,6 +204,13 @@ public static class LlmRegistration
         return builder;
     }
 
+    public static IHostApplicationBuilder AddWhisperProvider(this IHostApplicationBuilder builder)
+    {
+        WhisperModel.EnsureAllModelsLoaded();
+        builder.Services.AddSingleton<IAudioTranscriptionService, FoundryLocalTranscriptionService>();
+        return builder;
+    }
+
     private sealed class AnthropicProviderFactory : ILlmProviderFactory
     {
         public string ProviderName => "anthropic";
