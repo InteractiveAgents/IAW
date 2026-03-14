@@ -10,4 +10,8 @@ public interface IUISession : IGrainWithStringKey
     Task<bool> HasPendingFreeTextInput(string topicId, CancellationToken ct);
     Task<WizardState> StartWizard(string wizardId, WizardStep[] steps, string projectSlug, CancellationToken ct);
     Task<WizardState> AdvanceWizard(string wizardId, string selection, CancellationToken ct);
+    Task<PaginatorState> StartPaginator(string paginatorId, string[] items, int pageSize, string projectSlug, CancellationToken ct);
+    Task<PaginatorState> NavigatePaginator(string paginatorId, string direction, CancellationToken ct);
+    Task<MenuState> StartMenu(string menuId, MenuNode root, string projectSlug, CancellationToken ct);
+    Task<MenuState> NavigateMenu(string menuId, string action, CancellationToken ct);
 }

@@ -22,7 +22,9 @@ public sealed class UISessionStateMapper : IAttributeToFactoryMapper<UISessionSt
             return new UISessionDurableState(
                 services.GetRequiredKeyedService<IDurableDictionary<string, PendingApproval>>("ui-pending-approvals"),
                 services.GetRequiredKeyedService<IDurableDictionary<string, WizardState>>("ui-wizards"),
-                services.GetRequiredKeyedService<IDurableDictionary<string, string>>("ui-pending-free-text"));
+                services.GetRequiredKeyedService<IDurableDictionary<string, string>>("ui-pending-free-text"),
+                services.GetRequiredKeyedService<IDurableDictionary<string, PaginatorState>>("ui-paginators"),
+                services.GetRequiredKeyedService<IDurableDictionary<string, MenuState>>("ui-menus"));
         };
     }
 }
