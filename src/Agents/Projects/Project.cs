@@ -20,7 +20,7 @@ public class Project(
     protected override string DisplayName => "Project";
 
     public Task<ProjectDashboard> GetDashboard(CancellationToken ct) =>
-        Task.FromResult(new ProjectDashboard());
+        throw new NotImplementedException("Implemented in Slice 4");
 
     public Task<ProjectTask> AddTask(string description, TaskPriority priority, CancellationToken ct) =>
         throw new NotImplementedException("Implemented in Slice 4");
@@ -38,7 +38,7 @@ public class Project(
         throw new NotImplementedException("Implemented in Slice 4");
 
     public Task RegisterFile(FileReference fileRef, CancellationToken ct) =>
-        Task.CompletedTask;
+        throw new NotImplementedException("Implemented in Slice 3");
 
     public Task RequestApproval(string question, string[] options, CancellationToken ct) =>
         throw new NotImplementedException("Implemented in Slice 2");
