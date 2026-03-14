@@ -2,7 +2,7 @@ using Orleans.Journaling;
 
 namespace Core.Contracts;
 
-public sealed class AgentDurableState(
+public class AgentDurableState(
     IDurableDictionary<string, StateEntry> state,
     IDurableList<AgentEvent> eventLog,
     IDurableList<ChatMessage> history,
