@@ -20,7 +20,9 @@ public sealed class UISessionStateMapper : IAttributeToFactoryMapper<UISessionSt
         {
             var services = context.ActivationServices;
             return new UISessionDurableState(
-                services.GetRequiredKeyedService<IDurableDictionary<string, PendingApproval>>("ui-pending-approvals"));
+                services.GetRequiredKeyedService<IDurableDictionary<string, PendingApproval>>("ui-pending-approvals"),
+                services.GetRequiredKeyedService<IDurableDictionary<string, WizardState>>("ui-wizards"),
+                services.GetRequiredKeyedService<IDurableDictionary<string, string>>("ui-pending-free-text"));
         };
     }
 }
