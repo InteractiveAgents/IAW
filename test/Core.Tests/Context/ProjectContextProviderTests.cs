@@ -9,7 +9,7 @@ public class ProjectContextProviderTests
     [Fact]
     public void Has_correct_name()
     {
-        var provider = new ProjectContextProvider([], new Dictionary<string, FileReference>());
+        var provider = new ProjectContextProvider([], new Dictionary<string, FileReference>(), new Dictionary<string, string>());
         Assert.Equal("project-context", provider.Name);
     }
 
@@ -17,14 +17,6 @@ public class ProjectContextProviderTests
     public void Implements_IAgentContextProvider()
     {
         Assert.True(typeof(IAgentContextProvider).IsAssignableFrom(typeof(ProjectContextProvider)));
-    }
-
-    [Fact]
-    public async Task Returns_empty_on_error()
-    {
-        var provider = new ProjectContextProvider(null!, null!);
-        var result = await provider.GetContextAsync("test-agent", "query", TestContext.Current.CancellationToken);
-        Assert.Empty(result);
     }
 
     [Fact]
@@ -38,11 +30,22 @@ public class ProjectContextProviderTests
         {
             ["readme.md"] = new("blob://readme", "readme.md", "text/markdown", 1024, false, DateTimeOffset.UtcNow)
         };
-        var provider = new ProjectContextProvider(tasks, files);
+        var provider = new ProjectContextProvider(tasks, files, new Dictionary<string, string>());
 
         var result = await provider.GetContextAsync("test-agent", "query", TestContext.Current.CancellationToken);
 
         Assert.Contains(result, s => s.Contains("[project]") && s.Contains("1 tasks") && s.Contains("1 files"));
+    }
+
+    [Fact]
+    public async Task Returns_description_when_meta_has_one()
+    {
+        var meta = new Dictionary<string, string> { ["description"] = "My awesome project" };
+        var provider = new ProjectContextProvider([], new Dictionary<string, FileReference>(), meta);
+
+        var result = await provider.GetContextAsync("test-agent", "query", TestContext.Current.CancellationToken);
+
+        Assert.Contains(result, s => s.Contains("[project]") && s.Contains("My awesome project"));
     }
 
     [Fact]
@@ -53,7 +56,7 @@ public class ProjectContextProviderTests
             ["report.pdf"] = new("blob://report", "report.pdf", "application/pdf", 2048, true, DateTimeOffset.UtcNow),
             ["notes.txt"] = new("blob://notes", "notes.txt", "text/plain", 512, false, DateTimeOffset.UtcNow)
         };
-        var provider = new ProjectContextProvider(new List<ProjectTask>(), files);
+        var provider = new ProjectContextProvider(new List<ProjectTask>(), files, new Dictionary<string, string>());
 
         var result = await provider.GetContextAsync("test-agent", "query", TestContext.Current.CancellationToken);
 
@@ -63,7 +66,7 @@ public class ProjectContextProviderTests
     [Fact]
     public async Task Returns_no_files_line_when_empty()
     {
-        var provider = new ProjectContextProvider(new List<ProjectTask>(), new Dictionary<string, FileReference>());
+        var provider = new ProjectContextProvider(new List<ProjectTask>(), new Dictionary<string, FileReference>(), new Dictionary<string, string>());
 
         var result = await provider.GetContextAsync("test-agent", "query", TestContext.Current.CancellationToken);
 

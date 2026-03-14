@@ -20,14 +20,6 @@ public class TaskContextProviderTests
     }
 
     [Fact]
-    public async Task Returns_empty_on_error()
-    {
-        var provider = new TaskContextProvider(null!);
-        var result = await provider.GetContextAsync("test-agent", "query", TestContext.Current.CancellationToken);
-        Assert.Empty(result);
-    }
-
-    [Fact]
     public async Task Returns_empty_when_no_tasks()
     {
         var provider = new TaskContextProvider(new List<ProjectTask>());

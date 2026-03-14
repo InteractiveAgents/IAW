@@ -32,7 +32,7 @@ public class Project(
         var providers = new List<IAgentContextProvider>
         {
             new UserContextProvider(GrainFactory),
-            new ProjectContextProvider(durableState.Tasks, durableState.Files),
+            new ProjectContextProvider(durableState.Tasks, durableState.Files, durableState.ProjectMeta),
             new TaskContextProvider(durableState.Tasks)
         };
 
