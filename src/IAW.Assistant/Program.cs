@@ -10,6 +10,7 @@ builder.AddIAW();
 builder.AddLlmProviders();
 builder.AddEmbeddingProvider();
 builder.AddAzureBlobServiceClient("file-storage");
+builder.AddQdrantClient("qdrant");
 builder.Services.AddSingleton<BlobFileStorage>();
 
 var app = builder.Build();

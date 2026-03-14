@@ -255,7 +255,7 @@ public abstract partial class Agent(
                         var text = string.Join("\n", chunks.Select(c => c.Text));
                         attachments.Add($"[Document: {file.FileName}]\n{text}");
 
-                        _ = IngestChunksAsync(chunks, file, blobStorage, ct);
+                        await IngestChunksAsync(chunks, file, blobStorage, ct);
                     }
                     else
                     {
