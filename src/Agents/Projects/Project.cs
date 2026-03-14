@@ -29,11 +29,23 @@ public class Project(
     {
         if (_contextProviders is not null) return _contextProviders;
 
+        var providers = new List<IAgentContextProvider>
+        {
+            new UserContextProvider(GrainFactory),
+            new ProjectContextProvider(durableState.Tasks, durableState.Files),
+            new TaskContextProvider(durableState.Tasks)
+        };
+
         var qdrant = ServiceProvider.GetService<QdrantClient>();
         var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
-        _contextProviders = qdrant is not null && embeddings is not null
-            ? [new RAGContextProvider(qdrant, embeddings)]
-            : [];
+        if (qdrant is not null && embeddings is not null)
+            providers.Add(new RAGContextProvider(qdrant, embeddings));
+
+        var memoryAgents = ServiceProvider.GetService<IReadOnlyList<IMemoryAgent>>();
+        if (memoryAgents is not null && memoryAgents.Count > 0)
+            providers.Add(new MemoryContextProvider(memoryAgents));
+
+        _contextProviders = providers;
         return _contextProviders;
     }
 
