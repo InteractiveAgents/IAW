@@ -63,6 +63,7 @@
     <PackageVersion Include="Qdrant.Client" Version="1.17.0" />
     <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.1.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.Azure.AIFoundry" Version="13.1.2-preview.1.26125.13" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.1.2" />
     <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.1.2" />
   </ItemGroup>
