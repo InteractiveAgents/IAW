@@ -59,6 +59,8 @@
     <PackageVersion Include="Microsoft.Orleans.Clustering.Cosmos" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Reminders.Cosmos" Version="10.0.1" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
+    <PackageVersion Include="PdfPig" Version="0.1.13" />
+    <PackageVersion Include="Qdrant.Client" Version="1.17.0" />
     <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.1.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.1.2" />
