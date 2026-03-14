@@ -1,4 +1,5 @@
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace Core.Ingestion;
 
@@ -7,10 +8,12 @@ public sealed class PdfIngestionSource : IIngestionSource
     private const int TargetWordsPerChunk = 200;
     private const int MaxWordsPerChunk = 400;
 
-    public Task<IReadOnlyList<IngestedChunk>> ExtractChunksAsync(Stream source, string fileName, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IngestedChunk>> ExtractChunksAsync(Stream source, string fileName, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+
         using var memoryStream = new MemoryStream();
-        source.CopyTo(memoryStream);
+        await source.CopyToAsync(memoryStream, ct);
         var pdfBytes = memoryStream.ToArray();
 
         var chunks = new List<IngestedChunk>();
@@ -21,7 +24,7 @@ public sealed class PdfIngestionSource : IIngestionSource
             ct.ThrowIfCancellationRequested();
 
             var page = document.GetPage(pageIndex);
-            var pageText = page.Text?.Trim();
+            var pageText = ContentOrderTextExtractor.GetText(page)?.Trim();
             if (string.IsNullOrEmpty(pageText))
                 continue;
 
@@ -29,7 +32,7 @@ public sealed class PdfIngestionSource : IIngestionSource
             chunks.AddRange(pageChunks);
         }
 
-        return Task.FromResult<IReadOnlyList<IngestedChunk>>(chunks);
+        return chunks;
     }
 
     public static List<IngestedChunk> ChunkText(string text, string fileName, int pageNumber)

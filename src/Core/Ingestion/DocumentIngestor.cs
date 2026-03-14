@@ -1,4 +1,5 @@
 using Core.Services;
+using Grpc.Core;
 using Microsoft.Extensions.AI;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
@@ -10,7 +11,7 @@ public sealed class DocumentIngestor(
     IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
     QdrantClient qdrantClient)
 {
-    private const uint VectorSize = 1536;
+    private static readonly PdfIngestionSource PdfSource = new();
 
     public async Task<IngestedDocument> IngestAsync(
         string blobUri, string fileName, string projectId, CancellationToken ct = default)
@@ -22,12 +23,13 @@ public sealed class DocumentIngestor(
         var ingestionSource = ResolveSource(fileName);
         var chunks = await ingestionSource.ExtractChunksAsync(blobStream, fileName, ct);
 
-        await EnsureCollectionAsync(collectionName, ct);
-
         if (chunks.Count > 0)
         {
             var texts = chunks.Select(c => c.Text).ToList();
             var embeddings = await embeddingGenerator.GenerateAsync(texts, cancellationToken: ct);
+
+            var vectorSize = (uint)embeddings[0].Vector.Length;
+            await EnsureCollectionAsync(collectionName, vectorSize, ct);
 
             var points = new List<PointStruct>();
             for (var i = 0; i < chunks.Count; i++)
@@ -54,15 +56,21 @@ public sealed class DocumentIngestor(
         return new IngestedDocument(fileName, blobUri, chunks, DateTimeOffset.UtcNow);
     }
 
-    private async Task EnsureCollectionAsync(string collectionName, CancellationToken ct)
+    private async Task EnsureCollectionAsync(string collectionName, uint vectorSize, CancellationToken ct)
     {
         var exists = await qdrantClient.CollectionExistsAsync(collectionName, ct);
-        if (!exists)
+        if (exists) return;
+
+        try
         {
             await qdrantClient.CreateCollectionAsync(
                 collectionName,
-                new VectorParams { Size = VectorSize, Distance = Distance.Cosine },
+                new VectorParams { Size = vectorSize, Distance = Distance.Cosine },
                 cancellationToken: ct);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.AlreadyExists)
+        {
+            // Race condition: another concurrent call already created the collection
         }
     }
 
@@ -71,7 +79,7 @@ public sealed class DocumentIngestor(
         var extension = Path.GetExtension(fileName)?.ToLowerInvariant();
         return extension switch
         {
-            ".pdf" => new PdfIngestionSource(),
+            ".pdf" => PdfSource,
             _ => throw new NotSupportedException($"File type '{extension}' is not supported for ingestion.")
         };
     }
