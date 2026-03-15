@@ -215,6 +215,31 @@ public sealed class TelegramBotService(
         await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard);
     }
 
+    public async Task SendDocumentAsync(long chatId, Stream fileStream, string fileName, string? caption, int? topicId, CancellationToken ct)
+    {
+        var inputFile = new InputFile(fileStream, fileName);
+        await botClient.SendDocumentAsync(chatId, inputFile, messageThreadId: topicId, caption: caption);
+    }
+
+    public async Task SendPhotoAsync(long chatId, Stream photoStream, string fileName, string? caption, int? topicId, CancellationToken ct)
+    {
+        var inputFile = new InputFile(photoStream, fileName);
+        await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: caption);
+    }
+
+    public async Task SendBlobAsDocumentAsync(long chatId, string blobPath, string fileName, string? caption, int? topicId, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = await blobFileStorage.DownloadAsync(blobPath);
+            await SendDocumentAsync(chatId, stream, fileName, caption, topicId, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to send blob {BlobPath} as document", blobPath);
+        }
+    }
+
     private bool TryResolveChatId(string projectSlug, out long chatId)
     {
         var telegramId = projectSlug.Split('/')[0];
