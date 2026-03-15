@@ -8,9 +8,6 @@
     <Project Path="src/Agents.CSharp/Agents.CSharp.csproj" />
     <Project Path="src/IAW.Testing/IAW.Testing.csproj" />
   </Folder>
-  <Folder Name="/samples/">
-    <Project Path="samples/Samples/Samples.csproj" />
-  </Folder>
   <Project Path="src/Core/Core.csproj" />
   <Project Path="src/IAW.Assistant/IAW.Assistant.csproj" />
   <Project Path="src/Clients.Telegram/Telegram.csproj" />
