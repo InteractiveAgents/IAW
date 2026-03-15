@@ -10,5 +10,5 @@ public class Claude45HaikuAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), IClaude45Haiku
 {
-    protected override string DisplayName => Claude45Haiku.Instance.DisplayName;
+    protected override string DisplayName => "Claude 4.5 Haiku";
 }

@@ -10,5 +10,5 @@ public class Opus46Agent(
     [Llm<Opus46>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), IOpus46
 {
-    protected override string DisplayName => Opus46.Instance.DisplayName;
+    protected override string DisplayName => "Claude Opus 4.6";
 }

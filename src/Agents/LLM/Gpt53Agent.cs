@@ -10,5 +10,5 @@ public class Gpt53Agent(
     [Llm<Gpt53>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), IGpt53
 {
-    protected override string DisplayName => Gpt53.Instance.DisplayName;
+    protected override string DisplayName => "GPT 5.3";
 }

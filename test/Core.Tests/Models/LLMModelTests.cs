@@ -9,61 +9,71 @@ public class LLMModelTests
     [Fact]
     public void Opus46_has_correct_id()
     {
-        Assert.Equal("claude-opus-4-6", Opus46.Instance.Id);
+        var model = LLMModel.All.First(m => m is Opus46);
+        Assert.Equal("claude-opus-4-6", model.Id);
     }
 
     [Fact]
     public void Opus46_is_anthropic_provider()
     {
-        Assert.Equal("anthropic", Opus46.Instance.Provider);
+        var model = LLMModel.All.First(m => m is Opus46);
+        Assert.Equal("anthropic", model.Provider);
     }
 
     [Fact]
     public void Gpt52_has_correct_id()
     {
-        Assert.Equal("gpt-5.2", Gpt52.Instance.Id);
+        var model = LLMModel.All.First(m => m is Gpt52);
+        Assert.Equal("gpt-5.2", model.Id);
     }
 
     [Fact]
     public void Gpt52_is_openai_provider()
     {
-        Assert.Equal("openai", Gpt52.Instance.Provider);
+        var model = LLMModel.All.First(m => m is Gpt52);
+        Assert.Equal("openai", model.Provider);
     }
 
     [Fact]
     public void Gpt53_has_correct_id()
     {
-        Assert.Equal("gpt-5.3", Gpt53.Instance.Id);
+        var model = LLMModel.All.First(m => m is Gpt53);
+        Assert.Equal("gpt-5.3", model.Id);
     }
 
     [Fact]
     public void Gpt53_is_openai_provider()
     {
-        Assert.Equal("openai", Gpt53.Instance.Provider);
+        var model = LLMModel.All.First(m => m is Gpt53);
+        Assert.Equal("openai", model.Provider);
     }
 
     [Fact]
     public void Gemini31_has_correct_id()
     {
-        Assert.Equal("gemini-3.1", Gemini31.Instance.Id);
+        var model = LLMModel.All.First(m => m is Gemini31);
+        Assert.Equal("gemini-3.1", model.Id);
     }
 
     [Fact]
     public void Gemini31_is_openai_provider()
     {
-        Assert.Equal("openai", Gemini31.Instance.Provider);
+        var model = LLMModel.All.First(m => m is Gemini31);
+        Assert.Equal("openai", model.Provider);
     }
 
     [Fact]
     public void GrokLatest_has_correct_id()
     {
-        Assert.Equal("grok-latest", GrokLatest.Instance.Id);
+        var model = LLMModel.All.First(m => m is GrokLatest);
+        Assert.Equal("grok-latest", model.Id);
     }
 
     [Fact]
     public void GrokLatest_is_openai_provider()
     {
-        Assert.Equal("openai", GrokLatest.Instance.Provider);
+        var model = LLMModel.All.First(m => m is GrokLatest);
+        Assert.Equal("openai", model.Provider);
     }
 
     [Fact]
@@ -82,11 +92,11 @@ public class LLMModelTests
     [Fact]
     public void All_new_models_are_fully_capable()
     {
-        Assert.Equal(ModelCapabilities.FullyCapable, Opus46.Instance.Capabilities);
-        Assert.Equal(ModelCapabilities.FullyCapable, Gpt52.Instance.Capabilities);
-        Assert.Equal(ModelCapabilities.FullyCapable, Gpt53.Instance.Capabilities);
-        Assert.Equal(ModelCapabilities.FullyCapable, Gemini31.Instance.Capabilities);
-        Assert.Equal(ModelCapabilities.FullyCapable, GrokLatest.Instance.Capabilities);
+        Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is Opus46).Capabilities);
+        Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is Gpt52).Capabilities);
+        Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is Gpt53).Capabilities);
+        Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is Gemini31).Capabilities);
+        Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is GrokLatest).Capabilities);
     }
 
     [Fact]

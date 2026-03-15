@@ -28,18 +28,20 @@ public abstract class EmbeddingModel
         }
     }
 
-    private static readonly List<EmbeddingModel> _registry = [];
+    private static readonly Lazy<List<EmbeddingModel>> _discovered = new(() =>
+        [.. typeof(EmbeddingModel).Assembly.GetTypes()
+            .Where(t => t.IsSubclassOf(typeof(EmbeddingModel)) && !t.IsAbstract && !t.IsNested)
+            .Select(t => (EmbeddingModel)Activator.CreateInstance(t, nonPublic: true)!)]);
+
     private static readonly Lock _lock = new();
+    private static readonly List<EmbeddingModel> _runtime = [];
 
     public static IReadOnlyList<EmbeddingModel> All
     {
-        get { lock (_lock) { return [.. _registry]; } }
+        get { lock (_lock) { return [.. _discovered.Value, .. _runtime]; } }
     }
 
-    protected EmbeddingModel()
-    {
-        lock (_lock) { _registry.Add(this); }
-    }
+    protected EmbeddingModel() { }
 
     protected EmbeddingModel(string id, string provider, string displayName, int dimensions)
     {
@@ -47,24 +49,23 @@ public abstract class EmbeddingModel
         _provider = provider;
         _displayName = displayName;
         _dimensions = dimensions;
-        lock (_lock) { _registry.Add(this); }
     }
 
     public static EmbeddingModel Register(string id, string provider, string displayName, int dimensions)
     {
         lock (_lock)
         {
-            if (_registry.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+            if (_discovered.Value.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
+                || _runtime.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException($"Embedding model '{id}' is already registered.");
+            var model = new RuntimeEmbeddingModel(id, provider, displayName, dimensions);
+            _runtime.Add(model);
+            return model;
         }
-        return new RuntimeEmbeddingModel(id, provider, displayName, dimensions);
     }
 
-    public static void EnsureAllModelsLoaded()
-    {
-        _ = Models.MxbaiEmbedLarge.Instance;
-        _ = Models.TextEmbedding3Small.Instance;
-    }
+    // no-op — models auto-discover via assembly scanning
+    public static void EnsureAllModelsLoaded() { }
 
     private sealed class RuntimeEmbeddingModel(string id, string provider, string displayName, int dimensions)
         : EmbeddingModel(id, provider, displayName, dimensions);

@@ -4,9 +4,6 @@ namespace Core.AI.Models;
 
 public sealed class Gemini31 : LLMModel
 {
-    public static readonly Gemini31 Instance = new();
-    private Gemini31() { }
-
     public override string Id => "gemini-3.1";
     public override string DisplayName => "Gemini 3.1";
     public override string Provider => "openai";

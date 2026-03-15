@@ -4,9 +4,6 @@ namespace Core.AI.Models;
 
 public sealed class GrokLatest : LLMModel
 {
-    public static readonly GrokLatest Instance = new();
-    private GrokLatest() { }
-
     public override string Id => "grok-latest";
     public override string DisplayName => "Grok Latest";
     public override string Provider => "openai";

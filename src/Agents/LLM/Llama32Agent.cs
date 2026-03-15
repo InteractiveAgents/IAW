@@ -10,5 +10,5 @@ public class Llama32Agent(
     [Llm<Llama32>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), ILlama32
 {
-    protected override string DisplayName => Llama32.Instance.DisplayName;
+    protected override string DisplayName => "Llama 3.2";
 }

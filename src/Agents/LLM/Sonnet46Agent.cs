@@ -10,5 +10,5 @@ public class Sonnet46Agent(
     [Llm<Sonnet46>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), ISonnet46
 {
-    protected override string DisplayName => Sonnet46.Instance.DisplayName;
+    protected override string DisplayName => "Claude Sonnet 4.6";
 }

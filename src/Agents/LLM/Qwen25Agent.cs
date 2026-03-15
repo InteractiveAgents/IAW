@@ -10,5 +10,5 @@ public class Qwen25Agent(
     [Llm<Qwen25>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), IQwen25
 {
-    protected override string DisplayName => Qwen25.Instance.DisplayName;
+    protected override string DisplayName => "Qwen 2.5";
 }

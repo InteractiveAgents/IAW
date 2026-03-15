@@ -10,5 +10,5 @@ public class Gpt4oMiniAgent(
     [Llm<Gpt4oMini>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), IGpt4oMini
 {
-    protected override string DisplayName => Gpt4oMini.Instance.DisplayName;
+    protected override string DisplayName => "GPT-4o Mini";
 }

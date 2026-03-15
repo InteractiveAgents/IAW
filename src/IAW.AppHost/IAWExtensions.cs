@@ -1,3 +1,4 @@
+using Aspire.Hosting.Azure;
 using Aspire.Hosting.Orleans;
 using Core.AI;
 using Microsoft.Extensions.Configuration;
@@ -146,6 +147,7 @@ public static class IAWExtensions
         {
             builder.WithEnvironment("AI__Whisper__ModelId", _whisperModel.Id);
             builder.WithReference(_whisperDeployment);
+            builder.WaitFor(_whisperDeployment);
         }
 
         return builder;

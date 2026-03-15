@@ -41,11 +41,18 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         try
         {
             var endpoint = _configuration[LlmConfig.WhisperEndpoint]
+                ?? _configuration["WHISPER_URI"]
                 ?? ResolveEndpointFromConnectionString()
                 ?? throw new InvalidOperationException(
                     $"Whisper endpoint not configured. Set {LlmConfig.WhisperEndpoint} or add .WithVoice2Text() in AppHost.");
 
-            var modelId = _configuration[LlmConfig.WhisperModelId] ?? "whisper-large-v3-turbo";
+            // Ensure endpoint ends with /v1 for OpenAI-compatible API
+            if (!endpoint.Contains("/v1", StringComparison.OrdinalIgnoreCase))
+                endpoint = endpoint.TrimEnd('/') + "/v1";
+
+            var modelId = _configuration["WHISPER_MODELNAME"]
+                ?? _configuration[LlmConfig.WhisperModelId]
+                ?? "whisper-large-v3-turbo";
 
             var client = new AudioClient(modelId,
                 new ApiKeyCredential("not-required"),

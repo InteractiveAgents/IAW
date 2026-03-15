@@ -8,26 +8,17 @@ public abstract class WhisperModel
     public virtual string Version => "1";
     public virtual string Publisher => "OpenAI";
 
-    private static readonly List<WhisperModel> _registry = [];
-    private static readonly Lock _lock = new();
+    private static readonly Lazy<IReadOnlyList<WhisperModel>> _all = new(() =>
+        [.. typeof(WhisperModel).Assembly.GetTypes()
+            .Where(t => t.IsSubclassOf(typeof(WhisperModel)) && !t.IsAbstract)
+            .Select(t => (WhisperModel)Activator.CreateInstance(t, nonPublic: true)!)
+            .OrderByDescending(m => m.Priority)]);
 
-    public static IReadOnlyList<WhisperModel> All
-    {
-        get { lock (_lock) { return [.. _registry]; } }
-    }
-
-    protected WhisperModel()
-    {
-        lock (_lock) { _registry.Add(this); }
-    }
+    public static IReadOnlyList<WhisperModel> All => _all.Value;
 
     public static WhisperModel? FindById(string id) =>
         All.FirstOrDefault(m => string.Equals(m.Id, id, StringComparison.OrdinalIgnoreCase));
 
-    public static void EnsureAllModelsLoaded()
-    {
-        _ = Models.WhisperLargeV3Turbo.Instance;
-        _ = Models.WhisperSmall.Instance;
-        _ = Models.WhisperTiny.Instance;
-    }
+    // kept as no-op for backward compat
+    public static void EnsureAllModelsLoaded() { }
 }

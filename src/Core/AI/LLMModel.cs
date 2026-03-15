@@ -28,18 +28,20 @@ public abstract class LLMModel
         }
     }
 
-    private static readonly List<LLMModel> _registry = [];
+    private static readonly Lazy<List<LLMModel>> _discovered = new(() =>
+        [.. typeof(LLMModel).Assembly.GetTypes()
+            .Where(t => t.IsSubclassOf(typeof(LLMModel)) && !t.IsAbstract && !t.IsNested)
+            .Select(t => (LLMModel)Activator.CreateInstance(t, nonPublic: true)!)]);
+
     private static readonly Lock _lock = new();
+    private static readonly List<LLMModel> _runtime = [];
 
     public static IReadOnlyList<LLMModel> All
     {
-        get { lock (_lock) { return [.. _registry]; } }
+        get { lock (_lock) { return [.. _discovered.Value, .. _runtime]; } }
     }
 
-    protected LLMModel()
-    {
-        lock (_lock) { _registry.Add(this); }
-    }
+    protected LLMModel() { }
 
     protected LLMModel(string id, string provider, string displayName, ModelCapabilities? capabilities = null)
     {
@@ -47,43 +49,24 @@ public abstract class LLMModel
         _provider = provider;
         _displayName = displayName;
         _capabilities = capabilities;
-        lock (_lock) { _registry.Add(this); }
     }
 
     public static LLMModel Register(string id, string provider, string displayName, ModelCapabilities? capabilities = null)
     {
         lock (_lock)
         {
-            if (_registry.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+            if (_discovered.Value.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
+                || _runtime.Any(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException($"Model '{id}' is already registered.");
+            var model = new RuntimeLLMModel(id, provider, displayName, capabilities ?? ModelCapabilities.FullyCapable);
+            _runtime.Add(model);
+            return model;
         }
-        return new RuntimeLLMModel(id, provider, displayName, capabilities ?? ModelCapabilities.FullyCapable);
     }
 
-    public static void EnsureAllModelsLoaded()
-    {
-        _ = Models.Claude45Haiku.Instance;
-        _ = Models.Sonnet46.Instance;
-        _ = Models.Opus46.Instance;
-        _ = Models.Gpt4o.Instance;
-        _ = Models.Gpt4oMini.Instance;
-        _ = Models.Gpt52.Instance;
-        _ = Models.Gpt53.Instance;
-        _ = Models.Gemini31.Instance;
-        _ = Models.GrokLatest.Instance;
-        _ = Models.Llama32.Instance;
-        _ = Models.Qwen25.Instance;
-        _ = Models.GitHubGpt4oMini.Instance;
-        _ = Models.GitHubGpt4o.Instance;
-    }
+    // no-op — models auto-discover via assembly scanning
+    public static void EnsureAllModelsLoaded() { }
 
-    // Runtime-only model — for programmatic registration without [Llm<T>].
-    // For [Llm<T>] support, define your own class:
-    //   public sealed class MyModel : LLMModel
-    //   {
-    //       public static readonly MyModel Instance = new();
-    //       private MyModel() : base("my-model", "openai", "My Model") { }
-    //   }
     private sealed class RuntimeLLMModel(string id, string provider, string displayName, ModelCapabilities capabilities)
         : LLMModel(id, provider, displayName, capabilities);
 }

@@ -10,5 +10,5 @@ public class GrokLatestAgent(
     [Llm<GrokLatest>] IChatClient chatClient)
     : global::Core.LLM(durableState, chatClient), IGrokLatest
 {
-    protected override string DisplayName => GrokLatest.Instance.DisplayName;
+    protected override string DisplayName => "Grok Latest";
 }
