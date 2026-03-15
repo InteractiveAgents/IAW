@@ -41,6 +41,7 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         try
         {
             var endpoint = _configuration[LlmConfig.WhisperEndpoint]
+                ?? ResolveEndpointFromConnectionString()
                 ?? throw new InvalidOperationException(
                     $"Whisper endpoint not configured. Set {LlmConfig.WhisperEndpoint} or add .WithVoice2Text() in AppHost.");
 
@@ -81,6 +82,20 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         {
             if (File.Exists(tempPath)) File.Delete(tempPath);
         }
+    }
+
+    private string? ResolveEndpointFromConnectionString()
+    {
+        var connectionString = _configuration["ConnectionStrings:whisper"]
+            ?? _configuration["ConnectionStrings:foundry"];
+        if (string.IsNullOrEmpty(connectionString)) return null;
+
+        // Aspire connection strings can be "Endpoint=http://..." or just a URL
+        if (connectionString.StartsWith("Endpoint=", StringComparison.OrdinalIgnoreCase))
+            return connectionString.Split(';')[0]["Endpoint=".Length..];
+        if (connectionString.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return connectionString;
+        return null;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
