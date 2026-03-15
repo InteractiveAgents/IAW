@@ -25,7 +25,7 @@ builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddHostedService<StreamSubscriber>();
 builder.Services.AddHostedService<WebhookSetupService>();
 builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
-builder.AddWhisperProvider();
+builder.AddWhisperProvider<FoundryLocalTranscriptionService>();
 builder.Services.AddSingleton<BlobFileStorage>();
 
 var app = builder.Build();

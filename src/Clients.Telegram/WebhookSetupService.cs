@@ -54,7 +54,7 @@ public sealed class WebhookSetupService(
             {
                 await Task.Delay(TimeSpan.FromSeconds(2 + attempt), ct);
                 var json = await http.GetStringAsync($"{apiBase}/api/tunnels", ct);
-                var doc = JsonDocument.Parse(json);
+                using var doc = JsonDocument.Parse(json);
 
                 foreach (var tunnel in doc.RootElement.GetProperty("tunnels").EnumerateArray())
                 {

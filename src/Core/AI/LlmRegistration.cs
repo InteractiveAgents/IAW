@@ -204,10 +204,10 @@ public static class LlmRegistration
         return builder;
     }
 
-    public static IHostApplicationBuilder AddWhisperProvider(this IHostApplicationBuilder builder)
+    public static IHostApplicationBuilder AddWhisperProvider<TService>(this IHostApplicationBuilder builder)
+        where TService : class, IAudioTranscriptionService
     {
-        WhisperModel.EnsureAllModelsLoaded();
-        builder.Services.AddSingleton<IAudioTranscriptionService, FoundryLocalTranscriptionService>();
+        builder.Services.AddSingleton<IAudioTranscriptionService, TService>();
         return builder;
     }
 

@@ -43,6 +43,7 @@
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
     <PackageVersion Include="OpenAI" Version="2.9.1" />
     <PackageVersion Include="OllamaSharp" Version="5.4.23" />
+    <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="0.8.2.1" />
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.1.2" />
     <PackageVersion Include="Octokit" Version="14.0.0" />
     <PackageVersion Include="Telegram.BotAPI" Version="9.5.0" />

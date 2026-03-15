@@ -1,4 +1,3 @@
-using Aspire.Hosting.Azure;
 using Aspire.Hosting.Orleans;
 using Core.AI;
 using Microsoft.Extensions.Configuration;
@@ -16,7 +15,6 @@ public static class IAWExtensions
     private static IResourceBuilder<OllamaResource>? _ollamaResource;
     private static readonly List<IResourceBuilder<OllamaModelResource>> _ollamaModelResources = [];
     private static WhisperModel? _whisperModel;
-    private static IResourceBuilder<AzureAIFoundryDeploymentResource>? _whisperDeployment;
 
     public static OrleansService AddIAW(
         this IDistributedApplicationBuilder builder,
@@ -31,7 +29,6 @@ public static class IAWExtensions
         _ollamaResource = null;
         _ollamaModelResources.Clear();
         _whisperModel = null;
-        _whisperDeployment = null;
 
         return builder.AddOrleans(name)
             .WithClusterId("dev")
@@ -77,30 +74,15 @@ public static class IAWExtensions
 
     public static OrleansService WithVoice2Text(this OrleansService orleans)
     {
-        WhisperModel.EnsureAllModelsLoaded();
         _whisperModel = WhisperModel.All.OrderByDescending(m => m.Priority).First();
-        CreateFoundryWhisperDeployment();
         return orleans;
     }
 
     public static OrleansService WithVoice2Text<TModel>(this OrleansService orleans)
         where TModel : WhisperModel
     {
-        WhisperModel.EnsureAllModelsLoaded();
         _whisperModel = WhisperModel.All.OfType<TModel>().First();
-        CreateFoundryWhisperDeployment();
         return orleans;
-    }
-
-    private static void CreateFoundryWhisperDeployment()
-    {
-        if (_appBuilder is null || _whisperModel is null)
-            throw new InvalidOperationException("Call AddIAW() before WithVoice2Text().");
-
-        var foundry = _appBuilder.AddAzureAIFoundry("foundry")
-            .RunAsFoundryLocal();
-        _whisperDeployment = foundry.AddDeployment(
-            "whisper", _whisperModel.Id, _whisperModel.Version, _whisperModel.Publisher);
     }
 
     public static IResourceBuilder<T> WithLLMEnvironment<T>(
@@ -143,12 +125,8 @@ public static class IAWExtensions
                 builder.WaitFor(modelResource);
         }
 
-        if (_whisperModel is not null && _whisperDeployment is not null)
-        {
+        if (_whisperModel is not null)
             builder.WithEnvironment("AI__Whisper__ModelId", _whisperModel.Id);
-            builder.WithReference(_whisperDeployment);
-            builder.WaitFor(_whisperDeployment);
-        }
 
         return builder;
     }

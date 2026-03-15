@@ -4,7 +4,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>TelegramClient</RootNamespace>
-    <NoWarn>$(NoWarn);NU1603</NoWarn>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <NoWarn>$(NoWarn);NU1603;IDISP004</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +15,7 @@
     <PackageReference Include="Concentus" />
     <PackageReference Include="Concentus.Oggfile" />
     <PackageReference Include="NAudio" />
+    <PackageReference Include="Microsoft.AI.Foundry.Local" />
     <PackageReference Include="Aspire.Azure.Storage.Blobs" />
   </ItemGroup>
 
