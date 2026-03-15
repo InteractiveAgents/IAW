@@ -52,12 +52,12 @@ The `IUISession` grain supports additional widget types that follow the same cal
 
 ## Voice Messages
 
-The bot transcribes voice messages using Whisper:
+The bot transcribes voice messages locally using Whisper via Foundry Local:
 
 1. User sends a voice message in Telegram
 2. Bot downloads the OGG file via the Telegram Bot API
 3. `IAudioConverter` converts OGG to WAV
-4. `IVoiceTranscriptionService` transcribes the audio
+4. `IAudioTranscriptionService` transcribes the audio using a local Whisper model (no external API calls)
 5. The transcribed text is processed as a regular message
 
 ## Photo Messages
@@ -78,6 +78,47 @@ Documents (PDF, code files, etc.) follow a similar flow:
 3. Sends to the agent as a `FileContent` part with blob URI, filename, MIME type, and file size
 4. Any caption text is included as an additional `TextContent` part
 
+## Message Reactions
+
+When the bot receives an incoming message, it immediately sets a reaction on the message as visual acknowledgment. This gives the user instant feedback that their message was received before the LLM starts generating a response.
+
+## Outgoing Media
+
+The bot can send files and media back to users:
+
+| Method | Purpose |
+|--------|---------|
+| `SendDocumentAsync` | Sends a document file (PDF, ZIP, etc.) to the chat |
+| `SendPhotoAsync` | Sends a photo or image to the chat |
+| `SendBlobAsDocumentAsync` | Retrieves a file from blob storage and sends it as a document |
+
+These methods are invoked by agents when they need to deliver generated files, reports, or media back to the user.
+
+## Task Delegation
+
+The Project agent's `DelegateToAssistant` tool forwards complex tasks to the `PersonalAssistantAgent`, who decomposes them and assigns subtasks to specialized agents:
+
+```
+User message → Project agent → DelegateToAssistant tool
+                                       ↓
+                               PersonalAssistant
+                                       ↓
+                         FileSystem / Shell / Build / etc.
+```
+
+This allows the Telegram bot to handle multi-step engineering workflows without the user needing to interact with individual agents directly.
+
+## Document Ingestion
+
+Uploaded PDF documents are processed for retrieval-augmented generation (RAG):
+
+1. PDF text is extracted using PdfPig
+2. Extracted text is chunked and embedded
+3. Chunks are stored in Qdrant vector storage
+4. When the user asks questions, relevant chunks are retrieved from Qdrant and injected into the agent's system instructions
+
+This enables users to upload reference documents and ask questions about them within the Telegram chat.
+
 ## Streaming Responses
 
 Agent responses stream to Telegram in real-time:
@@ -88,7 +129,7 @@ Agent responses stream to Telegram in real-time:
 
 ## Event Streams
 
-The `StreamSubscriber` is a `BackgroundService` that subscribes to four Orleans streams:
+The `StreamSubscriber` is a `BackgroundService` that subscribes to six Orleans streams:
 
 | Stream | Event Type | Action |
 |--------|-----------|--------|
@@ -96,6 +137,8 @@ The `StreamSubscriber` is a `BackgroundService` that subscribes to four Orleans 
 | `approval.requested` | `AgentEvent` | Renders inline keyboard buttons for user approval |
 | `dashboard.changed` | `AgentEvent` | Debounced dashboard markdown update (2s delay) |
 | `wizard.started` | `AgentEvent` | Renders wizard step options as inline buttons |
+| `orchestration.progress` | `AgentEvent` | Sends real-time orchestration step progress to chat |
+| `orchestration.completed` | `AgentEvent` | Sends orchestration completion summary to chat |
 
 All events flow through the Orleans `"agents"` memory stream provider and are published by agents using `Agent.PublishAsync()`.
 
