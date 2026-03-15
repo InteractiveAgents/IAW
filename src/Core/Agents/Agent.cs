@@ -26,6 +26,7 @@ public abstract partial class Agent(
 {
     private readonly UsageCaptureChatClient _usageCapture = new(chatClient);
     private AIAgent? _agent;
+    private ChatOptions? _chatOptions;
     private AgentSession? _session;
     private IReadOnlyList<ContentPart>? _currentMessageParts;
 
@@ -46,14 +47,15 @@ public abstract partial class Agent(
         AgentTelemetry.Activations.Add(1, new TagList { { "agent.type", GetType().Name } });
 
         var blobStorage = ServiceProvider.GetService<BlobFileStorage>();
+        _chatOptions = new ChatOptions
+        {
+            Instructions = Instructions,
+            Tools = [.. GetAllTools()]
+        };
         _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
             Name = this.GetPrimaryKeyString(),
-            ChatOptions = new ChatOptions
-            {
-                Instructions = Instructions,
-                Tools = [.. GetAllTools()]
-            },
+            ChatOptions = _chatOptions,
             ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, blobStorage, new ChatReducer(), new HistorySummarizer(chatClient))
         });
 
@@ -105,10 +107,15 @@ public abstract partial class Agent(
         var completed = false;
         try
         {
-            prompt = await EnrichWithContext(prompt, cancellationToken);
-            prompt = await ResolveAttachments(prompt, cancellationToken);
+            var attachmentText = await ResolveAttachments(prompt, cancellationToken);
+            var contextBlock = await BuildContextBlock(prompt, cancellationToken);
+            _chatOptions!.Instructions = contextBlock.Length > 0
+                ? $"{Instructions}\n\n{contextBlock}"
+                : Instructions;
 
-            await foreach (var chunk in _agent!.RunStreamingAsync(prompt, _session, cancellationToken: cancellationToken))
+            var fullPrompt = attachmentText != prompt ? attachmentText : prompt;
+
+            await foreach (var chunk in _agent!.RunStreamingAsync(fullPrompt, _session, cancellationToken: cancellationToken))
             {
                 if (chunk.Text is not { } text)
                     continue;
@@ -204,10 +211,10 @@ public abstract partial class Agent(
         return entry.Value is long l ? l : long.TryParse(entry.Value.ToString(), out var parsed) ? parsed : 0;
     }
 
-    private async Task<string> EnrichWithContext(string prompt, CancellationToken ct)
+    private async Task<string> BuildContextBlock(string prompt, CancellationToken ct)
     {
         var providers = GetContextProviders();
-        if (providers.Count == 0) return prompt;
+        if (providers.Count == 0) return "";
 
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.enrich_context");
         activity?.SetTag("context.provider_count", providers.Count);
@@ -228,9 +235,9 @@ public abstract partial class Agent(
 
         activity?.SetTag("context.items_found", contextParts.Count);
 
-        if (contextParts.Count == 0) return prompt;
-
-        return $"[Relevant context from memory]\n{string.Join("\n", contextParts)}\n\n[User message]\n{prompt}";
+        return contextParts.Count > 0
+            ? $"[Current context]\n{string.Join("\n", contextParts)}"
+            : "";
     }
 
     private async Task<string> ResolveAttachments(string prompt, CancellationToken ct)
