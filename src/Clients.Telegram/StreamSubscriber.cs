@@ -86,7 +86,41 @@ public sealed class StreamSubscriber(
                 }
             });
 
-            logger.LogInformation("Subscribed to agent notification, approval, dashboard, and wizard streams");
+            var progressStream = streamProvider.GetStream<AgentEvent>(
+                StreamId.Create("agents", "orchestration.progress"));
+            await progressStream.SubscribeAsync(async (evt, token) =>
+            {
+                try
+                {
+                    var taskId = evt.Payload.GetValueOrDefault("TaskId")?.ToString() ?? "";
+                    var message = evt.Payload.GetValueOrDefault("Message")?.ToString() ?? "";
+                    logger.LogInformation("Orchestration progress [{TaskId}]: {Message}", taskId, message);
+                    await botService.SendNotificationAsync(evt, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to send orchestration progress to Telegram");
+                }
+            });
+
+            var completedStream = streamProvider.GetStream<AgentEvent>(
+                StreamId.Create("agents", "orchestration.completed"));
+            await completedStream.SubscribeAsync(async (evt, token) =>
+            {
+                try
+                {
+                    var taskId = evt.Payload.GetValueOrDefault("TaskId")?.ToString() ?? "";
+                    var summary = evt.Payload.GetValueOrDefault("Summary")?.ToString() ?? "";
+                    logger.LogInformation("Orchestration completed [{TaskId}]: {Summary}", taskId, summary);
+                    await botService.SendNotificationAsync(evt, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to send orchestration completed to Telegram");
+                }
+            });
+
+            logger.LogInformation("Subscribed to agent notification, approval, dashboard, wizard, and orchestration streams");
         }
         catch (Exception ex)
         {
