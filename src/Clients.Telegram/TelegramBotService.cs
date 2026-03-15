@@ -53,6 +53,9 @@ public sealed class TelegramBotService(
         var from = message.From;
         if (from is null) return;
 
+        try { await botClient.SetMessageReactionAsync(chatId, message.MessageId, [new ReactionTypeEmoji("\ud83d\udc40")]); }
+        catch { }
+
         var text = message.Text;
 
         // Voice message: download -> OGG-to-WAV -> Whisper transcription
