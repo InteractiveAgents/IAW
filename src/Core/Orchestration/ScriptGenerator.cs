@@ -28,6 +28,7 @@ public static class ScriptGenerator
         sb.AppendLine();
 
         sb.AppendLine($"// Plan: {plan.Summary}");
+        sb.AppendLine($"// TaskId: {plan.TaskId}");
         sb.AppendLine($"// Steps: {plan.Steps.Count}");
         sb.AppendLine();
 
@@ -46,31 +47,46 @@ public static class ScriptGenerator
 
         foreach (var step in plan.Steps.OrderBy(s => s.Order))
         {
-            sb.AppendLine($"// Step {step.Order}: {step.Action} via {step.AgentType}");
-            sb.AppendLine($"Console.WriteLine(\"Step {step.Order}: {step.Action}\");");
-
             var entry = FindCatalogEntry(catalog, step.AgentType);
             var interfaceName = entry?.InterfaceName ?? "IAgent";
             var grainId = entry?.GrainId ?? step.AgentType.ToLowerInvariant();
 
-            sb.AppendLine($"var agent{step.Order} = client.GetGrain<{interfaceName}>(\"{grainId}\");");
+            sb.AppendLine($"// Step {step.Order}: {step.Action} via {step.AgentType}");
+            sb.AppendLine($"Console.WriteLine(\"[PROGRESS:{step.Order}] {EscapeString(step.Action)} via {step.AgentType}\");");
+            sb.AppendLine("try");
+            sb.AppendLine("{");
+            sb.AppendLine($"    var agent{step.Order} = client.GetGrain<{interfaceName}>(\"{grainId}\");");
 
             if (step.Parameters.TryGetValue("workspace", out var ws))
-                sb.AppendLine($"await agent{step.Order}.SetWorkspace(\"{EscapeString(ws)}\", default);");
+                sb.AppendLine($"    await agent{step.Order}.SetWorkspace(\"{EscapeString(ws)}\", default);");
             else if (workspace is not null)
-                sb.AppendLine($"await agent{step.Order}.SetWorkspace(\"{EscapeString(workspace)}\", default);");
+                sb.AppendLine($"    await agent{step.Order}.SetWorkspace(\"{EscapeString(workspace)}\", default);");
 
             if (step.Parameters.TryGetValue("message", out var message))
             {
-                sb.AppendLine($"var response{step.Order} = await agent{step.Order}.GetResponse(\"{EscapeString(message)}\", default);");
-                sb.AppendLine($"Console.WriteLine(response{step.Order});");
+                sb.AppendLine($"    var response{step.Order} = await agent{step.Order}.GetResponse(\"{EscapeString(message)}\", default);");
+                sb.AppendLine($"    Console.WriteLine(response{step.Order});");
             }
 
+            sb.AppendLine($"    Console.WriteLine(\"[PROGRESS:{step.Order}] Step {step.Order} completed\");");
+            sb.AppendLine("}");
+            sb.AppendLine("catch (Exception ex)");
+            sb.AppendLine("{");
+            sb.AppendLine($"    Console.Error.WriteLine($\"[ERROR:{step.Order}] {{ex.GetType().Name}}|{{ex.Message}}\");");
+
+            if (step.Critical)
+            {
+                sb.AppendLine("    await host.StopAsync();");
+                sb.AppendLine("    return 1;");
+            }
+
+            sb.AppendLine("}");
             sb.AppendLine();
         }
 
+        sb.AppendLine($"Console.WriteLine(\"[COMPLETED] {EscapeString(plan.Summary)}\");");
         sb.AppendLine("await host.StopAsync();");
-        sb.AppendLine("Console.WriteLine(\"Orchestration complete.\");");
+        sb.AppendLine("return 0;");
 
         return sb.ToString();
     }

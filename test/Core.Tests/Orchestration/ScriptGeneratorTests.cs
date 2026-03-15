@@ -86,4 +86,65 @@ public class ScriptGeneratorTests
         var script = ScriptGenerator.Generate(plan, "localhost", 30000);
         Assert.Contains("GetGrain<IAgent>(\"unknown-agent\")", script);
     }
+
+    [Fact]
+    public void Generate_emits_progress_protocol_lines()
+    {
+        var plan = new OrchestrationPlan("test", [
+            new PlanStep(1, "roslyn", "analyze", new() { ["message"] = "test" })
+        ]);
+        var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+        Assert.Contains("[PROGRESS:1]", script);
+    }
+
+    [Fact]
+    public void Generate_emits_error_protocol_on_failure()
+    {
+        var plan = new OrchestrationPlan("test", [
+            new PlanStep(1, "roslyn", "analyze", new() { ["message"] = "test" })
+        ]);
+        var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+        Assert.Contains("[ERROR:1]", script);
+        Assert.Contains("ex.GetType().Name", script);
+    }
+
+    [Fact]
+    public void Generate_emits_completed_protocol()
+    {
+        var plan = new OrchestrationPlan("test summary", [
+            new PlanStep(1, "roslyn", "analyze", new() { ["message"] = "test" })
+        ]);
+        var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+        Assert.Contains("[COMPLETED] test summary", script);
+    }
+
+    [Fact]
+    public void Generate_critical_step_exits_on_failure()
+    {
+        var plan = new OrchestrationPlan("test", [
+            new PlanStep(1, "roslyn", "analyze", new() { ["message"] = "test" }, Critical: true)
+        ]);
+        var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+        Assert.Contains("return 1;", script);
+    }
+
+    [Fact]
+    public void Generate_non_critical_step_continues_on_failure()
+    {
+        var plan = new OrchestrationPlan("test", [
+            new PlanStep(1, "roslyn", "analyze", new() { ["message"] = "test" }, Critical: false)
+        ]);
+        var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+        Assert.DoesNotContain("return 1;", script);
+    }
+
+    [Fact]
+    public void Generate_includes_taskId_comment()
+    {
+        var plan = new OrchestrationPlan("test", [
+            new PlanStep(1, "roslyn", "analyze", new() { ["message"] = "test" })
+        ], TaskId: "task-abc");
+        var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+        Assert.Contains("// TaskId: task-abc", script);
+    }
 }
