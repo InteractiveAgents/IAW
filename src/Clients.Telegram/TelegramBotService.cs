@@ -1,4 +1,5 @@
 using System.Text;
+using Core.AI;
 using Core.Contracts;
 using Core.Contracts.UI;
 using Core.Services;
@@ -8,15 +9,13 @@ using Telegram.BotAPI.AvailableMethods;
 using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
 using Telegram.BotAPI.UpdatingMessages;
-using TelegramClient.Services;
 
 namespace TelegramClient;
 
 public sealed class TelegramBotService(
     IClusterClient clusterClient,
     ITelegramBotClient botClient,
-    IVoiceTranscriptionService voiceService,
-    IAudioConverter audioConverter,
+    IAudioTranscriptionService transcriptionService,
     IHttpClientFactory httpClientFactory,
     BlobFileStorage blobFileStorage,
     IOptions<TelegramBotOptions> options,
@@ -354,9 +353,19 @@ public sealed class TelegramBotService(
         var downloadUrl = $"{botClient.Options.ServerAddress}/file/bot{options.Value.BotToken}/{file.FilePath}";
 
         using var http = httpClientFactory.CreateClient();
-        await using var oggStream = await http.GetStreamAsync(downloadUrl, ct);
-        var wavPath = await audioConverter.ConvertOggToWavAsync(oggStream, ct);
-        return await voiceService.TranscribeAsync(wavPath, ct);
+        await using var responseStream = await http.GetStreamAsync(downloadUrl, ct);
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"iaw_voice_{Guid.NewGuid()}.ogg");
+        try
+        {
+            await using (var fileStream = System.IO.File.Create(tempPath))
+                await responseStream.CopyToAsync(fileStream, ct);
+            return await transcriptionService.TranscribeAsync(tempPath, ct);
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+        }
     }
 
     private async Task EnsureTopicsAsync(long chatId, CancellationToken ct)

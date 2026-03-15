@@ -1,3 +1,4 @@
+using Core.AI;
 using Core.Services;
 using Microsoft.Extensions.Options;
 using ServiceDefaults;
@@ -24,7 +25,7 @@ builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddHostedService<StreamSubscriber>();
 builder.Services.AddHostedService<WebhookSetupService>();
 builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
-builder.Services.AddSingleton<IVoiceTranscriptionService, VoiceTranscriptionService>();
+builder.AddWhisperProvider();
 builder.Services.AddSingleton<BlobFileStorage>();
 
 var app = builder.Build();
