@@ -80,9 +80,12 @@ public class NuGetAgent(
                     });
                 }
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // skip packages whose version couldn't be resolved
+                throw;
+            }
+            catch (Exception)
+            {
             }
         }
 

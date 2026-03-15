@@ -275,7 +275,11 @@ public class RoslynAgent(
                 .ToArray();
             return (projectRefs, packageRefs);
         }
-        catch
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
         {
             return ([], []);
         }

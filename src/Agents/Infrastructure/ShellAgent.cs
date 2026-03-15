@@ -14,14 +14,41 @@ public class ShellAgent(
     [Llm<Claude45Haiku>] IChatClient chatClient)
     : Agent(durableState, chatClient), IShell
 {
+    private static readonly string[] BlockedPatterns =
+    [
+        "rm -rf /",
+        "format c:",
+        "del /s /q",
+        "shutdown",
+        "reboot",
+        "> /dev/",
+        "dd if=",
+        "mkfs"
+    ];
+
     protected override string DisplayName => "Shell";
     protected override string Instructions => """
-        You are Shell, the IAW team's command execution specialist.
-        You have RunShellAsync and RunDotnetAsync tools — ALWAYS use them to execute commands immediately.
-        Never explain what commands could be run. Never give instructions for the user to run manually.
-        When asked to run something, call the appropriate tool and return the output.
-        For dotnet operations, prefer RunDotnetAsync. For everything else, use RunShellAsync.
-        Report the actual output and exit code. If a command fails, include the error output.
+        You are Shell, the IAW team's command execution specialist. Execute shell and dotnet CLI commands with timeout enforcement and structured output.
+
+        CAPABILITIES:
+        - Execute arbitrary shell commands within the workspace
+        - Run dotnet CLI commands (build, test, run, publish, etc.)
+        - Enforce 120-second timeout with process termination
+        - Capture and report stdout and stderr separately
+        - Track command execution metrics
+
+        OUTPUT FORMAT:
+        - Report: exit code, duration, stdout, stderr
+        - Truncate output to 50KB; note when truncation occurs
+        - For failures: include exit code and full stderr
+        - For long operations: summarize progress (e.g., "Running dotnet build...")
+
+        RULES:
+        - ALWAYS validate commands before execution — reject dangerous patterns (rm -rf, format drives)
+        - Prefer RunDotnetAsync for dotnet operations, RunShellAsync for shell commands
+        - Never execute system-level configuration changes (chown, sudoedit, etc.)
+        - Kill processes that exceed 120 seconds with termination message
+        - Report actual output, not interpretations or instructions for the user to run manually
         """;
 
     protected override IReadOnlyList<AITool> DefineTools()
@@ -31,9 +58,21 @@ public class ShellAgent(
         return tools;
     }
 
+    private static string? ValidateCommand(string command)
+    {
+        foreach (var blocked in BlockedPatterns)
+            if (command.Contains(blocked, StringComparison.OrdinalIgnoreCase))
+                return $"Command blocked: contains prohibited pattern '{blocked}'";
+        return null;
+    }
+
     public async Task<CommandResult> ExecuteAsync(
         string command, string? workingDirectory = null, int timeoutMs = 120_000, CancellationToken ct = default)
     {
+        var validationError = ValidateCommand(command);
+        if (validationError is not null)
+            return new CommandResult(-1, "", validationError, TimeSpan.Zero);
+
         var effectiveDirectory = workingDirectory ?? GetWorkspacePath() ?? Directory.GetCurrentDirectory();
         var sw = Stopwatch.StartNew();
 
@@ -186,7 +225,7 @@ public class ShellAgent(
             return JsonSerializer.Deserialize<Dictionary<string, int>>(desc.Value.ToString()!)
                    ?? new Dictionary<string, int>();
         }
-        catch
+        catch (JsonException)
         {
             return new Dictionary<string, int>();
         }

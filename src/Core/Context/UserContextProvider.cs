@@ -27,7 +27,11 @@ public class UserContextProvider(IGrainFactory grainFactory) : IAgentContextProv
 
             return context;
         }
-        catch
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
         {
             return [];
         }

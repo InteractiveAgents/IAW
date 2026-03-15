@@ -217,7 +217,7 @@ public class AspireAgent(
             return JsonSerializer.Deserialize<Dictionary<string, int>>(desc.Value.ToString()!)
                    ?? new Dictionary<string, int>();
         }
-        catch
+        catch (JsonException)
         {
             return new Dictionary<string, int>();
         }
@@ -232,7 +232,7 @@ public class AspireAgent(
             return JsonSerializer.Deserialize<Dictionary<string, string>>(desc.Value.ToString()!)
                    ?? new Dictionary<string, string>();
         }
-        catch
+        catch (JsonException)
         {
             return new Dictionary<string, string>();
         }

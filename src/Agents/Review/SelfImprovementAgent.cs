@@ -1,15 +1,16 @@
+using System.ComponentModel;
+using System.Text.Json;
+using Core.AI;
+using Core.AI.Models;
+using Core.Communication;
+using Core.Contracts;
+using Core.Messages;
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Messages;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using Orleans.Streams;
-using System.ComponentModel;
-using System.Text.Json;
-using Core.Contracts;
-using Core.AI;
-using Core.AI.Models;
-using Core.Communication;
 
 namespace IAW.Agents.Review;
 

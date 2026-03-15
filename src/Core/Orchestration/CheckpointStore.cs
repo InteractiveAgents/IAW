@@ -28,7 +28,11 @@ public sealed class CheckpointStore(BlobFileStorage blobStorage, BlobServiceClie
             using var reader = new StreamReader(stream);
             return await reader.ReadToEndAsync(ct);
         }
-        catch
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
         {
             return null;
         }

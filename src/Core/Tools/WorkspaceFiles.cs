@@ -109,9 +109,13 @@ public static class WorkspaceFiles
             await process.WaitForExitAsync(ct);
             return process.ExitCode == 0 ? stdout : null;
         }
-        catch
+        catch (OperationCanceledException)
         {
-            return null; // git not available, fall back
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 

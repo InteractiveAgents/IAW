@@ -28,9 +28,12 @@ public class RAGContextProvider(
                     $"[document: {r.Payload["fileName"]}, page {r.Payload["pageNumber"]}] {r.Payload["text"]}")
                 .ToList();
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // qdrant unavailable — skip
+            throw;
+        }
+        catch (Exception)
+        {
             return [];
         }
     }

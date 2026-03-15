@@ -47,7 +47,11 @@ internal sealed class AgentTools(IClusterClient orleans)
                     capabilities
                 });
             }
-            catch
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
             {
                 results.Add(new { id = entry.GrainId, error = "Agent not available" });
             }

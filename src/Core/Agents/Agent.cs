@@ -227,11 +227,18 @@ public abstract partial class Agent(
                 var items = await provider.GetContextAsync(this.GetPrimaryKeyString(), prompt, ct);
                 contextParts.AddRange(items);
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // context provider unavailable — skip
+                throw;
+            }
+            catch (Exception ex)
+            {
+                activity?.SetTag("context.provider_error", ex.GetType().Name);
             }
         }
+
+        // Deduplicate exact matches across providers
+        contextParts = contextParts.Distinct().ToList();
 
         activity?.SetTag("context.items_found", contextParts.Count);
 
@@ -269,7 +276,11 @@ public abstract partial class Agent(
                         attachments.Add($"[Attached file: {file.FileName} ({file.MimeType}, {file.SizeBytes} bytes)]");
                     }
                 }
-                catch
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
                 {
                     attachments.Add($"[Attached file: {file.FileName} — could not read content]");
                 }
@@ -331,9 +342,12 @@ public abstract partial class Agent(
 
             await qdrantClient.UpsertAsync(collectionName, points, cancellationToken: ct);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // ingestion failure should not break the conversation
+            throw;
+        }
+        catch (Exception)
+        {
         }
     }
 

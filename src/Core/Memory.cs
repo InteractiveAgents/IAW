@@ -18,6 +18,8 @@ public abstract class Memory(
     protected IDurableList<MemoryEntry> Memories => memories;
     protected IEmbeddingGenerator<string, Embedding<float>> Embedder => embedder;
 
+    private const int MaxMemories = 500;
+
     protected abstract string CollectionName { get; }
 
     protected override string Instructions =>
@@ -36,6 +38,22 @@ public abstract class Memory(
         {
             logger.LogWarning(ex, "Embedding generation failed during Observe for {AgentId}, storing without embedding",
                 this.GetPrimaryKeyString());
+        }
+
+        // Apply size guardrail: remove lowest relevance entry if at capacity
+        if (memories.Count >= MaxMemories)
+        {
+            var lowestIdx = 0;
+            var lowestScore = memories[0].RelevanceScore;
+            for (var i = 1; i < memories.Count; i++)
+            {
+                if (memories[i].RelevanceScore < lowestScore)
+                {
+                    lowestScore = memories[i].RelevanceScore;
+                    lowestIdx = i;
+                }
+            }
+            memories.RemoveAt(lowestIdx);
         }
 
         var entry = new MemoryEntry(
@@ -107,10 +125,111 @@ public abstract class Memory(
         return denom == 0 ? 0f : dot / denom;
     }
 
-    protected virtual Task Consolidate(CancellationToken ct = default)
+    protected virtual async Task Consolidate(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.CompletedTask;
+        if (memories.Count < 20)
+            return;
+
+        var clusters = FindSimilarClusters(memories, 0.85f);
+        var consolidatedEntries = new List<MemoryEntry>();
+        var indicesToRemove = new HashSet<int>();
+
+        foreach (var cluster in clusters.Where(c => c.Count >= 3))
+        {
+            var indices = cluster.Select(x => x.Index).ToList();
+            var entries = cluster.Select(x => x.Entry).ToList();
+            var contents = entries.Select(e => e.Content).ToList();
+
+            try
+            {
+                var consolidatedContent = await SummarizeCluster(contents, ct);
+                var consolidated = new MemoryEntry(
+                    Guid.NewGuid().ToString("N"),
+                    consolidatedContent,
+                    entries[0].Provenance,
+                    entries.Average(e => e.RelevanceScore),
+                    DateTimeOffset.UtcNow,
+                    DateTimeOffset.UtcNow,
+                    entries.Sum(e => e.AccessCount),
+                    null);
+
+                if (entries[0].Embedding is not null)
+                {
+                    try
+                    {
+                        var result = await Embedder.GenerateAsync([consolidatedContent], cancellationToken: ct);
+                        consolidated = consolidated with { Embedding = result[0].Vector.ToArray() };
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Embedding generation failed for consolidated entry");
+                    }
+                }
+
+                consolidatedEntries.Add(consolidated);
+                foreach (var idx in indices)
+                    indicesToRemove.Add(idx);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Consolidation of cluster failed, keeping originals");
+            }
+        }
+
+        // Remove original entries (in reverse order to preserve indices)
+        foreach (var idx in indicesToRemove.OrderByDescending(x => x))
+            memories.RemoveAt(idx);
+
+        // Add consolidated entries
+        foreach (var entry in consolidatedEntries)
+            memories.Add(entry);
+
+        await WriteStateAsync(ct);
+    }
+
+    private static List<List<(int Index, MemoryEntry Entry)>> FindSimilarClusters(IDurableList<MemoryEntry> memories, float threshold)
+    {
+        var clusters = new List<List<(int, MemoryEntry)>>();
+        var visited = new HashSet<int>();
+
+        for (var i = 0; i < memories.Count; i++)
+        {
+            if (visited.Contains(i) || memories[i].Embedding is null)
+                continue;
+
+            var cluster = new List<(int, MemoryEntry)> { (i, memories[i]) };
+            visited.Add(i);
+
+            for (var j = i + 1; j < memories.Count; j++)
+            {
+                if (!visited.Contains(j) && memories[j].Embedding is not null)
+                {
+                    var similarity = CosineSimilarity(memories[i].Embedding, memories[j].Embedding);
+                    if (similarity > threshold)
+                    {
+                        cluster.Add((j, memories[j]));
+                        visited.Add(j);
+                    }
+                }
+            }
+
+            if (cluster.Count > 0)
+                clusters.Add(cluster);
+        }
+
+        return clusters;
+    }
+
+    private async Task<string> SummarizeCluster(List<string> contents, CancellationToken ct)
+    {
+        var contentsText = string.Join("\n---\n", contents);
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.User, $"Consolidate these related memory entries into a single concise entry:\n\n{contentsText}")
+        };
+        var response = await chatClient.GetResponseAsync(messages, cancellationToken: ct);
+        return response.Text ?? "consolidated memory";
     }
 
     protected virtual async Task Decay(float decayFactor = 0.95f, CancellationToken ct = default)

@@ -27,11 +27,20 @@ public abstract partial class Agent
 
     protected void ValidatePathWithinWorkspace(string path)
     {
+        if (string.IsNullOrEmpty(path))
+            throw new ArgumentException("Path cannot be null or empty.", nameof(path));
+
         var workspace = GetWorkspacePath();
         if (workspace is null) return;
+
         var fullPath = Path.GetFullPath(path);
         var fullWorkspace = Path.GetFullPath(workspace);
-        if (!fullPath.StartsWith(fullWorkspace, StringComparison.OrdinalIgnoreCase))
+        var workspaceWithSeparator = fullWorkspace.EndsWith(Path.DirectorySeparatorChar.ToString())
+            ? fullWorkspace
+            : fullWorkspace + Path.DirectorySeparatorChar;
+
+        if (!fullPath.StartsWith(workspaceWithSeparator, StringComparison.OrdinalIgnoreCase) &&
+            !fullPath.Equals(fullWorkspace, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Path '{path}' is outside the workspace '{workspace}'.");
     }
 }

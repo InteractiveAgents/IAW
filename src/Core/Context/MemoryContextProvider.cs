@@ -18,9 +18,12 @@ public class MemoryContextProvider(IReadOnlyList<IMemoryAgent> memoryAgents) : I
                 foreach (var entry in results)
                     context.Add($"[memory] {entry.Content}");
             }
-            catch
+            catch (OperationCanceledException)
             {
-                // memory agent unavailable — skip
+                throw;
+            }
+            catch (Exception)
+            {
             }
         }
 

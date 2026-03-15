@@ -68,13 +68,9 @@ public class WebTools(HttpClient httpClient)
                 var bytes = addr.GetAddressBytes();
                 if (addr.AddressFamily == AddressFamily.InterNetwork && bytes.Length == 4)
                 {
-                    // 10.x.x.x
                     if (bytes[0] == 10) return true;
-                    // 172.16-31.x.x
                     if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
-                    // 192.168.x.x
                     if (bytes[0] == 192 && bytes[1] == 168) return true;
-                    // 169.254.x.x (link-local / cloud metadata)
                     if (bytes[0] == 169 && bytes[1] == 254) return true;
                 }
 
@@ -82,9 +78,8 @@ public class WebTools(HttpClient httpClient)
                     return true;
             }
         }
-        catch
+        catch (SocketException)
         {
-            // DNS resolution failure — block to be safe
             return true;
         }
 

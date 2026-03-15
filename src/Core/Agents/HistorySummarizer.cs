@@ -66,7 +66,7 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
         {
             throw;
         }
-        catch
+        catch (Exception)
         {
             return existingSummary;
         }

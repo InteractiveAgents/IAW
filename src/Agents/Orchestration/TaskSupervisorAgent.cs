@@ -5,6 +5,7 @@ using Core.Contracts;
 using Core.Models;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using Orleans.Runtime;
 
 namespace IAW.Agents.Orchestration;
 
@@ -20,6 +21,22 @@ public class TaskSupervisorAgent(
         "Report task health status concisely — completed steps, stall duration, and recommended actions.";
 
     private const string TaskPrefix = "task-health-";
+
+    public override async Task OnActivateAsync(CancellationToken ct)
+    {
+        await base.OnActivateAsync(ct);
+        await this.RegisterOrUpdateReminder("stall-check", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5));
+    }
+
+    public override async Task ReceiveReminder(string reminderName, TickStatus status)
+    {
+        if (reminderName == "stall-check")
+        {
+            await CheckForStalledTasks(AgentCancellation);
+            return;
+        }
+        await base.ReceiveReminder(reminderName, status);
+    }
 
     public async Task RegisterTask(string taskId, string orchestratorId, int stepCount, CancellationToken ct = default)
     {
@@ -57,5 +74,43 @@ public class TaskSupervisorAgent(
             .Cast<TaskHealthRecord>()
             .ToList();
         return Task.FromResult<IReadOnlyList<TaskHealthRecord>>(records);
+    }
+
+    private async Task CheckForStalledTasks(CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var stallThreshold = TimeSpan.FromMinutes(10);
+        var stateChanged = false;
+
+        foreach (var kvp in State.Where(kvp => kvp.Key.StartsWith(TaskPrefix)).ToList())
+        {
+            var record = JsonSerializer.Deserialize<TaskHealthRecord>(kvp.Value.Value.ToString()!);
+            if (record is null) continue;
+
+            var stallDuration = now - record.LastProgressAt;
+            if (stallDuration > stallThreshold && !record.IsStalled)
+            {
+                var stalledRecord = record with
+                {
+                    IsStalled = true,
+                    StallReason = $"No progress for {(int)stallDuration.TotalMinutes} minutes"
+                };
+
+                State[kvp.Key] = new StateEntry(kvp.Key, JsonSerializer.Serialize(stalledRecord));
+                stateChanged = true;
+
+                await PublishAsync("task.stalled", new Dictionary<string, object>
+                {
+                    ["TaskId"] = record.TaskId,
+                    ["OrchestratorId"] = record.OrchestratorId,
+                    ["StallDuration"] = stallDuration.TotalMinutes
+                }, ct);
+            }
+        }
+
+        if (stateChanged)
+        {
+            await WriteStateAsync(ct);
+        }
     }
 }

@@ -17,10 +17,35 @@ public class UserAgent(
     private const string MemoriesKey = "user-memories";
 
     protected override string DisplayName => "User Context";
-    protected override string Instructions =>
-        "You are User Context, the IAW team's personal preferences and memory store. " +
-        "You have tools for getting/setting preferences and storing/retrieving memories — use them immediately. " +
-        "When asked to remember something, store it. When asked to recall, search and return results.";
+    protected override string Instructions => """
+        You are User Context, the IAW team's user profile and memory manager. Maintain preferences and user-specific knowledge.
+
+        CAPABILITIES:
+        - Get and set user preferences by key (e.g., "editor": "vim", "timezone": "UTC")
+        - Store user memories (facts the user has told you to remember)
+        - Retrieve all stored memories
+        - Provide user context to other agents on demand
+
+        PREFERENCES:
+        Store any key-value pair the user specifies (string keys and values).
+        Common examples: editor, timezone, language, theme, notification_method, etc.
+
+        MEMORIES:
+        Store arbitrary text strings that the user wants remembered across sessions.
+        Examples: "User prefers pair programming reviews", "User's team is in PST timezone", "User dislikes verbose output"
+
+        OUTPUT FORMAT:
+        On set: "Preference '{key}' set to '{value}'"
+        On get: return the value if it exists, empty string if not
+        On memory add: "Memory stored"
+        On memory list: one memory per line
+
+        RULES:
+        - When asked to remember something, store it as a memory immediately
+        - When asked to recall, search memories and return matching results
+        - Preferences override defaults for all personalization decisions
+        - Keep memories concise and factual
+        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
@@ -112,7 +137,7 @@ public class UserAgent(
             return JsonSerializer.Deserialize<Dictionary<string, string>>(desc.Value.ToString()!)
                    ?? new Dictionary<string, string>();
         }
-        catch
+        catch (JsonException)
         {
             return new Dictionary<string, string>();
         }
@@ -123,6 +148,6 @@ public class UserAgent(
         if (!State.TryGetValue(MemoriesKey, out var desc))
             return [];
         try { return JsonSerializer.Deserialize<List<string>>(desc.Value.ToString()!) ?? []; }
-        catch { return []; }
+        catch (JsonException) { return []; }
     }
 }

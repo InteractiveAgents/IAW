@@ -91,9 +91,8 @@ internal sealed class DurableChatHistoryProvider(
 
                 return;
             }
-            catch
+            catch (Exception)
             {
-                // blob download failed — fall back to text placeholder
             }
         }
 

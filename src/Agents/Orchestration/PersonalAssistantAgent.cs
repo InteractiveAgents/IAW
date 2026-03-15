@@ -1,9 +1,13 @@
+using System.ComponentModel;
+using System.Text;
+using System.Text.Json;
 using Core.AI;
 using Core.AI.Models;
 using Core.Communication;
 using Core.Context;
 using Core.Contracts;
 using Core.Registry;
+using IAW.Agents.CSharp;
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Knowledge;
 using IAW.Agents.Memory;
@@ -11,9 +15,6 @@ using IAW.Agents.Messages;
 using IAW.Agents.Review;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using System.ComponentModel;
-using System.Text;
-using System.Text.Json;
 
 namespace IAW.Agents.Orchestration;
 
@@ -30,36 +31,47 @@ public class PersonalAssistantAgent(
     protected override string DisplayName => "Personal Assistant";
 
     protected override string Instructions => """
-        You are the Personal Assistant — the lead coordinator of the IAW engineering team.
-        You receive user requests, decompose them into tasks, and delegate to your team using AssignTaskToAgent.
+        You are the Personal Assistant — the primary interface between the user and the IAW engineering team.
 
-        IMPORTANT — Memory:
-        When the user shares personal facts (birthday, name, preferences, important dates),
-        ALWAYS call RememberFact immediately. When context from memory appears in your prompt,
-        use it naturally. When the user asks "do you remember...", call RecallMemories.
+        CORE BEHAVIOR:
+        - You are concise, direct, and action-oriented. Never explain what you're "about to do" — just do it.
+        - When the user asks a question you can answer from memory or context, answer directly.
+        - When the user asks you to DO something (build, fix, deploy, review, write code), delegate immediately.
+        - Always report results, not intentions. Say "Build succeeded with 0 warnings" not "Let me run the build for you."
 
-        Your team (use AssignTaskToAgent with the grain key shown):
-        - Roslyn (roslyn): C# code intelligence — syntax trees, types, patterns
+        DELEGATION RULES:
+        - For quick operations (file reads, simple commands, status checks): use AssignTaskToAgent (synchronous, waits for result)
+        - For long-running work (full builds, code reviews, multi-step plans, deployments): use AssignBackgroundTask (async, returns immediately)
+        - When delegating, give the target agent a clear, specific prompt. Include file paths, expected outcomes, and constraints.
+        - If a delegated task fails, try ONE retry with a refined prompt before reporting the failure to the user.
+
+        MEMORY:
+        - When the user shares personal facts (name, birthday, preferences, project goals), call RememberFact immediately.
+        - When your context includes memories, use them naturally without saying "according to my memory."
+        - When the user asks "do you remember...", call RecallMemories and answer based on results.
+
+        YOUR TEAM (use AssignTaskToAgent/AssignBackgroundTask with the grain key shown):
+        - Roslyn (roslyn): C# code intelligence — syntax trees, types, patterns, dependency graphs
         - DotNet (dot-net): .NET toolchain — build, test, format, publish
-        - Reviewer (reviewer): code quality review
-        - SelfImprovement (self-improvement): metrics analysis, codebase improvements
+        - Reviewer (reviewer): code quality review — naming, patterns, correctness
+        - SelfImprovement (self-improvement): metrics analysis, codebase quality improvements
         - Deployer (deployer): release builds, deployment, git commits
-        - Planning (planning): multi-step execution plans
-        - Knowledge (knowledge): project conventions, architecture, patterns
-        - NuGet (nu-get): package management
-        - GitHub (git-hub): GitHub API — PRs, issues, releases
-        - Shell (shell): execute shell commands, dotnet CLI
-        - FileSystem (file-system): read, write, list, search files
-        - Git (git): version control operations
+        - Planning (planning): multi-step execution plans for complex tasks
+        - Knowledge (knowledge): project conventions, architecture decisions, patterns
+        - NuGet (nu-get): package management — search, install, update, audit
+        - GitHub (git-hub): GitHub API — PRs, issues, releases, actions
+        - Shell (shell): shell command execution
+        - FileSystem (file-system): file read/write/search/list
+        - Git (git): version control — status, diff, branch, merge
         - Build (build): compilation and test execution
-        - Aspire (aspire): service orchestration
+        - Aspire (aspire): Aspire service orchestration and monitoring
+        - Notification (notification): alert routing and notification delivery
+        - User (user): user profile context and preferences
 
-        Rules:
-        - If you say you will delegate, you MUST call AssignTaskToAgent in that same turn.
-        - For planning/spec/design requests, delegate to Planning first.
-        - For shell commands, file operations, or builds, delegate to the appropriate agent — they will execute immediately.
-        - Never end a response with pending-action filler ("now let me..." or a trailing colon).
-        - Report completed results, not intentions. Be concise and direct.
+        CONSTRAINTS:
+        - If you say you will delegate, you MUST call AssignTaskToAgent or AssignBackgroundTask in the same turn.
+        - Never end a response with a trailing action ("now let me..."). If there's more to do, do it; if not, stop.
+        - When multiple tasks are independent, use AssignBackgroundTask for each and report them all.
         """;
 
     protected override AgentKind AgentKindValue => AgentKind.Static;
@@ -68,7 +80,8 @@ public class PersonalAssistantAgent(
     [
         new MemoryContextProvider([
             GrainFactory.GetGrain<IUserMemory>("user-memory"),
-            GrainFactory.GetGrain<IProjectMemory>("project-memory")
+            GrainFactory.GetGrain<IProjectMemory>("project-memory"),
+            GrainFactory.GetGrain<IEpisodeMemory>("episode-memory"),
         ])
     ];
 
@@ -77,7 +90,11 @@ public class PersonalAssistantAgent(
         return
         [
             AIFunctionFactory.Create(AssignTaskToAgent, nameof(AssignTaskToAgent),
-                "Assign a task to a specific agent by grain key"),
+                "Assign a task to a specific agent by grain key (synchronous — waits for result)"),
+            AIFunctionFactory.Create(AssignBackgroundTask, nameof(AssignBackgroundTask),
+                "Assign a long-running background task to an agent (returns immediately, agent works asynchronously)"),
+            AIFunctionFactory.Create(CheckTaskStatus, nameof(CheckTaskStatus),
+                "Check the status of a previously assigned background task"),
             AIFunctionFactory.Create(GetTeamStatusTool, nameof(GetTeamStatusTool),
                 "Get the current status of all engineering team members"),
             AIFunctionFactory.Create(SpawnDynamicAgent, nameof(SpawnDynamicAgent),
@@ -89,16 +106,18 @@ public class PersonalAssistantAgent(
         ];
     }
 
-    [Description("Assign a task to a specific agent by grain key")]
+    // -- Tools ----------------------------------------------------------------
+
+    [Description("Assign a task to a specific agent by grain key (synchronous — waits for result)")]
     private async Task<string> AssignTaskToAgent(
-        [Description("Grain key of the target agent (e.g. 'roslyn', 'dot-net', 'reviewer', 'self-improvement', 'deployer')")] string agentKey,
+        [Description("Grain key of the target agent (e.g. 'roslyn', 'dot-net', 'reviewer', 'shell', 'file-system')")] string agentKey,
         [Description("Description of the task")] string description,
         [Description("Optional file path for context")] string? filePath = null,
         CancellationToken ct = default)
     {
         var agent = ResolveAgent(agentKey);
         if (agent is null)
-            return $"Unknown agent key: {agentKey}";
+            return $"Unknown agent key: {agentKey}. Available: {string.Join(", ", AgentInterfaces.Keys)}";
 
         var prompt = $"Task: {description}" + (filePath is not null ? $"\nFile: {filePath}" : "");
         var responseBuilder = new StringBuilder();
@@ -106,9 +125,7 @@ public class PersonalAssistantAgent(
         try
         {
             await foreach (var chunk in agent.GetResponseStream(prompt, ct))
-            {
                 responseBuilder.Append(chunk);
-            }
         }
         catch (Exception ex)
         {
@@ -118,7 +135,7 @@ public class PersonalAssistantAgent(
 
         var taskId = Guid.NewGuid().ToString("N")[..8];
         State[$"task-{taskId}"] = new StateEntry($"task-{taskId}",
-            JsonSerializer.Serialize(new { Description = description, AssignedTo = agentKey, Status = "assigned" }));
+            JsonSerializer.Serialize(new { Description = description, AssignedTo = agentKey, Status = sawError ? "failed" : "completed" }));
         await WriteStateAsync(ct);
 
         await PublishAsync("task.assigned", new Dictionary<string, object>
@@ -135,6 +152,59 @@ public class PersonalAssistantAgent(
         return $"Task assigned to {agentKey} (ID: {taskId}). Response: {result}";
     }
 
+    [Description("Assign a long-running background task (returns immediately, agent works asynchronously)")]
+    private async Task<string> AssignBackgroundTask(
+        [Description("Grain key of the target agent")] string agentKey,
+        [Description("Description of the task")] string description,
+        CancellationToken ct = default)
+    {
+        var agent = ResolveAgent(agentKey);
+        if (agent is null)
+            return $"Unknown agent key: {agentKey}. Available: {string.Join(", ", AgentInterfaces.Keys)}";
+
+        var taskId = Guid.NewGuid().ToString("N")[..8];
+        State[$"task-{taskId}"] = new StateEntry($"task-{taskId}",
+            JsonSerializer.Serialize(new { Description = description, AssignedTo = agentKey, Status = "running" }));
+        await WriteStateAsync(ct);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await agent.GetResponse(description, CancellationToken.None);
+                State[$"task-{taskId}"] = new StateEntry($"task-{taskId}",
+                    JsonSerializer.Serialize(new { Description = description, AssignedTo = agentKey, Status = "completed", Result = TruncateResult(result) }));
+                await WriteStateAsync(CancellationToken.None);
+                await PublishAsync("task.completed", new Dictionary<string, object>
+                {
+                    ["TaskId"] = taskId, ["AssignedTo"] = agentKey, ["Result"] = TruncateResult(result)
+                }, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                State[$"task-{taskId}"] = new StateEntry($"task-{taskId}",
+                    JsonSerializer.Serialize(new { Description = description, AssignedTo = agentKey, Status = "failed", Error = ex.Message }));
+                await WriteStateAsync(CancellationToken.None);
+                await PublishAsync("task.failed", new Dictionary<string, object>
+                {
+                    ["TaskId"] = taskId, ["AssignedTo"] = agentKey, ["Error"] = ex.Message
+                }, CancellationToken.None);
+            }
+        });
+
+        return $"Background task {taskId} assigned to {agentKey}. Use CheckTaskStatus('{taskId}') to check progress.";
+    }
+
+    [Description("Check the status of a previously assigned task")]
+    private Task<string> CheckTaskStatus(
+        [Description("Task ID to check")] string taskId)
+    {
+        var key = $"task-{taskId}";
+        if (!State.TryGetValue(key, out var entry))
+            return Task.FromResult($"Task {taskId} not found.");
+        return Task.FromResult(entry.Value.ToString() ?? "Unknown status");
+    }
+
     [Description("Get the current status of all engineering team members")]
     private async Task<string> GetTeamStatusTool()
     {
@@ -144,37 +214,16 @@ public class PersonalAssistantAgent(
 
         sb.AppendLine($"Registered agents ({registrations.Count}):");
         foreach (var reg in registrations.OrderBy(r => r.AgentType))
-        {
             sb.AppendLine($"- {reg.DisplayName} [{reg.Kind}]: {reg.Description}");
-        }
-
-        var knownAgents = new (string Id, string Name, Func<IAgent> Resolve)[]
-        {
-            ("reviewer", "Reviewer", () => GrainFactory.GetGrain<IReviewer>("reviewer")),
-            ("self-improvement", "SelfImprovement", () => GrainFactory.GetGrain<ISelfImprovement>("self-improvement")),
-            ("deployer", "Deployer", () => GrainFactory.GetGrain<IDeployer>("deployer")),
-            ("planning", "Planning", () => GrainFactory.GetGrain<IPlanning>("planning")),
-            ("knowledge", "Knowledge", () => GrainFactory.GetGrain<IKnowledge>("knowledge")),
-            ("build", "Build", () => GrainFactory.GetGrain<IBuild>("build")),
-            ("git", "Git", () => GrainFactory.GetGrain<IGit>("git")),
-            ("file-system", "FileSystem", () => GrainFactory.GetGrain<IFileSystem>("file-system")),
-        };
 
         sb.AppendLine();
-        sb.AppendLine("Agent state summary:");
-        foreach (var (id, name, resolve) in knownAgents)
-        {
-            try
-            {
-                var agent = resolve();
-                var agentState = await agent.GetState(default);
-                sb.AppendLine($"- {name}: {agentState.Entries.Count} state entries");
-            }
-            catch
-            {
-                sb.AppendLine($"- {name}: unavailable");
-            }
-        }
+        sb.AppendLine("Active tasks:");
+        var activeTasks = State.Where(kvp => kvp.Key.StartsWith("task-")).Take(10);
+        foreach (var kvp in activeTasks)
+            sb.AppendLine($"- {kvp.Key}: {kvp.Value.Value}");
+
+        if (!activeTasks.Any())
+            sb.AppendLine("- No active tasks");
 
         return sb.ToString();
     }
@@ -190,11 +239,43 @@ public class PersonalAssistantAgent(
         return $"Dynamic agent spawned: {agentId} ({displayName})";
     }
 
+    [Description("Store an important fact about the user (birthday, preferences, name, etc.) for future conversations")]
+    private async Task<string> RememberFact(
+        [Description("The fact to remember (e.g. 'User birthday is March 15')")] string fact,
+        CancellationToken ct = default)
+    {
+        var userMemory = GrainFactory.GetGrain<IUserMemory>("user-memory");
+        await userMemory.ObserveAsync(fact, "personal-assistant", ct);
+        return $"Remembered: {fact}";
+    }
+
+    [Description("Search stored memories for information about a topic")]
+    private async Task<string> RecallMemories(
+        [Description("What to search for (e.g. 'birthday', 'preferences')")] string query,
+        CancellationToken ct = default)
+    {
+        var userMemory = GrainFactory.GetGrain<IUserMemory>("user-memory");
+        var results = await userMemory.SearchAsync(query, 5, ct);
+        if (results.Count == 0)
+            return "No memories found for that topic.";
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Found {results.Count} memories:");
+        foreach (var entry in results)
+            sb.AppendLine($"- {entry.Content} (stored {entry.CreatedAt:yyyy-MM-dd})");
+        return sb.ToString();
+    }
+
+    // -- Receivers ------------------------------------------------------------
+
     public async Task<MessageReceipt> ReceiveAsync(TaskCompletedMessage message, CancellationToken ct = default)
     {
         State[$"completed-{message.TaskId}"] = new StateEntry($"completed-{message.TaskId}",
             JsonSerializer.Serialize(message));
         await WriteStateAsync(ct);
+
+        var episodeMemory = GrainFactory.GetGrain<IEpisodeMemory>("episode-memory");
+        await episodeMemory.ObserveAsync($"Completed task {message.TaskId} by {message.CompletedBy}: {TruncateResult(message.Result)}", "task-completion", ct);
 
         await PublishAsync("task.completed", new Dictionary<string, object>
         {
@@ -246,6 +327,13 @@ public class PersonalAssistantAgent(
         return new MessageReceipt(true, Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, null);
     }
 
+    Task<bool> IReceiver<TaskCompletedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    Task<bool> IReceiver<TaskFailedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    Task<bool> IReceiver<DeploySucceededMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    Task<bool> IReceiver<ReviewCompletedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+    // -- Public interface -----------------------------------------------------
+
     public Task<string> GetTeamStatusAsync(CancellationToken ct = default)
         => GetTeamStatusTool();
 
@@ -258,83 +346,36 @@ public class PersonalAssistantAgent(
         return Task.FromResult(tasks);
     }
 
-    Task<bool> IReceiver<TaskCompletedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
-    Task<bool> IReceiver<TaskFailedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
-    Task<bool> IReceiver<DeploySucceededMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
-    Task<bool> IReceiver<ReviewCompletedMessage>.CanReceiveAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    // -- Agent resolution -----------------------------------------------------
 
-    [Description("Store an important fact about the user (birthday, preferences, name, etc.) for future conversations")]
-    private async Task<string> RememberFact(
-        [Description("The fact to remember (e.g. 'User birthday is March 15')")] string fact,
-        CancellationToken ct = default)
+    private static readonly Dictionary<string, Type> AgentInterfaces = new(StringComparer.OrdinalIgnoreCase)
     {
-        var userMemory = GrainFactory.GetGrain<IUserMemory>("user-memory");
-        await userMemory.ObserveAsync(fact, "personal-assistant", ct);
-        return $"Remembered: {fact}";
-    }
-
-    [Description("Search stored memories for information about a topic")]
-    private async Task<string> RecallMemories(
-        [Description("What to search for (e.g. 'birthday', 'preferences')")] string query,
-        CancellationToken ct = default)
-    {
-        var userMemory = GrainFactory.GetGrain<IUserMemory>("user-memory");
-        var results = await userMemory.SearchAsync(query, 5, ct);
-        if (results.Count == 0)
-            return "No memories found for that topic.";
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"Found {results.Count} memories:");
-        foreach (var entry in results)
-            sb.AppendLine($"- {entry.Content} (stored {entry.CreatedAt:yyyy-MM-dd})");
-        return sb.ToString();
-    }
+        ["reviewer"] = typeof(IReviewer),
+        ["self-improvement"] = typeof(ISelfImprovement),
+        ["deployer"] = typeof(IDeployer),
+        ["planning"] = typeof(IPlanning),
+        ["notification"] = typeof(INotificationAgent),
+        ["knowledge"] = typeof(IKnowledge),
+        ["user"] = typeof(IUser),
+        ["file-system"] = typeof(IFileSystem),
+        ["shell"] = typeof(IShell),
+        ["git"] = typeof(IGit),
+        ["build"] = typeof(IBuild),
+        ["aspire"] = typeof(IAspire),
+        ["roslyn"] = typeof(IRoslyn),
+        ["dot-net"] = typeof(IDotNet),
+        ["nu-get"] = typeof(INuGet),
+        ["git-hub"] = typeof(IGitHub),
+    };
 
     private IAgent? ResolveAgent(string agentKey)
     {
-        var baseAgents = new Dictionary<string, Func<IAgent>>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["reviewer"] = () => GrainFactory.GetGrain<IReviewer>("reviewer"),
-            ["self-improvement"] = () => GrainFactory.GetGrain<ISelfImprovement>("self-improvement"),
-            ["deployer"] = () => GrainFactory.GetGrain<IDeployer>("deployer"),
-            ["planning"] = () => GrainFactory.GetGrain<IPlanning>("planning"),
-            ["notification"] = () => GrainFactory.GetGrain<INotificationAgent>("notification"),
-            ["knowledge"] = () => GrainFactory.GetGrain<IKnowledge>("knowledge"),
-            ["user"] = () => GrainFactory.GetGrain<IUser>("user"),
-            ["file-system"] = () => GrainFactory.GetGrain<IFileSystem>("file-system"),
-            ["shell"] = () => GrainFactory.GetGrain<IShell>("shell"),
-            ["git"] = () => GrainFactory.GetGrain<IGit>("git"),
-            ["build"] = () => GrainFactory.GetGrain<IBuild>("build"),
-            ["aspire"] = () => GrainFactory.GetGrain<IAspire>("aspire"),
-        };
-
-        if (baseAgents.TryGetValue(agentKey, out var factory))
-            return factory();
-
-        return ResolveAgentByReflection(agentKey);
-    }
-
-    private IAgent? ResolveAgentByReflection(string agentKey)
-    {
-        var interfaceName = agentKey switch
-        {
-            "roslyn" => "IRoslyn",
-            "dot-net" => "IDotNet",
-            "nu-get" => "INuGet",
-            "git-hub" => "IGitHub",
-            _ => null
-        };
-
-        if (interfaceName is null)
-            return null;
-
-        var interfaceType = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-            .FirstOrDefault(t => t.IsInterface && t.Name == interfaceName && typeof(IAgent).IsAssignableFrom(t));
-
-        if (interfaceType is null)
+        if (!AgentInterfaces.TryGetValue(agentKey, out var interfaceType))
             return null;
 
         return GrainFactory.GetGrain(interfaceType, agentKey) as IAgent;
     }
+
+    private static string TruncateResult(string result, int maxLength = 500)
+        => result.Length <= maxLength ? result : result[..maxLength] + "... [truncated]";
 }
