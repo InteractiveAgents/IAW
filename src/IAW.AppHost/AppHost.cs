@@ -8,15 +8,15 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>()
     .WithLLM<Sonnet46>()
     .WithLLM<GitHubGpt4oMini>()
-    .WithVoice2Text()
+    .WithVoice2Text<WhisperLargeV3Turbo>()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
 
 var storage = builder.AddAzureStorage("storage")
     .RunAsEmulator(e => e.WithDataVolume("iaw-blobs"));
+
 var blobs = storage.AddBlobs("file-storage");
 
-var qdrant = builder.AddQdrant("qdrant")
-    .WithDataVolume("iaw-qdrant");
+var qdrant = builder.AddQdrant("qdrant").WithDataVolume();
 
 // Production silo — hosts all agents, memory, LLM
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")

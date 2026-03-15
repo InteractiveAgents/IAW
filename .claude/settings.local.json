@@ -68,7 +68,8 @@
       "Bash(find /e/IAW/InteractiveAgents/src/IAW.AppHost -name \"*.cs\" 2>/dev/null | head -10)",
       "Bash(find /e/IAW/InteractiveAgents/src -name \"*.cs\" -exec grep -l \"OpenTelemetry\\\\|ActivitySource\\\\|Meter\\\\|Counter\\\\|Histogram\" {} \\\\; | head -20)",
       "Bash(find /e/IAW/InteractiveAgents/src -name \"*.cs\" -exec grep -l \"GetResponse\\\\|ChatClient\\\\|IChatClient\" {} \\\\; | xargs grep -l \"Activity\\\\|Telemetry\\\\|Meter\\\\|Counter\" | head -20)",
-      "WebFetch(domain:iaw.dev.localhost)"
+      "WebFetch(domain:iaw.dev.localhost)",
+      "Bash(find:*)"
     ]
   },
   "enabledMcpjsonServers": [
