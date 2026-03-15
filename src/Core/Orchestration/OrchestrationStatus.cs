@@ -8,7 +8,8 @@ public enum OrchestrationStatus
     Paused,
     Completed,
     Failed,
-    Recovering
+    Recovering,
+    SelfHealing
 }
 
 [GenerateSerializer]
