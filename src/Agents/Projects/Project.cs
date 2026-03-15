@@ -3,6 +3,7 @@ using Core.AI;
 using Core.AI.Models;
 using Core.Context;
 using Core.Contracts;
+using IAW.Agents.Orchestration;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,12 @@ public class Project(
         You are a project assistant. Help the user manage their project,
         answer questions, and coordinate tasks.
         Be concise and actionable in your responses.
+
+        IMPORTANT: For tasks that require creating files, running commands, building code,
+        searching files, git operations, or any multi-step technical work — ALWAYS use
+        DelegateToAssistant. You cannot do these things yourself. DelegateToAssistant
+        connects you to the engineering team (FileSystem, Shell, Build, Git, etc.)
+        that can actually execute the work.
         """;
     protected override string DisplayName => "Project";
 
@@ -67,6 +74,8 @@ public class Project(
                 "Cancel an active scheduled job."),
             AIFunctionFactory.Create(ListJobsTool, nameof(ListJobsTool),
                 "List all scheduled jobs."),
+            AIFunctionFactory.Create(DelegateToAssistant, nameof(DelegateToAssistant),
+                "Delegate a complex task to the PersonalAssistant who can assign work to specialized agents (FileSystem, Shell, Build, Git, Roslyn, etc.)"),
         ];
     }
 
@@ -84,6 +93,15 @@ public class Project(
             ["projectSlug"] = this.GetPrimaryKeyString()
         });
         return $"Approval requested (id: {approvalId}). Waiting for user response.";
+    }
+
+    [Description("Delegate a complex task to the PersonalAssistant engineering team")]
+    private async Task<string> DelegateToAssistant(
+        [Description("Full description of what needs to be done")] string taskDescription)
+    {
+        var assistant = GrainFactory.GetGrain<IPersonalAssistant>("personal-assistant");
+        var response = await assistant.GetResponse(taskDescription, CancellationToken.None);
+        return response;
     }
 
     [Description("Add a task to the project board")]
