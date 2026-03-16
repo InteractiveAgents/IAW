@@ -22,7 +22,7 @@ public class AgentRegistryGrain(
     }
 
     public Task<IReadOnlyList<AgentRegistration>> GetAllAsync()
-        => Task.FromResult<IReadOnlyList<AgentRegistration>>(registrations.Values.ToList());
+        => Task.FromResult<IReadOnlyList<AgentRegistration>>([.. registrations.Values]);
 
     public Task<IReadOnlyList<AgentRegistration>> QueryAsync(AgentQuery query)
     {
@@ -33,7 +33,7 @@ public class AgentRegistryGrain(
             results = results.Where(r => pubs.Any(p => r.Publishes.Contains(p)));
         if (query.Subscribes is { Length: > 0 } subs)
             results = results.Where(r => subs.Any(s => r.Subscribes.Contains(s)));
-        return Task.FromResult<IReadOnlyList<AgentRegistration>>(results.ToList());
+        return Task.FromResult<IReadOnlyList<AgentRegistration>>([.. results]);
     }
 
     public Task<AgentRegistration?> GetByTypeAsync(string agentType)

@@ -23,9 +23,7 @@ public class UserProfile(
     public Task<IReadOnlyList<ProjectInfo>> GetProjects(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        IReadOnlyList<ProjectInfo> projects = state.Projects
-            .Select(kvp => new ProjectInfo(kvp.Key, kvp.Value))
-            .ToList();
+        IReadOnlyList<ProjectInfo> projects = [.. state.Projects.Select(kvp => new ProjectInfo(kvp.Key, kvp.Value))];
         return Task.FromResult(projects);
     }
 
@@ -63,11 +61,10 @@ public class UserProfile(
     public Task<IReadOnlyList<string>> RecallFacts(string query, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        IReadOnlyList<string> facts = state.Preferences
+        IReadOnlyList<string> facts = [.. state.Preferences
             .Where(kvp => kvp.Key.StartsWith("fact:"))
             .Select(kvp => kvp.Value)
-            .Where(v => v.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+            .Where(v => v.Contains(query, StringComparison.OrdinalIgnoreCase))];
         return Task.FromResult(facts);
     }
 }

@@ -1,3 +1,4 @@
+using Core;
 using Core.Contracts;
 using Core.Registry;
 using IAW.Testing;
@@ -16,7 +17,7 @@ public sealed class TestSiloConfigurator : ISiloConfigurator
         siloBuilder
             .AddMemoryGrainStorage("Default")
             .AddMemoryGrainStorage("PubSubStore")
-            .AddMemoryStreams("agents")
+            .AddMemoryStreams(IAWConstants.StreamProvider)
             .UseInMemoryReminderService();
 
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider,
@@ -31,7 +32,7 @@ public sealed class TestClientConfigurator : IClientBuilderConfigurator
 {
     public void Configure(Microsoft.Extensions.Configuration.IConfiguration configuration, IClientBuilder clientBuilder)
     {
-        clientBuilder.AddMemoryStreams("agents");
+        clientBuilder.AddMemoryStreams(IAWConstants.StreamProvider);
     }
 }
 

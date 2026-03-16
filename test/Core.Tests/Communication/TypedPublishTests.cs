@@ -12,7 +12,7 @@ public class TypedPublishTests : AgentTest<ProducerTestAgent>
     {
         var ct = TestContext.Current.CancellationToken;
         var grain = Cluster.GrainFactory.GetGrain<IProducerTestAgent>(UniqueId("typed-log"));
-        var evt = new CodeChangedEvent("agent-1", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, ["file.cs"]);
+        var evt = new CodeChangedEvent(["file.cs"], "test", "test change", "agent-1", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
         await grain.PublishCodeChanged(evt, ct);
 
         var log = await ((IAgent)grain).GetEventLog(ct);
@@ -26,7 +26,7 @@ public class TypedPublishTests : AgentTest<ProducerTestAgent>
         var ct = TestContext.Current.CancellationToken;
         var grain = Cluster.GrainFactory.GetGrain<IProducerTestAgent>(UniqueId("typed-src"));
         var correlationId = Guid.NewGuid().ToString();
-        var evt = new CodeChangedEvent("my-agent", correlationId, DateTimeOffset.UtcNow, ["a.cs", "b.cs"]);
+        var evt = new CodeChangedEvent(["a.cs", "b.cs"], "test", "test change", "my-agent", correlationId, DateTimeOffset.UtcNow);
         await grain.PublishCodeChanged(evt, ct);
 
         var log = await ((IAgent)grain).GetEventLog(ct);
@@ -42,7 +42,7 @@ public class TypedPublishTests : AgentTest<ProducerTestAgent>
 
         for (var i = 0; i < 3; i++)
         {
-            var evt = new CodeChangedEvent("agent", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, [$"file{i}.cs"]);
+            var evt = new CodeChangedEvent([$"file{i}.cs"], "test", "test change", "agent", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
             await grain.PublishCodeChanged(evt, ct);
         }
 

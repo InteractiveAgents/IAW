@@ -23,10 +23,9 @@ public class RAGContextProvider(
             var results = await qdrantClient.SearchAsync(
                 collectionName, queryVector, limit: 5, cancellationToken: ct);
 
-            return results
+            return [.. results
                 .Select(r =>
-                    $"[document: {r.Payload["fileName"]}, page {r.Payload["pageNumber"]}] {r.Payload["text"]}")
-                .ToList();
+                    $"[document: {r.Payload["fileName"]}, page {r.Payload["pageNumber"]}] {r.Payload["text"]}")];
         }
         catch (OperationCanceledException)
         {

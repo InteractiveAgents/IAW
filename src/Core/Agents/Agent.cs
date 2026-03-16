@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Core;
 using Core.Agents;
 using Core.AI;
 using Core.Contracts;
@@ -18,7 +19,7 @@ using Qdrant.Client.Grpc;
 
 namespace IAW.Core;
 
-[GrainType("agent-v3")]
+[GrainType(IAWConstants.AgentGrainType)]
 public abstract partial class Agent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
@@ -36,7 +37,7 @@ public abstract partial class Agent(
     protected IDurableList<ChatMessage> History => durableState.History;
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
     protected IDurableList<AgentEvent> EventLog => durableState.EventLog;
-    protected IStreamProvider StreamProvider => this.GetStreamProvider("agents");
+    protected IStreamProvider StreamProvider => this.GetStreamProvider(IAWConstants.StreamProvider);
     protected virtual IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() => [];
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -161,7 +162,7 @@ public abstract partial class Agent(
     public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        IReadOnlyList<ChatMessage> snapshot = durableState.History.ToList();
+        IReadOnlyList<ChatMessage> snapshot = [.. durableState.History];
         return Task.FromResult(snapshot);
     }
 
@@ -238,7 +239,7 @@ public abstract partial class Agent(
         }
 
         // Deduplicate exact matches across providers
-        contextParts = contextParts.Distinct().ToList();
+        contextParts = [.. contextParts.Distinct()];
 
         activity?.SetTag("context.items_found", contextParts.Count);
 
@@ -280,7 +281,7 @@ public abstract partial class Agent(
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     attachments.Add($"[Attached file: {file.FileName} — could not read content]");
                 }

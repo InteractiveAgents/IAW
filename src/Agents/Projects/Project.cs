@@ -134,9 +134,9 @@ public class Project(
     public Task<ProjectDashboard> GetDashboard(CancellationToken ct) =>
         Task.FromResult(new ProjectDashboard
         {
-            Tasks = durableState.Tasks.ToList(),
-            Jobs = durableState.Schedules.Values.ToList(),
-            Files = durableState.Files.Values.ToList(),
+            Tasks = [.. durableState.Tasks],
+            Jobs = [.. durableState.Schedules.Values],
+            Files = [.. durableState.Files.Values],
             GeneratedAt = DateTimeOffset.UtcNow
         });
 
@@ -175,7 +175,7 @@ public class Project(
     }
 
     public Task<IReadOnlyList<ProjectTask>> GetTasks(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ProjectTask>>(durableState.Tasks.ToList());
+        Task.FromResult<IReadOnlyList<ProjectTask>>([.. durableState.Tasks]);
 
     public async Task<ScheduledJob> ScheduleJob(string name, TimeSpan interval, string description, CancellationToken ct)
     {
@@ -270,9 +270,9 @@ public class Project(
     {
         var dashboard = new ProjectDashboard
         {
-            Tasks = durableState.Tasks.ToList(),
-            Jobs = durableState.Schedules.Values.ToList(),
-            Files = durableState.Files.Values.ToList(),
+            Tasks = [.. durableState.Tasks],
+            Jobs = [.. durableState.Schedules.Values],
+            Files = [.. durableState.Files.Values],
             GeneratedAt = DateTimeOffset.UtcNow
         };
         var markdown = DashboardRenderer.Render(dashboard);

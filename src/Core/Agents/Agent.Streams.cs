@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using Core;
 using Core.Communication;
 using Core.Messages;
 using Core.Observability;
@@ -31,7 +32,7 @@ public abstract partial class Agent
         {
             var eventType = iface.GetGenericArguments()[0];
             var streamName = EventTypeToStreamName(eventType);
-            var streamId = StreamId.Create("agents", streamName);
+            var streamId = StreamId.Create(IAWConstants.StreamProvider, streamName);
 
             // subscribe to typed Stream<TEvent> and dispatch to OnStreamEventAsync
             var subscribeMethod = typeof(Agent)

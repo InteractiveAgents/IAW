@@ -9,11 +9,11 @@ namespace Core;
 
 public abstract class Memory(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient,
+    IChatClient chat,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger logger)
-    : Agent(durableState, chatClient), IMemoryAgent
+    : Agent(durableState, chat), IMemoryAgent
 {
     protected IDurableList<MemoryEntry> Memories => memories;
     protected IEmbeddingGenerator<string, Embedding<float>> Embedder => embedder;
@@ -103,11 +103,10 @@ public abstract class Memory(
         if (scored.Count > 0)
             await WriteStateAsync(ct);
 
-        IReadOnlyList<MemoryEntry> topResults = scored
+        IReadOnlyList<MemoryEntry> topResults = [.. scored
             .OrderByDescending(s => s.Score)
             .Take(topK)
-            .Select(s => s.Entry)
-            .ToList();
+            .Select(s => s.Entry)];
         return topResults;
     }
 
@@ -147,7 +146,7 @@ public abstract class Memory(
                 var consolidated = new MemoryEntry(
                     Guid.NewGuid().ToString("N"),
                     consolidatedContent,
-                    entries[0].Provenance,
+                    entries[0].Source,
                     entries.Average(e => e.RelevanceScore),
                     DateTimeOffset.UtcNow,
                     DateTimeOffset.UtcNow,
@@ -205,7 +204,7 @@ public abstract class Memory(
             {
                 if (!visited.Contains(j) && memories[j].Embedding is not null)
                 {
-                    var similarity = CosineSimilarity(memories[i].Embedding, memories[j].Embedding);
+                    var similarity = CosineSimilarity(memories[i].Embedding!, memories[j].Embedding!);
                     if (similarity > threshold)
                     {
                         cluster.Add((j, memories[j]));
@@ -228,7 +227,7 @@ public abstract class Memory(
         {
             new(ChatRole.User, $"Consolidate these related memory entries into a single concise entry:\n\n{contentsText}")
         };
-        var response = await chatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
         return response.Text ?? "consolidated memory";
     }
 

@@ -7,6 +7,8 @@
     <Project Path="src/Agents/Agents.csproj" />
     <Project Path="src/Agents.CSharp/Agents.CSharp.csproj" />
     <Project Path="src/IAW.Testing/IAW.Testing.csproj" />
+    <Project Path="src/Aspire.Hosting.IAW/Aspire.Hosting.IAW.csproj" />
+    <Project Path="src/Aspire.IAW.Client/Aspire.IAW.Client.csproj" />
   </Folder>
   <Project Path="src/Core/Core.csproj" />
   <Project Path="src/IAW.Assistant/IAW.Assistant.csproj" />
@@ -14,7 +16,6 @@
   <Project Path="src/DevUI/DevUI.csproj" />
   <Project Path="src/IAW.AppHost/Aspire.csproj" />
   <Project Path="src/IAW.MCP/MCP.csproj" Id="f72a5392-8914-4f0c-a8b3-642c4a424a11" />
-  <Project Path="src/IAW.ServiceDefaults/ServiceDefaults.csproj" />
   <Folder Name="/test/">
     <Project Path="test/Core.Tests/IAW.Core.Tests.csproj" />
     <Project Path="test/Integration.Tests/IAW.Integration.Tests.csproj" />

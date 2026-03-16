@@ -187,13 +187,12 @@ public class ChatReducerTests
 
     private static List<ChatMessage> CreateMessages(int count)
     {
-        return Enumerable.Range(0, count)
+        return [.. Enumerable.Range(0, count)
             .Select(i => new ChatMessage
             {
                 Role = i % 2 == 0 ? "user" : "assistant",
                 Content = $"Message {i}",
                 Parts = [new TextContent($"Message {i}")]
-            })
-            .ToList();
+            })];
     }
 }

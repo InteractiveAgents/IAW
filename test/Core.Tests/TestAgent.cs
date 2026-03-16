@@ -83,7 +83,7 @@ public class StreamTestAgent(
     public async Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
     {
         EventsHandled++;
-        State[$"handled-{EventsHandled}"] = new StateEntry($"handled-{EventsHandled}", string.Join(",", evt.FilePaths));
+        State[$"handled-{EventsHandled}"] = new StateEntry($"handled-{EventsHandled}", string.Join(",", evt.ChangedFiles));
         await WriteStateAsync(default);
     }
 }

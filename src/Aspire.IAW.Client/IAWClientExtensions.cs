@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Orleans.Dashboard;
 using Orleans.Journaling;
+using Core.AI;
 using Core.Services;
 
 namespace Aspire.IAW;
@@ -53,6 +54,13 @@ public static class IAWClientExtensions
 
         builder.UseOrleansClient();
 
+        return builder;
+    }
+
+    public static IHostApplicationBuilder AddWhisperProvider<TService>(this IHostApplicationBuilder builder)
+        where TService : class, IAudioTranscriptionService
+    {
+        builder.Services.AddSingleton<IAudioTranscriptionService, TService>();
         return builder;
     }
 

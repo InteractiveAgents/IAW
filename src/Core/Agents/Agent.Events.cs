@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Core;
 using Core.Contracts;
 using Core.Messages;
 using Core.Observability;
@@ -9,7 +10,7 @@ namespace IAW.Core;
 public abstract partial class Agent
 {
     public Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<AgentEvent>>(durableState.EventLog.ToList());
+        => Task.FromResult<IReadOnlyList<AgentEvent>>([.. durableState.EventLog]);
 
     protected async Task PublishAsync(string eventName, Dictionary<string, object>? payload = null, CancellationToken ct = default)
     {
@@ -26,7 +27,7 @@ public abstract partial class Agent
         durableState.EventLog.Add(agentEvent);
         await WriteStateAsync(ct);
 
-        var streamId = StreamId.Create("agents", eventName);
+        var streamId = StreamId.Create(IAWConstants.StreamProvider, eventName);
         var stream = StreamProvider.GetStream<AgentEvent>(streamId);
         await stream.OnNextAsync(agentEvent);
 
@@ -49,7 +50,7 @@ public abstract partial class Agent
         durableState.EventLog.Add(agentEvent);
         await WriteStateAsync(ct);
 
-        var streamId = StreamId.Create("agents", streamName);
+        var streamId = StreamId.Create(IAWConstants.StreamProvider, streamName);
         var stream = StreamProvider.GetStream<TEvent>(streamId);
         await stream.OnNextAsync(evt);
 
@@ -69,7 +70,7 @@ public abstract partial class Agent
         activity?.SetTag("gen_ai.agent.id", this.GetPrimaryKeyString());
         activity?.SetTag("gen_ai.agent.name", DisplayName);
 
-        var streamId = StreamId.Create("agents", $"task/{taskId}");
+        var streamId = StreamId.Create(IAWConstants.StreamProvider, $"task/{taskId}");
         var stream = StreamProvider.GetStream<TEvent>(streamId);
         await stream.OnNextAsync(evt);
 

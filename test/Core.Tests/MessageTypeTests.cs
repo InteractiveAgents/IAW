@@ -15,10 +15,10 @@ public class MessageTypeTests
         Assert.Equal(ts, cmd.Timestamp);
         Assert.Equal("do something", cmd.Description);
 
-        var evt = new CodeChangedEvent("src2", "corr2", ts, ["file.cs"]);
+        var evt = new CodeChangedEvent(["file.cs"], "test", "test change", "src2", "corr2", ts);
         Assert.Equal("src2", evt.SourceAgentId);
         Assert.Equal("corr2", evt.CorrelationId);
         Assert.Equal(ts, evt.Timestamp);
-        Assert.Contains("file.cs", evt.FilePaths);
+        Assert.Contains("file.cs", evt.ChangedFiles);
     }
 }

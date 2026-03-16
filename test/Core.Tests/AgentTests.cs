@@ -1,3 +1,4 @@
+using Core;
 using Core.Contracts;
 using Core.Messages;
 using IAW.Testing;
@@ -324,11 +325,10 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         await Task.Delay(200, ct);
 
         // publish a typed CodeChangedEvent to the "code.changed" stream that StreamTestAgent subscribes to
-        var evt = new CodeChangedEvent("publisher", Guid.NewGuid().ToString(),
-            DateTimeOffset.UtcNow, ["test.cs"]);
+        var evt = new CodeChangedEvent(["test.cs"], "test", "test change", "publisher", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
 
-        var streamProvider = Cluster.Client.GetStreamProvider("agents");
-        var streamId = StreamId.Create("agents", "code.changed");
+        var streamProvider = Cluster.Client.GetStreamProvider(IAWConstants.StreamProvider);
+        var streamId = StreamId.Create(IAWConstants.StreamProvider, "code.changed");
         var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
@@ -353,11 +353,10 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         await agent2.GetMetadata(ct);
         await Task.Delay(200, ct);
 
-        var evt = new CodeChangedEvent("publisher", Guid.NewGuid().ToString(),
-            DateTimeOffset.UtcNow, ["multi.cs"]);
+        var evt = new CodeChangedEvent(["multi.cs"], "test", "test change", "publisher", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
 
-        var streamProvider = Cluster.Client.GetStreamProvider("agents");
-        var streamId = StreamId.Create("agents", "code.changed");
+        var streamProvider = Cluster.Client.GetStreamProvider(IAWConstants.StreamProvider);
+        var streamId = StreamId.Create(IAWConstants.StreamProvider, "code.changed");
         var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
@@ -536,7 +535,7 @@ public class AgentTypedEventTests : AgentTest<ProducerTestAgent>
         var ct = TestContext.Current.CancellationToken;
         var id = UniqueId("typed-evt");
         var grain = Cluster.GrainFactory.GetGrain<IProducerTestAgent>(id);
-        var evt = new CodeChangedEvent("test-src", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, ["file.cs"]);
+        var evt = new CodeChangedEvent(["file.cs"], "test", "test change", "test-src", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
         await grain.PublishCodeChanged(evt, ct);
 
         var agent = (IAgent)grain;
@@ -550,7 +549,7 @@ public class AgentTypedEventTests : AgentTest<ProducerTestAgent>
     {
         var ct = TestContext.Current.CancellationToken;
         var grain = Cluster.GrainFactory.GetGrain<IProducerTestAgent>(UniqueId("typed-src"));
-        var evt = new CodeChangedEvent("my-agent", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow, ["a.cs"]);
+        var evt = new CodeChangedEvent(["a.cs"], "test", "test change", "my-agent", Guid.NewGuid().ToString(), DateTimeOffset.UtcNow);
         await grain.PublishCodeChanged(evt, ct);
 
         var agent = (IAgent)grain;

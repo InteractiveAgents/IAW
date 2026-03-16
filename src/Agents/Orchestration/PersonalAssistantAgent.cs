@@ -7,7 +7,6 @@ using Core.Communication;
 using Core.Context;
 using Core.Contracts;
 using Core.Registry;
-using IAW.Agents.CSharp;
 using IAW.Agents.Infrastructure;
 using IAW.Agents.Knowledge;
 using IAW.Agents.Memory;
@@ -362,18 +361,30 @@ public class PersonalAssistantAgent(
         ["git"] = typeof(IGit),
         ["build"] = typeof(IBuild),
         ["aspire"] = typeof(IAspire),
-        ["roslyn"] = typeof(IRoslyn),
-        ["dot-net"] = typeof(IDotNet),
-        ["nu-get"] = typeof(INuGet),
-        ["git-hub"] = typeof(IGitHub),
+    };
+
+    // CSharp agent interfaces resolved at runtime to avoid circular project reference
+    private static readonly Dictionary<string, string> CSharpAgentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["roslyn"] = "IAW.Agents.CSharp.IRoslyn, IAW.Agents.CSharp",
+        ["dot-net"] = "IAW.Agents.CSharp.IDotNet, IAW.Agents.CSharp",
+        ["nu-get"] = "IAW.Agents.CSharp.INuGet, IAW.Agents.CSharp",
+        ["git-hub"] = "IAW.Agents.CSharp.IGitHub, IAW.Agents.CSharp",
     };
 
     private IAgent? ResolveAgent(string agentKey)
     {
-        if (!AgentInterfaces.TryGetValue(agentKey, out var interfaceType))
-            return null;
+        if (AgentInterfaces.TryGetValue(agentKey, out var interfaceType))
+            return GrainFactory.GetGrain(interfaceType, agentKey) as IAgent;
 
-        return GrainFactory.GetGrain(interfaceType, agentKey) as IAgent;
+        if (CSharpAgentTypes.TryGetValue(agentKey, out var typeName))
+        {
+            var type = Type.GetType(typeName);
+            if (type is not null)
+                return GrainFactory.GetGrain(type, agentKey) as IAgent;
+        }
+
+        return null;
     }
 
     private static string TruncateResult(string result, int maxLength = 500)
