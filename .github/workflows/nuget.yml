@@ -19,4 +19,6 @@ jobs:
           dotnet pack src/Agents/Agents.csproj -c Release -o ./nupkgs
           dotnet pack src/Agents.CSharp/Agents.CSharp.csproj -c Release -o ./nupkgs
           dotnet pack src/IAW.Testing/IAW.Testing.csproj -c Release -o ./nupkgs
+          dotnet pack src/Aspire.Hosting.IAW/Aspire.Hosting.IAW.csproj -c Release -o ./nupkgs
+          dotnet pack src/Aspire.IAW.Client/Aspire.IAW.Client.csproj -c Release -o ./nupkgs
       - run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}

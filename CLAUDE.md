@@ -49,17 +49,18 @@ Every agent is an **Orleans grain** inheriting from `Agent` (abstract, `[GrainTy
 | `src/Core` (IAW.Core) | Agent base class, contracts, AI integration, tools, observability | Yes |
 | `src/Agents` (IAW.Agents) | 65 agent implementations (infrastructure, LLM wrappers, memory, orchestration) | Yes |
 | `src/Agents.CSharp` (IAW.Agents.CSharp) | Roslyn, DotNet, GitHub, NuGet agents | Yes |
+| `src/Aspire.Hosting.IAW` | AppHost integration: `AddIAW()`, `IAWService`, `WithLLM<T>()`, `WithReference(iaw)` | Yes |
+| `src/Aspire.IAW.Client` | Service integration: silo `AddIAW()`, client `AddIAWClient()`, OTel, health | Yes |
 | `src/IAW.Testing` (IAW.Testing) | `AgentTest<TAgent>` base class with TestCluster, MockChatClient | Yes |
-| `src/IAW.AppHost` | Aspire AppHost — defines distributed topology | No |
-| `src/IAW.Assistant` | Production silo hosting all agents | No |
+| `src/IAW.AppHost` | Aspire AppHost — defines distributed topology via `Aspire.Hosting.IAW` | No |
+| `src/IAW.Assistant` | Production silo hosting all agents (single `builder.AddIAW()` call) | No |
 | `src/IAW.MCP` | MCP server bridge (localhost:5300) for Claude Code | No |
-| `src/IAW.ServiceDefaults` | Cross-cutting: OpenTelemetry, health checks, resilience | No |
 | `src/DevUI` | Blazor web UI for agent interaction | No |
 | `src/Clients.Telegram` | Telegram bot client with Ngrok tunneling | No |
 
 ### Aspire Hosting (`src/IAW.AppHost`)
 
-`AddIAW()` sets up Orleans with dev clustering, memory storage, memory streams, and memory reminders. `WithLLM<TModel>()` declares LLM models. `WithLLMEnvironment()` propagates API keys as environment variables to child resources.
+`builder.AddIAW("iaw")` returns `IAWService` which chains `.WithLLM<T>()`, `.WithOllama()`, `.WithVoice2Text<T>()`, `.WithStorage()`, `.WithVectorDb()`. `.WithReference(iaw)` on a project auto-propagates Orleans membership, API keys, model config, blob/qdrant connections, and WaitFor dependencies. No separate `WithLLMEnvironment()` needed.
 
 Key ports: assistant silo on 30000 (gateway) / 11111 (silo), MCP on 5300.
 
