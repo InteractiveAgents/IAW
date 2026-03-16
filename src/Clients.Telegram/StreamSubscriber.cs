@@ -175,4 +175,15 @@ public sealed class StreamSubscriber(
             }
         }, ct);
     }
+
+    private async Task<int?> ResolveTopicIdAsync(string projectSlug, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(projectSlug)) return null;
+        var parts = projectSlug.Split('/');
+        if (parts.Length < 2) return null;
+        var userId = parts[0];
+        var slug = parts[1];
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
+        return await userProfile.GetTopicId(slug, ct);
+    }
 }
