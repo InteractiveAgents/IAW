@@ -121,16 +121,21 @@ public class PersonalAssistantAgent(
         var prompt = $"Task: {description}" + (filePath is not null ? $"\nFile: {filePath}" : "");
         var responseBuilder = new StringBuilder();
         var sawError = false;
+        WriteToolProgress($"\n[{agentKey}]: ");
         try
         {
             await foreach (var chunk in agent.GetResponseStream(prompt, ct))
+            {
                 responseBuilder.Append(chunk);
+                WriteToolProgress(chunk);
+            }
         }
         catch (Exception ex)
         {
             sawError = true;
             responseBuilder.AppendLine(BuildSafeErrorMessage(ex));
         }
+        WriteToolProgress("\n");
 
         var taskId = Guid.NewGuid().ToString("N")[..8];
         State[$"task-{taskId}"] = new StateEntry($"task-{taskId}",
