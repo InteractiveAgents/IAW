@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text;
 using Core.AI;
 using Core.AI.Models;
 using Core.Context;
@@ -133,8 +134,15 @@ public class Project(
         [Description("Full description of what needs to be done")] string taskDescription)
     {
         var assistant = GrainFactory.GetGrain<IPersonalAssistant>("personal-assistant");
-        var response = await assistant.GetResponse(taskDescription, CancellationToken.None);
-        return response;
+        var sb = new StringBuilder();
+        WriteToolProgress("\n\n---\nDelegating to engineering team...\n\n");
+        await foreach (var chunk in assistant.GetResponseStream(taskDescription, CancellationToken.None))
+        {
+            sb.Append(chunk);
+            WriteToolProgress(chunk);
+        }
+        WriteToolProgress("\n---\n");
+        return sb.ToString();
     }
 
     [Description("Add a task to the project board")]
