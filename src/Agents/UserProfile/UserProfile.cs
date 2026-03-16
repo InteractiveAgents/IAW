@@ -23,7 +23,7 @@ public class UserProfile(
     public Task<IReadOnlyList<ProjectInfo>> GetProjects(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        IReadOnlyList<ProjectInfo> projects = [.. state.Projects.Select(kvp => new ProjectInfo(kvp.Key, kvp.Value))];
+        IReadOnlyList<ProjectInfo> projects = state.Projects.Select(kvp => new ProjectInfo(kvp.Key, kvp.Value)).ToArray();
         return Task.FromResult(projects);
     }
 
@@ -61,10 +61,25 @@ public class UserProfile(
     public Task<IReadOnlyList<string>> RecallFacts(string query, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        IReadOnlyList<string> facts = [.. state.Preferences
+        IReadOnlyList<string> facts = state.Preferences
             .Where(kvp => kvp.Key.StartsWith("fact:"))
             .Select(kvp => kvp.Value)
-            .Where(v => v.Contains(query, StringComparison.OrdinalIgnoreCase))];
+            .Where(v => v.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
         return Task.FromResult(facts);
+    }
+
+    public Task<int?> GetTopicId(string slug, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (state.Projects.TryGetValue(slug, out var value) && int.TryParse(value, out var topicId))
+            return Task.FromResult<int?>(topicId);
+        return Task.FromResult<int?>(null);
+    }
+
+    public async Task SetTopicId(string slug, int topicId, CancellationToken ct)
+    {
+        state.Projects[slug] = topicId.ToString();
+        await WriteStateAsync(ct);
     }
 }
