@@ -52,7 +52,7 @@ public static class IAWClientExtensions
             http.AddServiceDiscovery();
         });
 
-        builder.UseOrleansClient();
+        builder.UseOrleansClient(client => client.UseLocalhostClustering());
 
         return builder;
     }
