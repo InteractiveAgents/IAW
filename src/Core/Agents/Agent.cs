@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using Core;
 using Core.Agents;
 using Core.AI;
@@ -30,6 +31,12 @@ public abstract partial class Agent(
     private ChatOptions? _chatOptions;
     private AgentSession? _session;
     private IReadOnlyList<ContentPart>? _currentMessageParts;
+    private ChannelWriter<string>? _toolProgressWriter;
+
+    protected void WriteToolProgress(string text)
+    {
+        _toolProgressWriter?.TryWrite(text);
+    }
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
     protected virtual int MaxHistoryMessages => 100;
@@ -38,7 +45,7 @@ public abstract partial class Agent(
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
     protected IDurableList<AgentEvent> EventLog => durableState.EventLog;
     protected IStreamProvider StreamProvider => this.GetStreamProvider(IAWConstants.StreamProvider);
-    protected virtual IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() => [];
+    protected virtual IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() => Array.Empty<global::Core.Context.IAgentContextProvider>();
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -51,7 +58,7 @@ public abstract partial class Agent(
         _chatOptions = new ChatOptions
         {
             Instructions = Instructions,
-            Tools = [.. GetAllTools()]
+            Tools = GetAllTools().ToList()
         };
         _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
@@ -116,13 +123,20 @@ public abstract partial class Agent(
 
             var fullPrompt = attachmentText != prompt ? attachmentText : prompt;
 
-            await foreach (var chunk in _agent!.RunStreamingAsync(fullPrompt, _session, cancellationToken: cancellationToken))
+            var channel = Channel.CreateUnbounded<string>(
+                new UnboundedChannelOptions { SingleReader = true });
+            _toolProgressWriter = channel.Writer;
+
+            // bare async call, NOT Task.Run — must stay on grain scheduler
+            var producerTask = ProduceLlmStreamAsync(fullPrompt, channel.Writer, cancellationToken);
+
+            await foreach (var text in channel.Reader.ReadAllAsync(cancellationToken))
             {
-                if (chunk.Text is not { } text)
-                    continue;
                 yield return text;
-                Activity.Current = activity; // restore after yield (dotnet/runtime#47802)
+                Activity.Current = activity;
             }
+
+            await producerTask;
 
             if (_usageCapture.LastUsage is { } usage)
             {
@@ -141,6 +155,7 @@ public abstract partial class Agent(
         }
         finally
         {
+            _toolProgressWriter = null;
             if (!completed)
             {
                 activity?.SetTag("error.type", "conversation_error");
@@ -148,6 +163,24 @@ public abstract partial class Agent(
             }
             AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
                 new TagList { { "agent.type", GetType().Name } });
+        }
+    }
+
+    private async Task ProduceLlmStreamAsync(
+        string prompt, ChannelWriter<string> writer, CancellationToken ct)
+    {
+        try
+        {
+            await foreach (var chunk in _agent!.RunStreamingAsync(
+                prompt, _session, cancellationToken: ct))
+            {
+                if (chunk.Text is { } text)
+                    writer.TryWrite(text);
+            }
+        }
+        finally
+        {
+            writer.TryComplete();
         }
     }
 
@@ -162,7 +195,7 @@ public abstract partial class Agent(
     public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        IReadOnlyList<ChatMessage> snapshot = [.. durableState.History];
+        IReadOnlyList<ChatMessage> snapshot = durableState.History.ToArray();
         return Task.FromResult(snapshot);
     }
 
@@ -239,7 +272,7 @@ public abstract partial class Agent(
         }
 
         // Deduplicate exact matches across providers
-        contextParts = [.. contextParts.Distinct()];
+        contextParts = contextParts.Distinct().ToList();
 
         activity?.SetTag("context.items_found", contextParts.Count);
 
