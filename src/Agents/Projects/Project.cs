@@ -17,17 +17,43 @@ public class Project(
     [Llm<Sonnet46>] IChatClient chatClient)
     : Agent(durableState, chatClient), IProject
 {
-    protected override string Instructions => """
-        You are a project assistant. Help the user manage their project,
-        answer questions, and coordinate tasks.
-        Be concise and actionable in your responses.
+    protected override string Instructions => GetTopicSlug() switch
+    {
+        "general" => """
+            You are the general assistant for this workspace. Answer quick questions directly.
+            For complex multi-step work, delegate via DelegateToAssistant.
+            You have awareness of all topics — give status updates when asked.
+            If a conversation goes deep into a specific domain, suggest the appropriate topic.
 
-        IMPORTANT: For tasks that require creating files, running commands, building code,
-        searching files, git operations, or any multi-step technical work — ALWAYS use
-        DelegateToAssistant. You cannot do these things yourself. DelegateToAssistant
-        connects you to the engineering team (FileSystem, Shell, Build, Git, etc.)
-        that can actually execute the work.
-        """;
+            IMPORTANT: For tasks that require creating files, running commands, building code,
+            searching files, git operations, or any multi-step technical work — ALWAYS use
+            DelegateToAssistant.
+            """,
+        "personal" => """
+            You are the user's personal assistant. Remember preferences, personal facts,
+            and casual conversation. Be warm and helpful. Use memories naturally.
+            For technical work, suggest using a work topic instead.
+            For tasks that require creating files, running commands, building code — use DelegateToAssistant.
+            """,
+        "iaw" => """
+            You are the assistant for the IAW project. You have access to the Aspire agent
+            which can check resource health, read logs, traces, and troubleshoot errors.
+            When the user reports an issue, check relevant traces and logs before suggesting fixes.
+            For builds, tests, and code changes, delegate via DelegateToAssistant.
+            """,
+        "scheduled" => """
+            You manage scheduled jobs and recurring tasks. Help the user create, list,
+            and cancel scheduled jobs. Use ScheduleJobTool and CancelJobTool.
+            Show the current schedule when asked.
+            """,
+        _ => """
+            You are a project assistant. Help the user manage their project,
+            answer questions, and coordinate tasks. Be concise and actionable.
+            For tasks requiring file creation, running commands, building code,
+            searching files, git operations, or any multi-step technical work — ALWAYS use
+            DelegateToAssistant. You cannot do these things yourself.
+            """
+    };
     protected override string DisplayName => "Project";
 
     private IReadOnlyList<IAgentContextProvider>? _contextProviders;
@@ -54,6 +80,13 @@ public class Project(
 
         _contextProviders = providers;
         return _contextProviders;
+    }
+
+    private string GetTopicSlug()
+    {
+        var key = this.GetPrimaryKeyString();
+        var slashIndex = key.LastIndexOf('/');
+        return slashIndex >= 0 ? key[(slashIndex + 1)..] : key;
     }
 
     protected override IReadOnlyList<AITool> DefineTools()
@@ -134,9 +167,9 @@ public class Project(
     public Task<ProjectDashboard> GetDashboard(CancellationToken ct) =>
         Task.FromResult(new ProjectDashboard
         {
-            Tasks = [.. durableState.Tasks],
-            Jobs = [.. durableState.Schedules.Values],
-            Files = [.. durableState.Files.Values],
+            Tasks = durableState.Tasks.ToArray(),
+            Jobs = durableState.Schedules.Values.ToArray(),
+            Files = durableState.Files.Values.ToArray(),
             GeneratedAt = DateTimeOffset.UtcNow
         });
 
@@ -175,7 +208,7 @@ public class Project(
     }
 
     public Task<IReadOnlyList<ProjectTask>> GetTasks(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ProjectTask>>([.. durableState.Tasks]);
+        Task.FromResult<IReadOnlyList<ProjectTask>>(durableState.Tasks.ToArray());
 
     public async Task<ScheduledJob> ScheduleJob(string name, TimeSpan interval, string description, CancellationToken ct)
     {
@@ -270,9 +303,9 @@ public class Project(
     {
         var dashboard = new ProjectDashboard
         {
-            Tasks = [.. durableState.Tasks],
-            Jobs = [.. durableState.Schedules.Values],
-            Files = [.. durableState.Files.Values],
+            Tasks = durableState.Tasks.ToArray(),
+            Jobs = durableState.Schedules.Values.ToArray(),
+            Files = durableState.Files.Values.ToArray(),
             GeneratedAt = DateTimeOffset.UtcNow
         };
         var markdown = DashboardRenderer.Render(dashboard);
