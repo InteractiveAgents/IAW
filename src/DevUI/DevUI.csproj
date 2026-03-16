@@ -15,14 +15,13 @@
     <PackageReference Include="Microsoft.Agents.AI.Hosting.OpenAI" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" />
     <PackageReference Include="Microsoft.Agents.AI.Workflows" />
-    <PackageReference Include="Microsoft.Orleans.Sdk" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Aspire.IAW.Client\Aspire.IAW.Client.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\Agents\Agents.csproj" />
     <ProjectReference Include="..\Agents.CSharp\Agents.CSharp.csproj" />
-    <ProjectReference Include="..\IAW.ServiceDefaults\ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>

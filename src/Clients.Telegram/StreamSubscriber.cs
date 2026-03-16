@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Core;
 using Core.Contracts;
 using Orleans.Streams;
 
@@ -18,10 +19,10 @@ public sealed class StreamSubscriber(
 
         try
         {
-            var streamProvider = clusterClient.GetStreamProvider("agents");
+            var streamProvider = clusterClient.GetStreamProvider(IAWConstants.StreamProvider);
 
             var notificationStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create("agents", "notification.sent"));
+                StreamId.Create(IAWConstants.StreamProvider, "notification.sent"));
             await notificationStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -35,7 +36,7 @@ public sealed class StreamSubscriber(
             });
 
             var approvalStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create("agents", "approval.requested"));
+                StreamId.Create(IAWConstants.StreamProvider, "approval.requested"));
             await approvalStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -53,7 +54,7 @@ public sealed class StreamSubscriber(
             });
 
             var dashboardStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create("agents", "dashboard.changed"));
+                StreamId.Create(IAWConstants.StreamProvider, "dashboard.changed"));
             await dashboardStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -69,7 +70,7 @@ public sealed class StreamSubscriber(
             });
 
             var wizardStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create("agents", "wizard.started"));
+                StreamId.Create(IAWConstants.StreamProvider, "wizard.started"));
             await wizardStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -87,7 +88,7 @@ public sealed class StreamSubscriber(
             });
 
             var progressStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create("agents", "orchestration.progress"));
+                StreamId.Create(IAWConstants.StreamProvider, "orchestration.progress"));
             await progressStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -104,7 +105,7 @@ public sealed class StreamSubscriber(
             });
 
             var completedStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create("agents", "orchestration.completed"));
+                StreamId.Create(IAWConstants.StreamProvider, "orchestration.completed"));
             await completedStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -134,9 +135,9 @@ public sealed class StreamSubscriber(
     private static string[] ResolveStringArray(object? value) => value switch
     {
         string[] arr => arr,
-        object[] objs => objs.Select(o => o?.ToString() ?? "").ToArray(),
-        IEnumerable<string> seq => seq.ToArray(),
-        IEnumerable<object> seq => seq.Select(o => o?.ToString() ?? "").ToArray(),
+        object[] objs => [.. objs.Select(o => o?.ToString() ?? "")],
+        IEnumerable<string> seq => [.. seq],
+        IEnumerable<object> seq => [.. seq.Select(o => o?.ToString() ?? "")],
         _ => []
     };
 

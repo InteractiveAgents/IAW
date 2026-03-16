@@ -1,14 +1,13 @@
+using Aspire.IAW;
 using Core.AI;
 using Core.Services;
 using Microsoft.Extensions.Options;
-using ServiceDefaults;
 using Telegram.BotAPI;
 using Telegram.BotAPI.GettingUpdates;
 using TelegramClient;
 using TelegramClient.Services;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddServiceDefaults();
 builder.AddIAWClient();
 
 builder.AddAzureBlobServiceClient("file-storage");

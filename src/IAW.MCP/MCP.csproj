@@ -8,15 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Orleans.Sdk" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Aspire.IAW.Client\Aspire.IAW.Client.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\Agents\Agents.csproj" />
     <ProjectReference Include="..\Agents.CSharp\Agents.CSharp.csproj" />
-    <ProjectReference Include="..\IAW.ServiceDefaults\ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>

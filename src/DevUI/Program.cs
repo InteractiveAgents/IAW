@@ -1,11 +1,10 @@
 using DevUI;
 using Microsoft.Agents.AI.DevUI;
 using Microsoft.Extensions.AI;
-using ServiceDefaults;
+using Aspire.IAW;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServiceDefaults();
 builder.AddIAWClient();
 
 builder.Services.AddSingleton<IChatClient, OrleansAgentChatClient>();
