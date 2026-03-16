@@ -21,8 +21,18 @@ public sealed class TelegramBotService(
     IOptions<TelegramBotOptions> options,
     ILogger<TelegramBotService> logger)
 {
-    private int? _assistantTopicId;
-    private int? _notificationsTopicId;
+    static readonly int ColorPurple = 0xCB86DB;
+    static readonly int ColorBlue = 0x6FB9F0;
+    static readonly int ColorGreen = 0x8EEE98;
+    static readonly int ColorOrange = 0xFB6F5F;
+
+    static readonly (string Slug, string Name, int Color)[] PredefinedTopics =
+    [
+        ("personal", "Personal", ColorPurple),
+        ("iaw", "IAW", ColorBlue),
+        ("scheduled", "Scheduled", ColorGreen),
+        ("notifications", "Notifications", ColorOrange),
+    ];
 
     public async Task HandleUpdateAsync(Update update, CancellationToken ct)
     {
@@ -91,6 +101,12 @@ public sealed class TelegramBotService(
 
         if (string.IsNullOrEmpty(text)) return;
 
+        if (text.StartsWith("/"))
+        {
+            await HandleCommandAsync(chatId, from.Id, topicId, text, ct);
+            return;
+        }
+
         // Check UISession for pending free-text input (placeholder for Slice 6)
         var topicKey = topicId?.ToString() ?? "general";
         var session = clusterClient.GetGrain<IUISession>(telegramId.ToString());
@@ -144,6 +160,131 @@ public sealed class TelegramBotService(
         }
     }
 
+    private async Task HandleCommandAsync(long chatId, long telegramId, int? topicId, string text, CancellationToken ct)
+    {
+        var command = text.Split(' ', 2)[0].ToLowerInvariant();
+        switch (command)
+        {
+            case "/start":
+                await HandleStartCommandAsync(chatId, telegramId, ct);
+                break;
+            case "/clear":
+                await HandleClearCommandAsync(chatId, telegramId, topicId, ct);
+                break;
+            case "/status":
+                await HandleStatusCommandAsync(chatId, telegramId, topicId, ct);
+                break;
+        }
+    }
+
+    private async Task HandleStartCommandAsync(long chatId, long telegramId, CancellationToken ct)
+    {
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+
+        var prefs = await userProfile.GetPreferences(ct);
+        if (prefs.ContainsKey("setup-complete"))
+        {
+            await botClient.SendMessageAsync(chatId, "Already set up! Topics should be ready.");
+            return;
+        }
+
+        foreach (var (slug, name, color) in PredefinedTopics)
+        {
+            try
+            {
+                var existingTopicId = await userProfile.GetTopicId(slug, ct);
+                if (existingTopicId is not null) continue;
+
+                var topic = await botClient.CreateForumTopicAsync(chatId, name, iconColor: color);
+                await userProfile.SetTopicId(slug, topic.MessageThreadId, ct);
+                logger.LogInformation("Created topic {Name} (id: {TopicId}) for user {TelegramId}",
+                    name, topic.MessageThreadId, telegramId);
+            }
+            catch (BotRequestException ex) when (ex.Message.Contains("TOPIC_NAME_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogInformation("Topic {Name} already exists for user {TelegramId}. Send a message there to register.", name, telegramId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not create topic {Name}", name);
+            }
+        }
+
+        await userProfile.RegisterProject("general", "general", ct);
+
+        var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n- Scheduled \u2014 recurring jobs dashboard\n- Notifications \u2014 system alerts\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview of all active work.";
+        var welcomeButtons = new InlineKeyboardMarkup([
+            [
+                new InlineKeyboardButton("+ New Project") { CallbackData = "cmd:projects:new" },
+                new InlineKeyboardButton("Status") { CallbackData = "cmd:status:show" }
+            ]
+        ]);
+        var welcomeMsg = await botClient.SendMessageAsync(chatId, welcomeText, replyMarkup: welcomeButtons);
+
+        try { await botClient.PinChatMessageAsync(chatId, welcomeMsg.MessageId); }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not pin welcome message"); }
+
+        var scheduledTopicId = await userProfile.GetTopicId("scheduled", ct);
+        if (scheduledTopicId is not null)
+        {
+            var dashboardText = "Active Schedules\n\nNo active jobs yet.\n\nLast updated: " + DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm");
+            var dashMsg = await botClient.SendMessageAsync(chatId, dashboardText, messageThreadId: scheduledTopicId);
+            try { await botClient.PinChatMessageAsync(chatId, dashMsg.MessageId); }
+            catch (Exception ex) { logger.LogWarning(ex, "Could not pin scheduled dashboard"); }
+            await userProfile.SetPreference("scheduled-dashboard-msgid", dashMsg.MessageId.ToString(), ct);
+        }
+
+        var personalTopicId = await userProfile.GetTopicId("personal", ct);
+        if (personalTopicId is not null)
+        {
+            var personalProject = clusterClient.GetGrain<IProject>($"{telegramId}/personal");
+            try
+            {
+                await personalProject.ScheduleJob("Daily Weather", TimeSpan.FromHours(24), "Check the current weather and send a brief forecast", ct);
+            }
+            catch (Exception ex) { logger.LogWarning(ex, "Could not create default weather job"); }
+        }
+
+        await userProfile.SetPreference("setup-complete", "true", ct);
+        logger.LogInformation("Setup complete for user {TelegramId}", telegramId);
+    }
+
+    private async Task HandleClearCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
+    {
+        var (project, _) = await ResolveProjectAsync(telegramId, topicId, ct);
+        await project.ClearHistory(ct);
+        await botClient.SendMessageAsync(chatId, "Conversation cleared.", messageThreadId: topicId);
+    }
+
+    private async Task HandleStatusCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
+    {
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+        var projects = await userProfile.GetProjects(ct);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Status across all topics:\n");
+
+        foreach (var proj in projects)
+        {
+            if (proj.Slug is "notifications") continue;
+            var grainId = $"{telegramId}/{proj.Slug}";
+            var project = clusterClient.GetGrain<IProject>(grainId);
+            try
+            {
+                var dashboard = await project.GetDashboard(ct);
+                var activeTasks = dashboard.Tasks.Count(t => t.Status is ProjectTaskStatus.Pending or ProjectTaskStatus.InProgress);
+                var activeJobs = dashboard.Jobs.Count(j => j.Active);
+                if (activeTasks > 0 || activeJobs > 0)
+                    sb.AppendLine($"[{proj.Slug}] Tasks: {activeTasks} active, Jobs: {activeJobs} running");
+            }
+            catch { }
+        }
+
+        if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active tasks or jobs.");
+
+        await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
+    }
+
     private async Task<(IProject Project, string Slug)> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
     {
         var userProfileId = telegramId.ToString();
@@ -172,13 +313,22 @@ public sealed class TelegramBotService(
         var chatId = options.Value.ChatId;
         if (chatId == 0) return;
 
-        await EnsureTopicsAsync(chatId, ct);
+        int? notifTopicId = null;
+        var projectSlug = evt.Payload.GetValueOrDefault("projectSlug")?.ToString()
+                       ?? evt.Payload.GetValueOrDefault("projectKey")?.ToString()
+                       ?? evt.SourceAgentId ?? "";
+        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
+        if (long.TryParse(userId, out var telegramId))
+        {
+            var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+            notifTopicId = await userProfile.GetTopicId("notifications", ct);
+        }
 
         var text = $"*{EscapeMarkdown(evt.EventName)}* from `{evt.SourceAgentId}`\n" +
                    string.Join("\n", evt.Payload.Select(p => $"  {p.Key}: {p.Value}"));
 
         await botClient.SendMessageAsync(chatId, text,
-            messageThreadId: _notificationsTopicId, parseMode: FormatStyles.MarkdownV2);
+            messageThreadId: notifTopicId, parseMode: FormatStyles.MarkdownV2);
     }
 
     public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)
@@ -393,28 +543,6 @@ public sealed class TelegramBotService(
         finally
         {
             if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
-        }
-    }
-
-    private async Task EnsureTopicsAsync(long chatId, CancellationToken ct)
-    {
-        if (_assistantTopicId is not null) return;
-
-        try
-        {
-            var assistantTopic = await botClient.CreateForumTopicAsync(chatId, "Assistant");
-            _assistantTopicId = assistantTopic.MessageThreadId;
-
-            var notifTopic = await botClient.CreateForumTopicAsync(chatId, "Notifications");
-            _notificationsTopicId = notifTopic.MessageThreadId;
-        }
-        catch (BotRequestException ex) when (ex.Message.Contains("TOPIC_NAME_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase))
-        {
-            logger.LogInformation("Forum topics already exist, using general thread");
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Could not create forum topics — chat may not be a supergroup");
         }
     }
 
