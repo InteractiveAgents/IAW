@@ -248,6 +248,7 @@ public sealed class TelegramBotService(
         }
 
         await userProfile.RegisterProject("general", "general", ct);
+        await userProfile.SetPreference("group-chat-id", chatId.ToString(), ct);
 
         var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n- Scheduled \u2014 recurring jobs dashboard\n- Notifications \u2014 system alerts\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview of all active work.";
         var welcomeButtons = new InlineKeyboardMarkup([
@@ -347,24 +348,13 @@ public sealed class TelegramBotService(
 
     public async Task SendNotificationAsync(AgentEvent evt, CancellationToken ct)
     {
-        var chatId = options.Value.ChatId;
-        if (chatId == 0) return;
-
-        int? notifTopicId = null;
-        var projectSlug = evt.Payload.GetValueOrDefault("projectSlug")?.ToString()
-                       ?? evt.Payload.GetValueOrDefault("projectKey")?.ToString()
-                       ?? evt.SourceAgentId ?? "";
-        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
-        if (long.TryParse(userId, out var telegramId))
-        {
-            var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
-            notifTopicId = await userProfile.GetTopicId("notifications", ct);
-        }
+        var (groupChatId, notifTopicId) = await ResolveGroupAndTopicAsync(evt, "notifications", ct);
+        if (groupChatId == 0) return;
 
         var text = $"*{EscapeMarkdown(evt.EventName)}* from `{evt.SourceAgentId}`\n" +
                    string.Join("\n", evt.Payload.Select(p => $"  {p.Key}: {p.Value}"));
 
-        await botClient.SendMessageAsync(chatId, text,
+        await botClient.SendMessageAsync(groupChatId, text,
             messageThreadId: notifTopicId, parseMode: FormatStyles.MarkdownV2);
     }
 
@@ -388,18 +378,26 @@ public sealed class TelegramBotService(
 
     public async Task SendApprovalAsync(string approvalId, string question, string[] approvalOptions, string projectSlug, CancellationToken ct)
     {
-        if (!TryResolveChatId(projectSlug, out var chatId)) return;
+        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
+        if (!long.TryParse(userId, out _)) return;
+
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue("group-chat-id", out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+            return;
+
+        var slug = projectSlug.Contains('/') ? projectSlug.Split('/')[1] : "general";
+        var topicId = await userProfile.GetTopicId(slug, ct);
 
         var buttons = approvalOptions.Select(opt =>
             new InlineKeyboardButton(opt) { CallbackData = $"ap:{approvalId}:{opt}" }
         ).ToArray();
         var keyboard = new InlineKeyboardMarkup([buttons]);
 
-        var telegramId = projectSlug.Split('/')[0];
-        var session = clusterClient.GetGrain<IUISession>(telegramId);
+        var session = clusterClient.GetGrain<IUISession>(userId);
         await session.RegisterApproval(approvalId, question, approvalOptions, projectSlug, ct);
 
-        await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard);
+        await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard, messageThreadId: topicId);
     }
 
     public async Task SendDocumentAsync(long chatId, Stream fileStream, string fileName, string? caption, int? topicId, CancellationToken ct)
@@ -425,6 +423,24 @@ public sealed class TelegramBotService(
         {
             logger.LogError(ex, "Failed to send blob {BlobPath} as document", blobPath);
         }
+    }
+
+    private async Task<(long GroupChatId, int? TopicId)> ResolveGroupAndTopicAsync(AgentEvent evt, string targetTopicSlug, CancellationToken ct)
+    {
+        var projectSlug = evt.Payload.GetValueOrDefault("projectSlug")?.ToString()
+                       ?? evt.Payload.GetValueOrDefault("projectKey")?.ToString()
+                       ?? evt.SourceAgentId ?? "";
+        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
+        if (!long.TryParse(userId, out _))
+            return (0, null);
+
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue("group-chat-id", out var chatIdStr) || !long.TryParse(chatIdStr, out var groupChatId))
+            return (0, null);
+
+        var topicId = await userProfile.GetTopicId(targetTopicSlug, ct);
+        return (groupChatId, topicId);
     }
 
     private bool TryResolveChatId(string projectSlug, out long chatId)
