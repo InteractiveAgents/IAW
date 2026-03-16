@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -18,50 +19,21 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
         siloBuilder
             .AddMemoryGrainStorage("Default")
             .AddMemoryGrainStorage("PubSubStore")
-            .AddMemoryStreams("agents")
+            .AddMemoryStreams(IAWConstants.StreamProvider)
             .UseInMemoryReminderService();
 
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();
 
-        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<AgentStateAttribute>, AgentStateMapper>();
-        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<UserProfileStateAttribute>, UserProfileStateMapper>();
-        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<ProjectStateAttribute>, ProjectStateMapper>();
-        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<UISessionStateAttribute>, UISessionStateMapper>();
-
-        LLMModel.EnsureAllModelsLoaded();
         var mockClient = new MockChatClient().ReturnsText("mock-response");
+
+        LlmAttributeMapperRegistration.RegisterAllAttributeMappers(siloBuilder.Services, mockClient);
 
         siloBuilder.Services.AddSingleton<IChatClient>(mockClient);
         siloBuilder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(new MockEmbeddingGenerator());
         siloBuilder.Services.AddHttpClient();
         siloBuilder.Services.AddSingleton<Octokit.IGitHubClient>(
             new Octokit.GitHubClient(new Octokit.ProductHeaderValue("iaw-test")));
-
-        RegisterLlmMapper<Claude45Haiku>(siloBuilder, mockClient);
-        RegisterLlmMapper<Sonnet46>(siloBuilder, mockClient);
-        RegisterLlmMapper<Opus46>(siloBuilder, mockClient);
-        RegisterLlmMapper<Gpt4o>(siloBuilder, mockClient);
-        RegisterLlmMapper<Gpt4oMini>(siloBuilder, mockClient);
-        RegisterLlmMapper<Gpt52>(siloBuilder, mockClient);
-        RegisterLlmMapper<Gpt53>(siloBuilder, mockClient);
-        RegisterLlmMapper<Gemini31>(siloBuilder, mockClient);
-        RegisterLlmMapper<GrokLatest>(siloBuilder, mockClient);
-        RegisterLlmMapper<GitHubGpt4oMini>(siloBuilder, mockClient);
-        RegisterLlmMapper<GitHubGpt4o>(siloBuilder, mockClient);
-        RegisterLlmMapper<Llama32>(siloBuilder, mockClient);
-        RegisterLlmMapper<Qwen25>(siloBuilder, mockClient);
-    }
-
-    static void RegisterLlmMapper<TModel>(ISiloBuilder siloBuilder, IChatClient mockClient)
-        where TModel : LLMModel
-    {
-        siloBuilder.Services.AddSingleton<IAttributeToFactoryMapper<LlmAttribute<TModel>>,
-            LlmAttributeMapper<TModel>>();
-
-        var model = LLMModel.All.FirstOrDefault(m => m is TModel);
-        if (model is not null)
-            siloBuilder.Services.AddKeyedSingleton<IChatClient>(model.ServiceKey, mockClient);
     }
 }
 
@@ -69,7 +41,7 @@ public sealed class AgentTestClientConfigurator : IClientBuilderConfigurator
 {
     public void Configure(IConfiguration configuration, IClientBuilder clientBuilder)
     {
-        clientBuilder.AddMemoryStreams("agents");
+        clientBuilder.AddMemoryStreams(IAWConstants.StreamProvider);
     }
 }
 
