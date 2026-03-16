@@ -126,6 +126,12 @@ public sealed class TelegramBotService(
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
     {
+        if (callbackQuery.Data?.StartsWith("cmd:") == true)
+        {
+            await HandleCommandCallbackAsync(callbackQuery, ct);
+            return;
+        }
+
         var from = callbackQuery.From;
         var chatId = callbackQuery.Message?.Chat.Id ?? 0L;
         if (chatId == 0) return;
@@ -157,6 +163,37 @@ public sealed class TelegramBotService(
             {
                 await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
             }
+        }
+    }
+
+    private async Task HandleCommandCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var chatId = callbackQuery.Message?.Chat.Id ?? 0L;
+        if (chatId == 0) return;
+
+        var from = callbackQuery.From;
+        var parts = callbackQuery.Data!.Split(':', 3);
+        var action = parts.Length >= 3 ? parts[2] : "";
+
+        try { await botClient.AnswerCallbackQueryAsync(callbackQuery.Id); }
+        catch { }
+
+        switch (parts[1])
+        {
+            case "projects" when action == "new":
+                await botClient.SendMessageAsync(chatId, "What should the project be called?");
+                var session = clusterClient.GetGrain<IUISession>(from.Id.ToString());
+                var formFields = new FormField[]
+                {
+                    new("project-name", "What should the project be called?",
+                        FormFieldType.FreeText, null)
+                };
+                await session.StartForm("new-project", formFields, $"{from.Id}/general", ct);
+                break;
+
+            case "status" when action == "show":
+                await HandleStatusCommandAsync(chatId, from.Id, null, ct);
+                break;
         }
     }
 
