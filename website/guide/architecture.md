@@ -239,6 +239,87 @@ classDiagram
     INotification <|-- ProgressNotification
 ```
 
+## Tiered Context Management
+
+Agent context is managed across three tiers, each with distinct latency, capacity, and lifecycle characteristics.
+
+### L1: Active LLM Context
+
+The token window currently being processed by the LLM. This is the `ChatMessage` list assembled from `Instructions`, context providers, and recent history before each `GetResponse` / `GetResponseStream` call. L1 is ephemeral -- it exists only for the duration of a single LLM invocation.
+
+A **token estimation safety net** guards L1: before dispatching to the LLM, the framework estimates the token count of the assembled messages and trims oldest user/assistant turns (preserving the system prompt and any tool-result summaries) until the payload fits within the model's context window minus a reserved buffer for the response.
+
+### L2: Compacted Durable History
+
+The `IDurableList<ChatMessage>` persisted via Orleans journaled storage. L2 survives grain deactivation and silo restarts. Two mechanisms keep L2 from growing unbounded:
+
+- **Post-task compaction** -- After a tool-call sequence completes (a task finishes, a multi-step tool exchange resolves), `ChatReducer` collapses the completed tool request/response pairs into a single summary message. The original messages are replaced in-place in the durable list, preserving causality while reclaiming token budget.
+- **Haiku summarization** -- When a sub-agent returns a result to an orchestrating agent, the raw result is passed through Claude 4.5 Haiku to produce a concise summary before it enters the orchestrator's history. This prevents large tool outputs (build logs, code listings, search results) from consuming disproportionate context.
+
+### L3: Vector Store (Long-Term Recall)
+
+Qdrant-backed semantic memory via the `Memory` agent hierarchy. When L2 compaction discards detail, key facts and outcomes are extracted and stored as `MemoryEntry` records with embeddings. Any agent can later retrieve this information through the **Recall tool**, which performs a vector similarity search against one or more Memory agent collections (e.g., `iaw-episode-memory`, `iaw-code-memory`).
+
+### Data Flow Between Tiers
+
+```
+User prompt
+  |
+  v
+[L3 Recall] -- vector search retrieves relevant past results
+  |
+  v
+[L2 History] -- recent compacted history loaded
+  |
+  v
+[L1 Context] -- assembled, token-estimated, trimmed if needed
+  |
+  v
+LLM call
+  |
+  v
+Response persisted to L2, key facts extracted to L3
+Tool exchanges compacted in L2 by ChatReducer
+```
+
+## Dual Orchestration Modes
+
+The framework supports two orchestration modes, selected automatically by `PersonalAssistantAgent` based on task complexity.
+
+### Mode 1: LLM Delegation
+
+For simple or single-domain tasks. The orchestrating agent (typically `PersonalAssistant`) uses its LLM to decide which sub-agent to call, dispatches via `IAgent.GetResponse()`, and returns the result directly. No code generation is involved.
+
+**When used**: Single-step tasks, Q&A, lookups, tasks involving one or two agents with no interdependencies.
+
+```
+User --> PersonalAssistant --> SubAgent.GetResponse() --> Response
+```
+
+### Mode 2: Code Orchestration
+
+For complex, multi-step tasks. `CodeOrchestratorAgent` generates a standalone C# script that connects to the Orleans cluster, invokes agents in sequence or parallel, and handles control flow (conditionals, retries, error handling). The script is compiled with Roslyn via `OrchestrationCompiler`, then executed out-of-process.
+
+**When used**: Multi-agent workflows, tasks requiring conditional logic, parallel fan-out, error recovery, or stateful coordination across many steps.
+
+```
+User --> PersonalAssistant --> CodeOrchestrator
+           |
+           v
+     ScriptGenerator produces C# file
+           |
+           v
+     OrchestrationCompiler validates via Roslyn
+           |
+           v
+     Script executes out-of-process against the cluster
+           |
+           v
+     Results streamed back via task stream events
+```
+
+The workspace folder (configured via `.WithWorkspace(path)` in the Aspire AppHost) holds generated scripts and any intermediate artifacts. Scripts are retained for debugging and audit.
+
 ## AI Integration
 
 The `Agent` base class uses `Microsoft.Extensions.AI` for LLM abstraction.

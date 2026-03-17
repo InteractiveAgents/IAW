@@ -152,6 +152,64 @@ public class UserMemoryAgent(
 }
 ```
 
+## CodeOrchestrator Agent
+
+`CodeOrchestratorAgent` (implements `ICodeOrchestrator`) handles complex multi-step tasks by generating, compiling, and executing standalone C# scripts that coordinate other agents.
+
+### How It Works
+
+1. Receives a task description (via `CreateTask`)
+2. Uses the LLM to decompose the task into an `OrchestrationPlan` (ordered steps with agent assignments)
+3. `ScriptGenerator` turns the plan into a C# file using `InterfaceCatalog` to resolve grain interfaces and IDs
+4. `OrchestrationCompiler` validates the script with Roslyn (compile-only, no execution)
+5. The script is written to the workspace folder and executed out-of-process via `dotnet script` or `dotnet run`
+6. The script connects to the Orleans cluster as a client and invokes agents directly
+7. Progress, completion, and failure events flow back through the task stream
+
+### Workspace Structure
+
+The workspace is a configurable disk folder set via `.WithWorkspace(path)` in the Aspire AppHost:
+
+```
+workspace/
+  scripts/
+    task-abc123.csx          # generated orchestration script
+    task-abc123.log           # stdout/stderr capture
+  artifacts/
+    ...                       # any files produced by the task
+```
+
+Scripts are retained after execution for debugging and audit. Each task gets a unique script file named by its `TaskId`.
+
+### Interface
+
+```csharp
+public interface ICodeOrchestrator : IAgent
+{
+    Task<string> CreateTask(string description, CancellationToken ct = default);
+    Task<TaskState> GetTaskState(string taskId, CancellationToken ct = default);
+    Task PauseTask(string taskId, CancellationToken ct = default);
+    Task ResumeTask(string taskId, CancellationToken ct = default);
+}
+```
+
+### Position in the Agent Hierarchy
+
+`CodeOrchestrator` extends `Agent` directly (not `LLM` or `Memory`). It sits alongside `PersonalAssistant` at the top of the orchestration layer:
+
+```
+PersonalAssistant
+  |-- (Mode 1) delegates directly to sub-agents via GetResponse
+  |-- (Mode 2) delegates to CodeOrchestrator for complex tasks
+        |-- generates scripts that invoke any agent in the cluster
+```
+
+`PersonalAssistant` selects between Mode 1 (LLM delegation) and Mode 2 (code orchestration) based on task complexity. See [Architecture: Dual Orchestration Modes](/guide/architecture#dual-orchestration-modes) for details.
+
+### Tool Result Handling
+
+When sub-agents return results during orchestration, the raw output is passed through Claude 4.5 Haiku for summarization before entering the orchestrator's conversation history. This prevents large outputs (build logs, code listings, search results) from consuming disproportionate context in subsequent LLM calls.
+
 ## Constructor Parameters
 
 The five base `Agent` constructor parameters are injected by Orleans:

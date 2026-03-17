@@ -107,6 +107,58 @@ public interface IAIContextProvider
 
 Context providers can inject relevant documents, project state, or other data before the LLM processes a prompt.
 
+## Tiered History Management
+
+Conversation history flows through three tiers with distinct lifecycles. See [Architecture: Tiered Context Management](/guide/architecture#tiered-context-management) for the full picture.
+
+### L1: Active Context Assembly
+
+Before each LLM call, the framework assembles the active context from:
+1. `Instructions` (system prompt)
+2. Context providers (`IAgentContextProvider` implementations -- memory, task stream, etc.)
+3. Recent messages from L2 durable history
+
+A **token estimation safety net** counts tokens in the assembled payload and trims oldest user/assistant turns (preserving the system prompt and tool-result summaries) until the total fits within the model's context window minus a response buffer.
+
+### L2: Durable History with Compaction
+
+The `IDurableList<ChatMessage>` is the primary conversation store. Two mechanisms keep it bounded:
+
+**Post-task compaction (ChatReducer)** -- After a tool-call exchange completes (the assistant issues a tool call, the tool returns a result, and the assistant produces a final response), `ChatReducer` replaces the full exchange with a single summary message. This happens automatically after each `GetResponse` cycle that involved tool calls. The summary preserves the task outcome and key facts while discarding verbose intermediate output.
+
+Example before compaction:
+```
+[assistant] tool_call: build("src/Core")
+[tool]      Build succeeded. 0 warnings. Output: bin/Debug/net11.0/IAW.Core.dll ...
+[assistant] The build completed successfully with no warnings.
+```
+
+After compaction:
+```
+[assistant] [compacted] Built src/Core successfully, no warnings.
+```
+
+**Haiku summarization of tool results** -- When an orchestrating agent calls a sub-agent and receives a large result (build output, code analysis, search results), the result is passed through Claude 4.5 Haiku before being appended to the orchestrator's history. This produces a concise summary (typically 1-3 sentences) that captures the outcome without the bulk.
+
+The summarization threshold is token-based: results under the threshold are kept verbatim; results over it are summarized. This keeps small, precise results intact while compressing verbose ones.
+
+### L3: Long-Term Recall via Vector Store
+
+When L2 compaction discards detail, key facts and task outcomes are extracted and stored as `MemoryEntry` records in Qdrant via the Memory agent hierarchy. This creates a searchable long-term memory.
+
+### Recall Tool
+
+Any agent can search past task results and historical context using the built-in **Recall** tool:
+
+```csharp
+[Description("Search past task results and agent memory for relevant context")]
+async Task<string> Recall(string query, int maxResults = 5)
+```
+
+Recall performs a vector similarity search across one or more Memory agent collections (e.g., `iaw-episode-memory`, `iaw-code-memory`, `iaw-project-memory`). Results are ranked by relevance and returned as formatted context strings.
+
+This allows agents to leverage knowledge from previous tasks without carrying the full history in their active context. For example, a code review agent can recall patterns from past reviews, or the orchestrator can recall how a similar task was decomposed previously.
+
 ## HTTP Endpoint Example
 
 Expose an agent's conversation via HTTP:
