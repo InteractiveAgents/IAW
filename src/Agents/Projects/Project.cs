@@ -22,13 +22,13 @@ public class Project(
     {
         "general" => """
             You are the general assistant for this workspace. Answer quick questions directly.
-            For complex multi-step work, delegate via DelegateToAssistant.
             You have awareness of all topics — give status updates when asked.
-            If a conversation goes deep into a specific domain, suggest the appropriate topic.
 
-            IMPORTANT: For tasks that require creating files, running commands, building code,
-            searching files, git operations, or any multi-step technical work — ALWAYS use
-            DelegateToAssistant.
+            ROUTING:
+            - For simple tasks (build, review, git, single-agent work) — use DelegateToAssistant
+            - For complex tasks (loops, data processing, multi-source research, file generation) — use ExecuteWithCode
+            - To find past work results or documents — use Recall
+            - If a conversation goes deep into a specific domain, suggest the appropriate topic.
             """,
         "personal" => """
             You are the user's personal assistant. Remember preferences, personal facts,
@@ -39,8 +39,11 @@ public class Project(
         "iaw" => """
             You are the assistant for the IAW project. You have access to the Aspire agent
             which can check resource health, read logs, traces, and troubleshoot errors.
-            When the user reports an issue, check relevant traces and logs before suggesting fixes.
-            For builds, tests, and code changes, delegate via DelegateToAssistant.
+
+            ROUTING:
+            - For simple tasks (build, review, check traces) — use DelegateToAssistant
+            - For complex tasks (data processing, research, file generation) — use ExecuteWithCode
+            - To find past work results or documents — use Recall
             """,
         "scheduled" => """
             You manage scheduled jobs and recurring tasks. Help the user create, list,
@@ -50,9 +53,12 @@ public class Project(
         _ => """
             You are a project assistant. Help the user manage their project,
             answer questions, and coordinate tasks. Be concise and actionable.
-            For tasks requiring file creation, running commands, building code,
-            searching files, git operations, or any multi-step technical work — ALWAYS use
-            DelegateToAssistant. You cannot do these things yourself.
+
+            ROUTING:
+            - For simple tasks (build, review, git, single-agent work) — use DelegateToAssistant
+            - For complex tasks (loops, data processing, multi-source research, file generation) — use ExecuteWithCode
+            - To find past work results or documents — use Recall
+            - You cannot create files or run commands yourself.
             """
     };
     protected override string DisplayName => "Project";
@@ -74,6 +80,12 @@ public class Project(
         var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
         if (qdrant is not null && embeddings is not null)
             providers.Add(new RAGContextProvider(qdrant, embeddings));
+
+        if (qdrant is not null && embeddings is not null)
+        {
+            var userId = this.GetPrimaryKeyString().Split('/')[0];
+            providers.Add(new TaskResultContextProvider(qdrant, embeddings, userId));
+        }
 
         var memoryAgents = ServiceProvider.GetService<IReadOnlyList<IMemoryAgent>>();
         if (memoryAgents is not null && memoryAgents.Count > 0)
@@ -110,6 +122,8 @@ public class Project(
                 "List all scheduled jobs."),
             AIFunctionFactory.Create(DelegateToAssistant, nameof(DelegateToAssistant),
                 "Delegate a complex task to the PersonalAssistant who can assign work to specialized agents (FileSystem, Shell, Build, Git, Roslyn, etc.)"),
+            AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
+                "Search past task results, conversations, and documents for relevant context"),
         ];
     }
 
@@ -143,6 +157,39 @@ public class Project(
         }
         WriteToolProgress("\n---\n");
         return sb.ToString();
+    }
+
+    [Description("Search past task results, conversations, and documents")]
+    private async Task<string> RecallTool(
+        [Description("What to search for")] string query,
+        [Description("Maximum results to return")] int maxResults = 5)
+    {
+        var qdrant = ServiceProvider.GetService<QdrantClient>();
+        var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
+        if (qdrant is null || embeddings is null) return "Search not available.";
+
+        var userId = this.GetPrimaryKeyString().Split('/')[0];
+        var collections = new[] { $"task-results-{userId}", $"project-{this.GetPrimaryKeyString().Replace("/", "-")}" };
+        var results = new List<string>();
+
+        var queryEmbedding = await embeddings.GenerateAsync([query]);
+        var queryVector = queryEmbedding[0].Vector.ToArray();
+
+        foreach (var collection in collections)
+        {
+            try
+            {
+                if (!await qdrant.CollectionExistsAsync(collection))
+                    continue;
+                var hits = await qdrant.SearchAsync(collection, queryVector, limit: (ulong)maxResults);
+                results.AddRange(hits.Where(h => h.Score > 0.4f)
+                    .Select(h => $"[{collection}] {h.Payload["text"]}"));
+            }
+            catch { }
+        }
+
+        if (results.Count == 0) return "No relevant results found.";
+        return string.Join("\n\n", results.Take(maxResults));
     }
 
     [Description("Add a task to the project board")]
