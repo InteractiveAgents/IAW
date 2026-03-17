@@ -19,30 +19,49 @@ public class Project(
     protected override string Instructions => GetTopicSlug() switch
     {
         "general" => """
-            You are the general assistant for this workspace. Answer quick questions directly.
-            You have awareness of all topics — give status updates when asked.
-            Use Recall to search past task results or documents.
-            If a conversation goes deep into a specific domain, suggest the appropriate topic.
+            You are the user's assistant. Be concise and direct. Use markdown formatting.
+
+            TOOLS:
+            - Execute: run any task via generated code (build, create files, search, deploy, etc.)
+            - RequestApprovalTool: ask user to choose or confirm before acting
+            - Recall: search past results and documents
+            - ScheduleJobTool/CancelJobTool: manage recurring tasks
+
+            BEHAVIOR:
+            - If you can answer from knowledge or memory, answer directly
+            - If the request is clear, call Execute immediately
+            - If ambiguous or risky, explain your plan, use RequestApprovalTool to confirm, then Execute
+            - Never generate code in your response. Always use Execute.
             """,
         "personal" => """
-            You are the user's personal assistant. Remember preferences, personal facts,
-            and casual conversation. Be warm and helpful. Use memories naturally.
-            For technical work, suggest using a work topic instead.
+            You are the user's personal assistant. Warm and helpful. Use markdown.
+            Remember preferences and personal facts via memory.
+            For any task requiring action, use Execute.
+            For scheduling, use ScheduleJobTool.
             """,
         "iaw" => """
-            You are the assistant for the IAW project. You have access to the Aspire agent
-            which can check resource health, read logs, traces, and troubleshoot errors.
-            Use Recall to find past work results or documents.
+            You are the IAW project assistant. Use markdown.
+            You can check Aspire resource health, read logs and traces.
+            For any action (build, test, deploy, troubleshoot), use Execute.
+            If ambiguous, confirm the plan first with RequestApprovalTool.
             """,
         "scheduled" => """
-            You manage scheduled jobs and recurring tasks. Help the user create, list,
-            and cancel scheduled jobs. Use ScheduleJobTool and CancelJobTool.
-            Show the current schedule when asked.
+            You manage scheduled jobs and recurring tasks. Use markdown.
+            Use ScheduleJobTool and CancelJobTool to manage jobs.
+            Use Execute for one-off tasks.
             """,
         _ => """
-            You are a project assistant. Help the user manage their project,
-            answer questions, and coordinate tasks. Be concise and actionable.
-            Use Recall to search past task results or documents.
+            You are a project assistant. Be concise. Use markdown.
+
+            TOOLS:
+            - Execute: run any task via generated code
+            - RequestApprovalTool: ask user to choose or confirm
+            - Recall: search past results and documents
+            - ScheduleJobTool/CancelJobTool: recurring tasks
+
+            If the request is clear, call Execute immediately.
+            If ambiguous, explain your plan and use RequestApprovalTool first.
+            Never generate code in your response.
             """
     };
     protected override string DisplayName => "Project";
@@ -90,6 +109,8 @@ public class Project(
     {
         return
         [
+            AIFunctionFactory.Create(Execute, nameof(Execute),
+                "Execute a task by generating and running C# code that calls agent interfaces directly"),
             AIFunctionFactory.Create(RequestApprovalTool, nameof(RequestApprovalTool),
                 "Ask the user to approve or decline something. Returns when approval is requested."),
             AIFunctionFactory.Create(AddTaskTool, nameof(AddTaskTool),
@@ -107,6 +128,16 @@ public class Project(
 AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
                 "Search past task results, conversations, and documents for relevant context"),
         ];
+    }
+
+    [Description("Execute a task by generating and running C# code. " +
+        "The code connects to the agent cluster and calls agents directly.")]
+    private async Task<string> Execute(
+        [Description("What to do, step by step")] string plan)
+    {
+        var orchestrator = GrainFactory.GetGrain<IAgent>("code-orchestrator");
+        var result = await orchestrator.GetResponse(plan, CancellationToken.None);
+        return result;
     }
 
     [Description("Request user approval with a question and a set of options")]
