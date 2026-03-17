@@ -70,7 +70,10 @@
       "Bash(find /e/IAW/InteractiveAgents/src -name \"*.cs\" -exec grep -l \"GetResponse\\\\|ChatClient\\\\|IChatClient\" {} \\\\; | xargs grep -l \"Activity\\\\|Telemetry\\\\|Meter\\\\|Counter\" | head -20)",
       "WebFetch(domain:iaw.dev.localhost)",
       "Bash(find:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(cd:*)"
     ]
   },
   "enabledMcpjsonServers": [
