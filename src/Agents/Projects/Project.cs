@@ -135,8 +135,8 @@ AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
     private async Task<string> Execute(
         [Description("What to do, step by step")] string plan)
     {
-        var orchestrator = GrainFactory.GetGrain<IAgent>("code-orchestrator");
-        var result = await orchestrator.GetResponse(plan, CancellationToken.None);
+        var orchestrator = GrainFactory.GetGrain<ICodeOrchestrator>("code-orchestrator");
+        var result = await orchestrator.ExecuteCodeOrchestration(plan, CancellationToken.None);
         return result;
     }
 
