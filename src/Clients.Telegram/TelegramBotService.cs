@@ -604,13 +604,20 @@ public sealed class TelegramBotService(
         if (string.IsNullOrWhiteSpace(text)) return;
         try
         {
-            await botClient.EditMessageTextAsync(chatId, messageId, text);
+            await botClient.EditMessageTextAsync(chatId, messageId, text,
+                parseMode: FormatStyles.MarkdownV2);
         }
-        catch (BotRequestException ex) when (
-            ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
+        catch (BotRequestException)
         {
-            // Safe to ignore: identical text or empty text during streaming warmup
+            try
+            {
+                await botClient.EditMessageTextAsync(chatId, messageId, text);
+            }
+            catch (BotRequestException ex) when (
+                ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
+            {
+            }
         }
     }
 
