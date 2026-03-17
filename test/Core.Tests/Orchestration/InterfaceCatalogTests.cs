@@ -1,7 +1,6 @@
 using Core.Orchestration;
 using IAW.Agents.CSharp;
 using IAW.Agents.Infrastructure;
-using IAW.Agents.Orchestration;
 using Xunit;
 
 namespace IAW.Core.Tests.Orchestration;
@@ -11,12 +10,10 @@ public class InterfaceCatalogTests
     [Theory]
     [InlineData(typeof(IRoslyn), "roslyn")]
     [InlineData(typeof(IFileSystem), "file-system")]
-    [InlineData(typeof(IPersonalAssistant), "personal-assistant")]
     [InlineData(typeof(IDotNet), "dot-net")]
     [InlineData(typeof(INuGet), "nu-get")]
     [InlineData(typeof(IGit), "git")]
     [InlineData(typeof(IShell), "shell")]
-    [InlineData(typeof(INotificationAgent), "notification-agent")]
     public void ComputeGrainId_converts_interface_to_kebab_case(Type interfaceType, string expected)
     {
         var grainId = InterfaceCatalog.ComputeGrainId(interfaceType);
@@ -29,7 +26,6 @@ public class InterfaceCatalogTests
         var catalog = InterfaceCatalog.Discover();
         Assert.Contains(catalog, e => e.InterfaceName == "IRoslyn");
         Assert.Contains(catalog, e => e.InterfaceName == "IFileSystem");
-        Assert.Contains(catalog, e => e.InterfaceName == "IPersonalAssistant");
         Assert.Contains(catalog, e => e.InterfaceName == "IDotNet");
     }
 
@@ -52,8 +48,6 @@ public class InterfaceCatalogTests
         var fileSystem = catalog.Single(e => e.InterfaceName == "IFileSystem");
         Assert.Equal("file-system", fileSystem.GrainId);
 
-        var notificationAgent = catalog.Single(e => e.InterfaceName == "INotificationAgent");
-        Assert.Equal("notification-agent", notificationAgent.GrainId);
     }
 
     [Fact]

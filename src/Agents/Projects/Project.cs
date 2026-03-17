@@ -1,10 +1,8 @@
 using System.ComponentModel;
-using System.Text;
 using Core.AI;
 using Core.AI.Models;
 using Core.Context;
 using Core.Contracts;
-using IAW.Agents.Orchestration;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,31 +21,18 @@ public class Project(
         "general" => """
             You are the general assistant for this workspace. Answer quick questions directly.
             You have awareness of all topics — give status updates when asked.
-
-            CRITICAL: You CANNOT write code, create files, or run commands yourself.
-            You MUST call tool functions to do any real work:
-            - DelegateToAssistant: for simple tasks (build, review, git, single-agent work)
-            - ExecuteWithCode: for complex tasks (loops, data processing, research, file generation).
-              Pass the full plan as the argument. The CodeOrchestrator will generate and execute C# code.
-            - Recall: to search past task results or documents
-
-            NEVER generate code in your response. ALWAYS call the appropriate tool function.
+            Use Recall to search past task results or documents.
             If a conversation goes deep into a specific domain, suggest the appropriate topic.
             """,
         "personal" => """
             You are the user's personal assistant. Remember preferences, personal facts,
             and casual conversation. Be warm and helpful. Use memories naturally.
             For technical work, suggest using a work topic instead.
-            For tasks that require creating files, running commands, building code — use DelegateToAssistant.
             """,
         "iaw" => """
             You are the assistant for the IAW project. You have access to the Aspire agent
             which can check resource health, read logs, traces, and troubleshoot errors.
-
-            ROUTING:
-            - For simple tasks (build, review, check traces) — use DelegateToAssistant
-            - For complex tasks (data processing, research, file generation) — use ExecuteWithCode
-            - To find past work results or documents — use Recall
+            Use Recall to find past work results or documents.
             """,
         "scheduled" => """
             You manage scheduled jobs and recurring tasks. Help the user create, list,
@@ -57,15 +42,7 @@ public class Project(
         _ => """
             You are a project assistant. Help the user manage their project,
             answer questions, and coordinate tasks. Be concise and actionable.
-
-            CRITICAL: You CANNOT write code, create files, or run commands yourself.
-            You MUST call tool functions to do any real work:
-            - DelegateToAssistant: for simple tasks (build, review, git, single-agent work)
-            - ExecuteWithCode: for complex tasks (loops, data processing, research, file generation).
-              Pass the full plan as the argument. The CodeOrchestrator will generate and execute C# code.
-            - Recall: to search past task results or documents
-
-            NEVER generate code in your response. ALWAYS call ExecuteWithCode or DelegateToAssistant instead.
+            Use Recall to search past task results or documents.
             """
     };
     protected override string DisplayName => "Project";
@@ -127,11 +104,7 @@ public class Project(
                 "Cancel an active scheduled job."),
             AIFunctionFactory.Create(ListJobsTool, nameof(ListJobsTool),
                 "List all scheduled jobs."),
-            AIFunctionFactory.Create(DelegateToAssistant, nameof(DelegateToAssistant),
-                "Delegate a complex task to the PersonalAssistant who can assign work to specialized agents (FileSystem, Shell, Build, Git, Roslyn, etc.)"),
-            AIFunctionFactory.Create(ExecuteWithCode, nameof(ExecuteWithCode),
-                "Execute a complex task via generated C# code. Use for tasks involving loops, data processing, multi-source research, file generation, or multi-step workflows."),
-            AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
+AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
                 "Search past task results, conversations, and documents for relevant context"),
         ];
     }
@@ -150,35 +123,6 @@ public class Project(
             ["projectSlug"] = this.GetPrimaryKeyString()
         });
         return $"Approval requested (id: {approvalId}). Waiting for user response.";
-    }
-
-    [Description("Delegate a complex task to the PersonalAssistant engineering team")]
-    private async Task<string> DelegateToAssistant(
-        [Description("Full description of what needs to be done")] string taskDescription)
-    {
-        var assistant = GrainFactory.GetGrain<IPersonalAssistant>("personal-assistant");
-        var sb = new StringBuilder();
-        WriteToolProgress("\n\n---\nDelegating to engineering team...\n\n");
-        await foreach (var chunk in assistant.GetResponseStream(taskDescription, CancellationToken.None))
-        {
-            sb.Append(chunk);
-            WriteToolProgress(chunk);
-        }
-        WriteToolProgress("\n---\n");
-        return sb.ToString();
-    }
-
-    [Description("Execute a complex task via generated C# code. " +
-        "Provide: what the user wants, success metrics, and step-by-step plan.")]
-    private async Task<string> ExecuteWithCode(
-        [Description("Full plan: intent, success metrics, and steps")] string plan)
-    {
-        var orchestrator = GrainFactory.GetGrain<ICodeOrchestrator>("code-orchestrator");
-        WriteToolProgress("\n\n---\nGenerating and executing code...\n\n");
-        var result = await orchestrator.ExecuteCodeOrchestration(plan, CancellationToken.None);
-        WriteToolProgress(result);
-        WriteToolProgress("\n---\n");
-        return result;
     }
 
     [Description("Search past task results, conversations, and documents")]

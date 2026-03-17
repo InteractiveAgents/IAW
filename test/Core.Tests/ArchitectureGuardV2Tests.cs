@@ -12,7 +12,7 @@ namespace IAW.Core.Tests;
 
 public class ArchitectureGuardV2Tests
 {
-    private static readonly Assembly AgentsAssembly = typeof(PersonalAssistantAgent).Assembly;
+    private static readonly Assembly AgentsAssembly = typeof(CodeOrchestratorAgent).Assembly;
 
     [Fact]
     public void All_stream_event_types_implement_IEvent()

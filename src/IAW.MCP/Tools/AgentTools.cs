@@ -60,14 +60,15 @@ internal sealed class AgentTools(IClusterClient orleans)
     }
 
     [McpServerTool(Name = "assistant_chat")]
-    [Description("Send a message to the PersonalAssistant and get a response.")]
+    [Description("Send a message to the project assistant and get a response.")]
     public async Task<string> AssistantChat(
-        [Description("The message to send to the assistant")] string message,
-        CancellationToken ct)
+        [Description("The message to send")] string message,
+        [Description("Project ID (default: general)")] string projectId = "general",
+        CancellationToken ct = default)
     {
-        var assistant = ResolveAgent("personal-assistant");
-        var response = await assistant.GetResponse(message, ct);
-        return JsonSerializer.Serialize(new { agentId = "personal-assistant", response }, JsonOptions);
+        var agent = ResolveAgent(projectId);
+        var response = await agent.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { agentId = projectId, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_send_message")]
@@ -97,15 +98,16 @@ internal sealed class AgentTools(IClusterClient orleans)
     }
 
     [McpServerTool(Name = "agent_assign_task")]
-    [Description("Assign a task to PersonalAssistant for delegation to the engineering team.")]
+    [Description("Assign a task to a project assistant for handling.")]
     public async Task<string> AgentAssignTask(
         [Description("Task description")] string task,
         [Description("Priority: low, medium, high")] string priority = "medium",
+        [Description("Project ID (default: general)")] string projectId = "general",
         CancellationToken ct = default)
     {
-        var assistant = ResolveAgent("personal-assistant");
+        var agent = ResolveAgent(projectId);
         var prompt = $"[TASK] Priority: {priority}\n\n{task}";
-        var response = await assistant.GetResponse(prompt, ct);
+        var response = await agent.GetResponse(prompt, ct);
         return JsonSerializer.Serialize(new { task, priority, response }, JsonOptions);
     }
 
