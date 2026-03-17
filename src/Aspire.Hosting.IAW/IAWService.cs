@@ -27,6 +27,13 @@ public class IAWService(OrleansService orleans, IDistributedApplicationBuilder a
     internal IResourceBuilder<ParameterResource> GitHubTokenParam { get; set; } = null!;
 
     internal bool InfrastructureApplied { get; set; }
+    internal string? WorkspacePath { get; set; }
 
-    public OrleansServiceClient AsClient() => Orleans.AsClient();
+    public IAWClientService AsClient() => new(this);
+}
+
+public class IAWClientService(IAWService service)
+{
+    internal IAWService IAW { get; } = service;
+    internal OrleansServiceClient OrleansClient { get; } = service.Orleans.AsClient();
 }

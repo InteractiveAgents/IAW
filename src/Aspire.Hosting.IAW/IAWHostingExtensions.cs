@@ -97,6 +97,12 @@ public static class IAWHostingExtensions
         return iaw;
     }
 
+    public static IAWService WithWorkspace(this IAWService iaw, string path)
+    {
+        iaw.WorkspacePath = path;
+        return iaw;
+    }
+
     public static IAWService WithCosmosStorage(
         this IAWService iaw,
         IResourceBuilder<AzureCosmosDBResource> cosmos)
@@ -149,6 +155,27 @@ public static class IAWHostingExtensions
 
         if (iaw.WhisperModel is not null)
             builder.WithEnvironment("AI__Whisper__ModelId", iaw.WhisperModel.Id);
+
+        if (!string.IsNullOrEmpty(iaw.WorkspacePath))
+            builder.WithEnvironment("IAW__Workspace", iaw.WorkspacePath);
+
+        return builder;
+    }
+
+    public static IResourceBuilder<T> WithReference<T>(
+        this IResourceBuilder<T> builder,
+        IAWClientService client)
+        where T : IResourceWithEnvironment, IResourceWithEndpoints, IResourceWithWaitSupport
+    {
+        var iaw = client.IAW;
+        ApplyInfrastructureDefaults(iaw);
+
+        builder.WithReference(client.OrleansClient);
+        builder.WithReference(iaw.Blobs).WaitFor(iaw.Blobs);
+        builder.WithReference(iaw.VectorDb).WaitFor(iaw.VectorDb);
+
+        if (!string.IsNullOrEmpty(iaw.WorkspacePath))
+            builder.WithEnvironment("IAW__Workspace", iaw.WorkspacePath);
 
         return builder;
     }
