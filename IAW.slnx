@@ -18,6 +18,7 @@
   <Project Path="src/IAW.MCP/MCP.csproj" Id="f72a5392-8914-4f0c-a8b3-642c4a424a11" />
   <Folder Name="/test/">
     <Project Path="test/Core.Tests/IAW.Core.Tests.csproj" />
+    <Project Path="test/E2E.Tests/E2E.Tests.csproj" />
     <Project Path="test/Integration.Tests/IAW.Integration.Tests.csproj" />
   </Folder>
 </Solution>
