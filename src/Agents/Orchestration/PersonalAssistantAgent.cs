@@ -14,6 +14,7 @@ using IAW.Agents.Messages;
 using IAW.Agents.Review;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace IAW.Agents.Orchestration;
 
@@ -149,7 +150,8 @@ public class PersonalAssistantAgent(
             ["Description"] = description
         }, ct);
 
-        var result = responseBuilder.Length > 0 ? responseBuilder.ToString() : "[Agent acknowledged]";
+        var fullResult = responseBuilder.Length > 0 ? responseBuilder.ToString() : "[Agent acknowledged]";
+        var result = await SummarizeResult(fullResult, agentKey, description);
         if (sawError)
             return $"Task assigned to {agentKey} (ID: {taskId}), but the delegated agent reported an error: {result}";
 
@@ -348,6 +350,26 @@ public class PersonalAssistantAgent(
             .Select(kvp => kvp.Value.Value.ToString() ?? "")
             .ToArray();
         return Task.FromResult(tasks);
+    }
+
+    private async Task<string> SummarizeResult(string fullResult, string agentKey, string description)
+    {
+        if (fullResult.Length < 2000) return fullResult;
+
+        try
+        {
+            var haikuClient = ServiceProvider.GetKeyedService<IChatClient>("claude-haiku-4-5");
+            if (haikuClient is null) return TruncateResult(fullResult, 2000);
+
+            var prompt = $"Summarize this agent result concisely. Preserve key outcomes, numbers, file paths, and errors.\n\nAgent: {agentKey}\nTask: {description}\n\nResult:\n{TruncateResult(fullResult, 6000)}";
+            var response = await haikuClient.GetResponseAsync(
+                [new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, prompt)]);
+            return response.Text ?? TruncateResult(fullResult, 2000);
+        }
+        catch
+        {
+            return TruncateResult(fullResult, 2000);
+        }
     }
 
     // -- Agent resolution -----------------------------------------------------
