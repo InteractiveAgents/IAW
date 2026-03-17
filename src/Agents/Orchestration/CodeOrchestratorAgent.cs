@@ -53,50 +53,49 @@ public class CodeOrchestratorAgent(
 
     public async Task<string> ExecuteCodeOrchestration(string prompt, CancellationToken ct = default)
     {
-        var workspacePath = Environment.GetEnvironmentVariable("IAW__Workspace")
-            ?? Path.Combine(Path.GetTempPath(), "iaw-workspace");
-
-        var slug = GenerateSlug(prompt);
-        var taskId = $"{DateTime.UtcNow:yyyy-MM-dd}-{slug}-{Guid.NewGuid().ToString("N")[..6]}";
-        var taskDir = Path.Combine(workspacePath, "tasks", taskId);
-        Directory.CreateDirectory(taskDir);
-        Directory.CreateDirectory(Path.Combine(taskDir, "output"));
-
-        WriteToolProgress($"Task: {taskId}\n");
-
-        await File.WriteAllTextAsync(Path.Combine(taskDir, "plan.md"), prompt, ct);
-
-        WriteToolProgress("Generating code...\n");
-        var code = await GenerateCode(prompt, ct);
-        var codePath = Path.Combine(taskDir, "orchestration.cs");
-        await File.WriteAllTextAsync(codePath, code, ct);
-        WriteToolProgress($"Code written to {codePath}\n");
-
-        var csprojContent = GenerateCsproj();
-        await File.WriteAllTextAsync(Path.Combine(taskDir, "orchestration.csproj"), csprojContent, ct);
-
-        WriteToolProgress("Compiling and executing...\n");
-        var (exitCode, log) = await ExecuteProject(taskDir, ct);
-        await File.WriteAllTextAsync(Path.Combine(taskDir, "log.txt"), log, ct);
-
-        if (exitCode != 0)
+        try
         {
-            WriteToolProgress($"\nExecution failed (exit code {exitCode})\n");
-            var errorSummary = log.Length > 2000 ? log[^2000..] : log;
-            return $"Code execution failed (exit code {exitCode}). Last output:\n{errorSummary}";
-        }
+            var workspacePath = Environment.GetEnvironmentVariable("IAW__Workspace")
+                ?? Path.Combine(Path.GetTempPath(), "iaw-workspace");
 
-        var resultPath = Path.Combine(taskDir, "result.json");
-        if (File.Exists(resultPath))
+            var slug = GenerateSlug(prompt);
+            var taskId = $"{DateTime.UtcNow:yyyy-MM-dd}-{slug}-{Guid.NewGuid().ToString("N")[..6]}";
+            var taskDir = Path.Combine(workspacePath, "tasks", taskId);
+            Directory.CreateDirectory(taskDir);
+            Directory.CreateDirectory(Path.Combine(taskDir, "output"));
+
+            await File.WriteAllTextAsync(Path.Combine(taskDir, "plan.md"), prompt, ct);
+
+            var code = await GenerateCode(prompt, ct);
+            var codePath = Path.Combine(taskDir, "orchestration.cs");
+            await File.WriteAllTextAsync(codePath, code, ct);
+
+            var csprojContent = GenerateCsproj();
+            await File.WriteAllTextAsync(Path.Combine(taskDir, "orchestration.csproj"), csprojContent, ct);
+
+            var (exitCode, log) = await ExecuteProject(taskDir, ct);
+            await File.WriteAllTextAsync(Path.Combine(taskDir, "log.txt"), log, ct);
+
+            if (exitCode != 0)
+            {
+                var errorSummary = log.Length > 2000 ? log[^2000..] : log;
+                return $"Code execution failed (exit code {exitCode}).\nWorkspace: {taskDir}\nLast output:\n{errorSummary}";
+            }
+
+            var resultPath = Path.Combine(taskDir, "result.json");
+            if (File.Exists(resultPath))
+            {
+                var resultJson = await File.ReadAllTextAsync(resultPath, ct);
+                return $"Completed. Workspace: {taskDir}\nResult: {resultJson}";
+            }
+
+            var lastOutput = log.Length > 1000 ? log[^1000..] : log;
+            return $"Completed (no result.json). Workspace: {taskDir}\nOutput:\n{lastOutput}";
+        }
+        catch (Exception ex)
         {
-            var resultJson = await File.ReadAllTextAsync(resultPath, ct);
-            WriteToolProgress($"\nCompleted. Result: {resultJson}\n");
-            return resultJson;
+            return $"CodeOrchestrator error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}";
         }
-
-        WriteToolProgress("\nCompleted (no result.json written).\n");
-        var lastOutput = log.Length > 1000 ? log[^1000..] : log;
-        return $"Execution completed but no result.json was written. Output:\n{lastOutput}";
     }
 
     public async Task<string> CreateTask(string description, CancellationToken ct = default)
@@ -193,11 +192,14 @@ public class CodeOrchestratorAgent(
 
     private async Task<string> GenerateCode(string plan, CancellationToken ct)
     {
-        var sb = new StringBuilder();
-        await foreach (var chunk in base.GetResponseStream(plan, ct))
-            sb.Append(chunk);
-
-        var code = sb.ToString().Trim();
+        // call IChatClient directly to avoid Channel deadlock on same grain scheduler
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
+            new(Microsoft.Extensions.AI.ChatRole.User, plan)
+        };
+        var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var code = (response.Text ?? "").Trim();
         if (code.StartsWith("```"))
         {
             var firstNewline = code.IndexOf('\n');
