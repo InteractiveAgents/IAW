@@ -4,6 +4,9 @@ namespace Core.Agents;
 
 internal sealed class ChatReducer
 {
+    const int MaxMessageChars = 8000;
+    const int MaxTotalChars = 400_000;
+
     public IReadOnlyList<ChatMessage> Reduce(
         IReadOnlyList<ChatMessage> fullHistory,
         ChatMessage? summary,
@@ -12,20 +15,27 @@ internal sealed class ChatReducer
         var result = new List<ChatMessage>();
 
         if (summary is not null)
-            result.Add(summary);
+            result.Add(TruncateMessage(summary));
 
         var recentStart = Math.Max(0, fullHistory.Count - recentWindow);
 
-        // pin non-reducible messages from the older portion, evicting images to text placeholders
         for (var i = 0; i < recentStart; i++)
         {
             if (IsNonReducible(fullHistory[i]))
-                result.Add(EvictImages(fullHistory[i]));
+                result.Add(TruncateMessage(EvictImages(fullHistory[i])));
         }
 
-        // add recent window verbatim
         for (var i = recentStart; i < fullHistory.Count; i++)
-            result.Add(fullHistory[i]);
+            result.Add(TruncateMessage(fullHistory[i]));
+
+        // token budget enforcement — drop oldest non-summary messages
+        var totalChars = result.Sum(m => m.Text.Length);
+        while (totalChars > MaxTotalChars && result.Count > 2)
+        {
+            var removed = result[1];
+            result.RemoveAt(1);
+            totalChars -= removed.Text.Length;
+        }
 
         return result;
     }
@@ -42,6 +52,23 @@ internal sealed class ChatReducer
         }).ToList();
 
         return message with { Parts = evictedParts };
+    }
+
+    static ChatMessage TruncateMessage(ChatMessage message)
+    {
+        var text = message.Text;
+        if (text.Length <= MaxMessageChars) return message;
+
+        var keepEach = MaxMessageChars / 2 - 50;
+        var truncated = string.Concat(
+            text.AsSpan(0, keepEach),
+            "\n\n[...truncated...]\n\n",
+            text.AsSpan(text.Length - keepEach));
+        return message with
+        {
+            Content = truncated,
+            Parts = [new TextContent(truncated)]
+        };
     }
 
     public static bool IsNonReducible(ChatMessage message)
