@@ -167,15 +167,11 @@ public class Project(
         [Description("Full plan: intent, success metrics, and steps")] string plan)
     {
         var orchestrator = GrainFactory.GetGrain<Orchestration.ICodeOrchestrator>("code-orchestrator");
-        var sb = new StringBuilder();
         WriteToolProgress("\n\n---\nGenerating and executing code...\n\n");
-        await foreach (var chunk in orchestrator.GetResponseStream(plan, CancellationToken.None))
-        {
-            sb.Append(chunk);
-            WriteToolProgress(chunk);
-        }
+        var result = await orchestrator.ExecuteCodeOrchestration(plan, CancellationToken.None);
+        WriteToolProgress(result);
         WriteToolProgress("\n---\n");
-        return sb.ToString();
+        return result;
     }
 
     [Description("Search past task results, conversations, and documents")]

@@ -10,6 +10,7 @@ public interface ICodeOrchestrator : IAgent
     Task PauseTask(string taskId, CancellationToken ct = default);
     Task ResumeTask(string taskId, CancellationToken ct = default);
     Task<string> ExecuteOrchestration(OrchestrationPlan plan, CancellationToken ct = default);
+    Task<string> ExecuteCodeOrchestration(string plan, CancellationToken ct = default);
 }
 
 [GenerateSerializer]

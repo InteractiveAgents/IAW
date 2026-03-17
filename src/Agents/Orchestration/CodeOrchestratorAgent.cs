@@ -51,7 +51,7 @@ public class CodeOrchestratorAgent(
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
 
-    public new async Task<string> GetResponse(string prompt, CancellationToken ct = default)
+    public async Task<string> ExecuteCodeOrchestration(string prompt, CancellationToken ct = default)
     {
         var workspacePath = Environment.GetEnvironmentVariable("IAW__Workspace")
             ?? Path.Combine(Path.GetTempPath(), "iaw-workspace");
