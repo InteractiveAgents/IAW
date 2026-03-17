@@ -122,6 +122,8 @@ public class Project(
                 "List all scheduled jobs."),
             AIFunctionFactory.Create(DelegateToAssistant, nameof(DelegateToAssistant),
                 "Delegate a complex task to the PersonalAssistant who can assign work to specialized agents (FileSystem, Shell, Build, Git, Roslyn, etc.)"),
+            AIFunctionFactory.Create(ExecuteWithCode, nameof(ExecuteWithCode),
+                "Execute a complex task via generated C# code. Use for tasks involving loops, data processing, multi-source research, file generation, or multi-step workflows."),
             AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
                 "Search past task results, conversations, and documents for relevant context"),
         ];
@@ -151,6 +153,23 @@ public class Project(
         var sb = new StringBuilder();
         WriteToolProgress("\n\n---\nDelegating to engineering team...\n\n");
         await foreach (var chunk in assistant.GetResponseStream(taskDescription, CancellationToken.None))
+        {
+            sb.Append(chunk);
+            WriteToolProgress(chunk);
+        }
+        WriteToolProgress("\n---\n");
+        return sb.ToString();
+    }
+
+    [Description("Execute a complex task via generated C# code. " +
+        "Provide: what the user wants, success metrics, and step-by-step plan.")]
+    private async Task<string> ExecuteWithCode(
+        [Description("Full plan: intent, success metrics, and steps")] string plan)
+    {
+        var orchestrator = GrainFactory.GetGrain<Orchestration.ICodeOrchestrator>("code-orchestrator");
+        var sb = new StringBuilder();
+        WriteToolProgress("\n\n---\nGenerating and executing code...\n\n");
+        await foreach (var chunk in orchestrator.GetResponseStream(plan, CancellationToken.None))
         {
             sb.Append(chunk);
             WriteToolProgress(chunk);
