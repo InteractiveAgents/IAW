@@ -9,7 +9,8 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Sonnet46>()
     .WithLLM<GitHubGpt4oMini>()
     .WithVoice2Text<WhisperLargeV3Turbo>()
-    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI());
+    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI())
+    .WithWorkspace("D:\\IAW-Workspace");
 
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
     .WithReference(iaw)
