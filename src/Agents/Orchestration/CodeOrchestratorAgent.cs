@@ -51,6 +51,13 @@ public class CodeOrchestratorAgent(
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
 
+    public override async Task<string> GetResponse(string prompt, CancellationToken ct = default)
+    {
+        if (prompt.StartsWith("[EXECUTE_CODE]"))
+            return await ExecuteCodeOrchestration(prompt["[EXECUTE_CODE]\n".Length..], ct);
+        return await base.GetResponse(prompt, ct);
+    }
+
     public async Task<string> ExecuteCodeOrchestration(string prompt, CancellationToken ct = default)
     {
         try

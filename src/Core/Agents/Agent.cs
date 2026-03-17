@@ -184,7 +184,7 @@ public abstract partial class Agent(
         }
     }
 
-    public async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
+    public virtual async Task<string> GetResponse(string prompt, CancellationToken cancellationToken = default)
     {
         var sb = new System.Text.StringBuilder();
         await foreach (var chunk in GetResponseStream(prompt, cancellationToken))

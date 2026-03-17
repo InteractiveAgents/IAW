@@ -24,11 +24,15 @@ public class Project(
             You are the general assistant for this workspace. Answer quick questions directly.
             You have awareness of all topics — give status updates when asked.
 
-            ROUTING:
-            - For simple tasks (build, review, git, single-agent work) — use DelegateToAssistant
-            - For complex tasks (loops, data processing, multi-source research, file generation) — use ExecuteWithCode
-            - To find past work results or documents — use Recall
-            - If a conversation goes deep into a specific domain, suggest the appropriate topic.
+            CRITICAL: You CANNOT write code, create files, or run commands yourself.
+            You MUST call tool functions to do any real work:
+            - DelegateToAssistant: for simple tasks (build, review, git, single-agent work)
+            - ExecuteWithCode: for complex tasks (loops, data processing, research, file generation).
+              Pass the full plan as the argument. The CodeOrchestrator will generate and execute C# code.
+            - Recall: to search past task results or documents
+
+            NEVER generate code in your response. ALWAYS call the appropriate tool function.
+            If a conversation goes deep into a specific domain, suggest the appropriate topic.
             """,
         "personal" => """
             You are the user's personal assistant. Remember preferences, personal facts,
@@ -54,11 +58,14 @@ public class Project(
             You are a project assistant. Help the user manage their project,
             answer questions, and coordinate tasks. Be concise and actionable.
 
-            ROUTING:
-            - For simple tasks (build, review, git, single-agent work) — use DelegateToAssistant
-            - For complex tasks (loops, data processing, multi-source research, file generation) — use ExecuteWithCode
-            - To find past work results or documents — use Recall
-            - You cannot create files or run commands yourself.
+            CRITICAL: You CANNOT write code, create files, or run commands yourself.
+            You MUST call tool functions to do any real work:
+            - DelegateToAssistant: for simple tasks (build, review, git, single-agent work)
+            - ExecuteWithCode: for complex tasks (loops, data processing, research, file generation).
+              Pass the full plan as the argument. The CodeOrchestrator will generate and execute C# code.
+            - Recall: to search past task results or documents
+
+            NEVER generate code in your response. ALWAYS call ExecuteWithCode or DelegateToAssistant instead.
             """
     };
     protected override string DisplayName => "Project";
@@ -166,7 +173,7 @@ public class Project(
     private async Task<string> ExecuteWithCode(
         [Description("Full plan: intent, success metrics, and steps")] string plan)
     {
-        var orchestrator = GrainFactory.GetGrain<Orchestration.ICodeOrchestrator>("code-orchestrator");
+        var orchestrator = GrainFactory.GetGrain<ICodeOrchestrator>("code-orchestrator");
         WriteToolProgress("\n\n---\nGenerating and executing code...\n\n");
         var result = await orchestrator.ExecuteCodeOrchestration(plan, CancellationToken.None);
         WriteToolProgress(result);
