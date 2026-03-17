@@ -21,27 +21,48 @@ public class CodeOrchestratorAgent(
     protected override string DisplayName => "Code Orchestrator";
 
     protected override string Instructions => """
-        You are a code orchestrator. You receive a task plan and generate a standalone C# console application
-        that executes the plan by calling IAW agent interfaces via the Aspire.IAW.Client package.
+        You generate standalone C# console apps. Output ONLY valid C# code. No markdown. No explanation.
 
-        The generated code must:
-        1. Be a complete, compilable Program.cs for a .NET console app
-        2. Use top-level statements
-        3. Use `builder.AddIAWClient()` from Aspire.IAW.Client to connect to the Orleans cluster
-        4. Call agent grain interfaces (IAgent.GetResponse, IAgent.GetResponseStream) for AI tasks
-        5. Write a result.json file at the end with: status, summary, artifacts array, metrics object
-        6. Write any output files to an "output" subdirectory
-        7. Wrap the main logic in try/catch and report errors to result.json
-        8. Print progress to stdout (it will be captured and streamed to the user)
+        TEMPLATE (always start with this exact boilerplate):
+        ```
+        using System;
+        using System.IO;
+        using System.Threading;
+        using System.Text.Json;
+        using Microsoft.Extensions.DependencyInjection;
+        using Microsoft.Extensions.Hosting;
+        using Aspire.IAW;
+        using Orleans;
+        using Core.Contracts;
+        using IAW.Agents.Infrastructure;
 
-        Available agent interfaces (all implement IAgent with GetResponse/GetResponseStream):
-        - IFileSystem (file-system): read, write, search, list files
-        - IShell (shell): execute shell commands
-        - IBuild (build): compile and test .NET projects
-        - IGit (git): version control operations
-        - IReviewer (reviewer): code quality review
+        var builder = Host.CreateApplicationBuilder(args);
+        builder.AddIAWClient();
+        using var host = builder.Build();
+        await host.StartAsync();
+        var client = host.Services.GetRequiredService<IClusterClient>();
 
-        Output ONLY the C# code. No markdown, no explanation. Just the code.
+        // YOUR CODE HERE
+
+        await host.StopAsync();
+        ```
+
+        RULES:
+        - Use `builder.AddIAWClient()` from namespace `Aspire.IAW` to connect to the cluster.
+        - Agent interfaces: `Core.Contracts` (IAgent), `IAW.Agents.Infrastructure` (IShell, IFileSystem, IBuild, IGit)
+        - Get agents: client.GetGrain<IShell>("shell"), client.GetGrain<IFileSystem>("file-system"), etc.
+        - Call await agent.GetResponse("prompt", default) to talk to agents. Use `default` for CancellationToken.
+        - Always write result.json: { "status": "success"/"error", "summary": "...", "artifacts": [], "metrics": {} }
+        - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
+        - Use simple string operations, not complex LINQ chains
+        - Wrap everything in try/catch, write error to result.json in catch
+
+        Available agents:
+        - IShell ("shell"): run shell commands via GetResponse
+        - IFileSystem ("file-system"): read/write/list files via GetResponse
+        - IBuild ("build"): dotnet build/test via GetResponse
+        - IGit ("git"): git operations via GetResponse
+        - IReviewer ("reviewer"): code review via GetResponse
         """;
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
@@ -107,7 +128,8 @@ public class CodeOrchestratorAgent(
             new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
             new(Microsoft.Extensions.AI.ChatRole.User, plan)
         };
-        var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = 4096 };
+        var response = await ChatClient.GetResponseAsync(messages, options, ct);
         var code = (response.Text ?? "").Trim();
         if (code.StartsWith("```"))
         {
@@ -136,6 +158,15 @@ public class CodeOrchestratorAgent(
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        // Remove silo-specific Orleans env vars but keep ClusterId/ServiceId for client connection
+        var keepVars = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            { "Orleans__ClusterId", "Orleans__ServiceId", "Orleans__EnableDistributedTracing" };
+        foreach (var key in Environment.GetEnvironmentVariables().Keys.Cast<string>()
+            .Where(k => k.StartsWith("Orleans__", StringComparison.OrdinalIgnoreCase) && !keepVars.Contains(k)))
+        {
+            psi.Environment.Remove(key);
+        }
 
         var log = new StringBuilder();
 

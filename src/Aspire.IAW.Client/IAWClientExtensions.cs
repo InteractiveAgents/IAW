@@ -52,7 +52,9 @@ public static class IAWClientExtensions
             http.AddServiceDiscovery();
         });
 
-        builder.UseOrleansClient(client => client.UseLocalhostClustering());
+        var clusterId = builder.Configuration["Orleans:ClusterId"] ?? "dev";
+        var serviceId = builder.Configuration["Orleans:ServiceId"] ?? "dev";
+        builder.UseOrleansClient(client => client.UseLocalhostClustering(clusterId: clusterId, serviceId: serviceId));
 
         return builder;
     }
