@@ -20,81 +20,25 @@ dotnet add package IAW.Core
 
 ## Step 2: Define the Agent
 
-Create a file `TodoAgent.cs`:
+Create a file `WeatherAgent.cs`:
 
 ```csharp
-using System.ComponentModel;
-using Core.V3;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
-public interface ITodoAgent : IAgent;
+public interface IWeatherAgent : IAgent { }
 
-public class TodoAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), ITodoAgent
+public class WeatherAgent(
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IWeatherAgent
 {
+    protected override string DisplayName => "Weather";
     protected override string Instructions =>
-        "You are a todo list manager. Help users create, list, and complete tasks.";
-
-    protected override string DisplayName => "Todo Manager";
-
-    protected override IReadOnlyList<AITool> DefineTools() =>
-    [
-        AIFunctionFactory.Create(AddTodo),
-        AIFunctionFactory.Create(ListTodos),
-        AIFunctionFactory.Create(CompleteTodo)
-    ];
-
-    [Description("Add a new todo item")]
-    private async Task<string> AddTodo([Description("Todo title")] string title)
-    {
-        var id = Guid.NewGuid().ToString("N")[..8];
-        State[$"todo:{id}"] = new StateEntry($"todo:{id}", title);
-        await WriteStateAsync(AgentCancellation);
-
-        await PublishAsync("todo.added", new Dictionary<string, object>
-        {
-            ["id"] = id, ["title"] = title
-        }, AgentCancellation);
-
-        return $"Added todo '{title}' with ID {id}";
-    }
-
-    [Description("List all todo items")]
-    private Task<string> ListTodos()
-    {
-        var todos = State
-            .Where(kv => kv.Key.StartsWith("todo:"))
-            .Select(kv => $"- [{kv.Key[5..]}] {kv.Value.Value}");
-        var list = string.Join("\n", todos);
-        return Task.FromResult(string.IsNullOrEmpty(list) ? "No todos found." : list);
-    }
-
-    [Description("Mark a todo as complete")]
-    private async Task<string> CompleteTodo(
-        [Description("Todo ID to complete")] string id)
-    {
-        var key = $"todo:{id}";
-        if (!State.ContainsKey(key))
-            return $"Todo {id} not found.";
-
-        var title = State[key].Value;
-        State[$"done:{id}"] = new StateEntry($"done:{id}", title);
-        State.Remove(key);
-        await WriteStateAsync(AgentCancellation);
-
-        await PublishAsync("todo.completed", new Dictionary<string, object>
-        {
-            ["id"] = id, ["title"] = title
-        }, AgentCancellation);
-
-        return $"Completed todo '{title}'";
-    }
+        "You are a weather assistant. Provide current weather information.";
 }
 ```
 
@@ -103,40 +47,32 @@ public class TodoAgent(
 Update `Program.cs`:
 
 ```csharp
-using Core.AI;
-using Core.V3;
+using IAW.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.UseOrleans();
-builder.Services.AddLlmProviders(builder);
+builder.AddIAW();
 
 var app = builder.Build();
 
-app.MapGet("/todo/metadata", async (IGrainFactory grains) =>
+app.MapGet("/weather/metadata", async (IGrainFactory grains) =>
 {
-    var agent = grains.GetGrain<ITodoAgent>("todo-agent");
-    return await agent.GetMetadataAsync(default);
+    var agent = grains.GetGrain<IWeatherAgent>("weather-agent");
+    return await agent.GetMetadata(default);
 });
 
-app.MapPost("/todo/ask", async (IGrainFactory grains, ChatRequest request) =>
+app.MapPost("/weather/ask", async (IGrainFactory grains, ChatRequest request) =>
 {
-    var agent = grains.GetGrain<ITodoAgent>("todo-agent");
+    var agent = grains.GetGrain<IWeatherAgent>("weather-agent");
     var response = await agent.GetResponse(request.Prompt, default);
     return new { response };
 });
 
-app.MapGet("/todo/history", async (IGrainFactory grains) =>
+app.MapGet("/weather/events", async (IGrainFactory grains) =>
 {
-    var agent = grains.GetGrain<ITodoAgent>("todo-agent");
-    return await agent.GetHistory(default);
-});
-
-app.MapGet("/todo/events", async (IGrainFactory grains) =>
-{
-    var agent = grains.GetGrain<ITodoAgent>("todo-agent");
-    return await agent.GetEventLogAsync(default);
+    var agent = grains.GetGrain<IWeatherAgent>("weather-agent");
+    return await agent.GetEventLog(default);
 });
 
 app.Run();
@@ -149,17 +85,15 @@ record ChatRequest(string Prompt);
 Create an Aspire AppHost project or add to an existing one:
 
 ```csharp
-using Aspire;
-using Core.AI.Models;
+using Aspire.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    .WithLLM<Sonnet46>();
+    .WithLLM<Claude45Haiku>();
 
 builder.AddProject<Projects.MyAgentSilo>("silo")
-    .WithReference(iaw)
-    .WithLLMEnvironment(builder);
+    .WithReference(iaw);
 
 builder.Build().Run();
 ```
@@ -183,23 +117,20 @@ Open the Aspire dashboard (typically at `https://localhost:17293`) to see your s
 
 ```bash
 # Get agent metadata
-curl http://localhost:5000/todo/metadata
+curl http://localhost:5000/weather/metadata
 
-# Ask the agent to add a todo
-curl -X POST http://localhost:5000/todo/ask \
+# Ask the agent about weather
+curl -X POST http://localhost:5000/weather/ask \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Add a todo to buy groceries"}'
+  -d '{"prompt": "What is the current weather in New York?"}'
 
-# Ask the agent to list todos
-curl -X POST http://localhost:5000/todo/ask \
+# Ask the agent another question
+curl -X POST http://localhost:5000/weather/ask \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "List all my todos"}'
-
-# View conversation history
-curl http://localhost:5000/todo/history
+  -d '{"prompt": "Will it rain tomorrow?"}'
 
 # View events
-curl http://localhost:5000/todo/events
+curl http://localhost:5000/weather/events
 ```
 
 ## Step 8: Write a Unit Test
@@ -207,58 +138,27 @@ curl http://localhost:5000/todo/events
 Create a test project and write a test:
 
 ```csharp
-using Core.V3;
-using Microsoft.Extensions.DependencyInjection;
-using Orleans.Journaling;
-using Orleans.TestingHost;
+using IAW.Testing;
 using Xunit;
 
-public sealed class TodoAgentTests : IAsyncLifetime
+public sealed class WeatherAgentTests : AgentTest<WeatherAgent>
 {
-    private TestCluster _cluster = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async ValueTask DisposeAsync() => await _cluster.DisposeAsync();
-
     [Fact]
-    public async Task Metadata_ReturnsTodoManager()
+    public async Task Metadata_ReturnsWeather()
     {
-        var agent = _cluster.GrainFactory.GetGrain<ITodoAgent>("todo-test");
-        var metadata = await agent.GetMetadataAsync(TestContext.Current.CancellationToken);
+        var agent = Agent("weather-test");
+        var metadata = await agent.GetMetadata(TestContext.Current.CancellationToken);
 
-        Assert.Equal("Todo Manager", metadata.DisplayName);
+        Assert.Equal("Weather", metadata.DisplayName);
     }
 
     [Fact]
     public async Task GetResponse_ReturnsText()
     {
-        var agent = _cluster.GrainFactory.GetGrain<ITodoAgent>("conv-test");
-        var response = await agent.GetResponse("Hello", TestContext.Current.CancellationToken);
+        var agent = Agent("weather-response-test");
+        var response = await agent.GetResponse("What's the weather?", TestContext.Current.CancellationToken);
 
         Assert.False(string.IsNullOrEmpty(response));
-    }
-
-    private sealed class SiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder siloBuilder)
-        {
-            siloBuilder
-                .AddMemoryGrainStorage("Default")
-                .AddMemoryGrainStorage("PubSubStore")
-                .AddMemoryStreams("agents")
-                .UseInMemoryReminderService();
-
-            siloBuilder.Services.AddSingleton<IStateMachineStorageProvider,
-                VolatileStateMachineStorageProvider>();
-            siloBuilder.AddStateMachineStorage();
-        }
     }
 }
 ```

@@ -1,8 +1,8 @@
 # LLM Agents
 
-Every IAW agent is backed by an LLM via `IChatClient` from `Microsoft.Extensions.AI`. This page covers the LLM class hierarchy, the 5 built-in model agents, the `[Llm<T>]` injection attribute, and how to add new models.
+Every IAW agent is backed by an LLM via `IChatClient` from `Microsoft.Extensions.AI`. This page covers the LlmAgentBase class hierarchy, the 5 built-in model agents, the `[Llm<T>]` injection attribute, and how to add new models.
 
-## LLM Hierarchy
+## LlmAgentBase Hierarchy
 
 ```
 DurableGrain (Orleans.Journaling)
@@ -23,9 +23,9 @@ DurableGrain (Orleans.Journaling)
 
 The `Agent` base class accepts an `IChatClient` constructor parameter. On activation, it wraps this client with streaming usage tracking and optional function invocation middleware. Derived agents specify which model to use via the `[Llm<T>]` attribute.
 
-## LLMModel Base Class
+## LLMModel Class
 
-Every model is defined as a singleton extending `LLMModel`:
+Every model is defined as a singleton extending the `LLMModel` class:
 
 ```csharp
 namespace IAW.Core.AI;

@@ -4,12 +4,12 @@ IAW provides a memory subsystem for agents that need to store, search, and manag
 
 ## Architecture
 
-The memory system builds on top of the standard `Agent` base class. A memory agent stores `MemoryEntry` records in its durable state, generates embeddings for semantic search, and exposes standard operations (Observe, Search, Consolidate, Decay, Forget).
+The memory system builds on top of the standard `Agent` class. A memory agent stores `MemoryEntry` records in its durable state, generates embeddings for semantic search, and exposes standard operations (Observe, Search, Consolidate, Decay, Forget).
 
 ```
 Agent (IAW.Core)
   |
-  +-- Memory Agent
+  +-- Memory Agents (extend Agent with embedding storage)
         |-- UserMemory       (user preferences, habits, corrections)
         |-- ProjectMemory    (architecture decisions, conventions, tech stack)
         |-- PatternMemory    (recurring patterns, anti-patterns, best practices)
