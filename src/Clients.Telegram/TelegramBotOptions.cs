@@ -1,4 +1,4 @@
-namespace TelegramClient;
+namespace Telegram;
 
 public sealed class TelegramBotOptions
 {

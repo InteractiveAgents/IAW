@@ -85,7 +85,7 @@ public abstract partial class Agent(
         {
             Role = "user",
             Content = prompt,
-            Parts = new List<ContentPart> { new global::Core.Contracts.TextContent(prompt) }
+            Parts = [new global::Core.Contracts.TextContent(prompt)]
         };
         return GetResponseStream(message, cancellationToken);
     }

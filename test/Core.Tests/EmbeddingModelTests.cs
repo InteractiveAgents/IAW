@@ -1,5 +1,4 @@
 using Core.AI;
-using Core.AI.Models;
 using Xunit;
 
 namespace IAW.Core.Tests;

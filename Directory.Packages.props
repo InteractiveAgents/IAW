@@ -36,22 +36,22 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
-    <PackageVersion Include="Anthropic" Version="12.8.0" />
+    <PackageVersion Include="Anthropic" Version="12.9.0" />
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.4.0" />
     <PackageVersion Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.0" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
     <PackageVersion Include="OpenAI" Version="2.9.1" />
-    <PackageVersion Include="OllamaSharp" Version="5.4.23" />
-    <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="0.8.2.1" />
+    <PackageVersion Include="OllamaSharp" Version="5.4.24" />
+    <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="0.9.0" />
     <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.1.2" />
     <PackageVersion Include="Octokit" Version="14.0.0" />
     <PackageVersion Include="Telegram.BotAPI" Version="9.5.0" />
     <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.1.2" />
     <PackageVersion Include="Aspire.Qdrant.Client" Version="13.1.2" />
     <PackageVersion Include="Concentus" Version="2.2.2" />
-    <PackageVersion Include="Concentus.Oggfile" Version="1.0.6" />
-    <PackageVersion Include="NAudio" Version="2.2.1" />
+    <PackageVersion Include="Concentus.Oggfile" Version="1.0.7" />
+    <PackageVersion Include="NAudio" Version="2.3.0" />
     <PackageVersion Include="ElBruno.LocalEmbeddings" Version="1.1.4" />
     <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0" />
@@ -59,8 +59,8 @@
     <PackageVersion Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Clustering.Cosmos" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Reminders.Cosmos" Version="10.0.1" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
-    <PackageVersion Include="PdfPig" Version="0.1.13" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.28.0-beta.1" />
+    <PackageVersion Include="PdfPig" Version="0.1.14-alpha-20260315-fb715" />
     <PackageVersion Include="Qdrant.Client" Version="1.17.0" />
     <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.1.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.2" />

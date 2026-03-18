@@ -6,7 +6,6 @@ using Core.Contracts;
 using Core.Orchestration;
 using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 namespace IAW.Agents.Orchestration;
 

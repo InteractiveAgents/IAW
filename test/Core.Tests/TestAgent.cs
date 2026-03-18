@@ -1,9 +1,7 @@
 using Core.Communication;
 using Core.Contracts;
-using ChatMessage = Core.Contracts.ChatMessage;
 using Core.Messages;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 using Orleans.Streams;
 
 namespace IAW.Core.Tests;

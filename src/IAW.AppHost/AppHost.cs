@@ -1,4 +1,3 @@
-using Aspire.Hosting;
 using Core.AI.Models;
 
 var builder = DistributedApplication.CreateBuilder(args);

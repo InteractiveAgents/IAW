@@ -1,4 +1,3 @@
-using Core.Contracts;
 using Microsoft.Extensions.AI;
 using ChatMessage = Core.Contracts.ChatMessage;
 

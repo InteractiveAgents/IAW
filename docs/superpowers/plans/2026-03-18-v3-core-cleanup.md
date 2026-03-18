@@ -142,7 +142,11 @@ git commit -m "refactor: replace all magic strings with IAWConstants"
 - Delete: `src/Agents/Messages/TaskCompletedMessage.cs`
 - Delete: `src/Agents/Messages/TaskFailedMessage.cs`
 - Delete: `src/Agents/Messages/ReviewFeedbackMessage.cs`
+- Delete: `src/Agents/Messages/SpecReadyEvent.cs`
+- Delete: `src/Agents/Messages/BuildMetricsCollectedEvent.cs`
+- Delete: `src/Agents/Messages/CodeChangedEvent.cs` (empty file)
 - Delete: `demo/` directory
+- Modify: `src/Core/Agents/Agent.cs` — delete cumulative token state tracking (lines 236-239 and `GetLongFromState` helper) — redundant with OTel metrics
 - Modify: `src/Core/Contracts/AgentMetadata.cs` — remove `AgentKind Kind` field, delete `AgentKind` enum
 - Modify: `src/Core/Registry/AgentRegistration.cs` — remove `Kind` field
 - Modify: `src/Core/Registry/AgentQuery.cs` — remove `Kind` field
@@ -209,6 +213,8 @@ Remove `DynamicAgentInterface` field and its exclusion in `Discover()`.
 In `AgentTools.cs` — remove `if (agentId.StartsWith("dynamic-"))` fallback block.
 In `OrleansAgentChatClient.cs` — remove DynamicAgent fallback, simplify to throw for unknown agents.
 In `AgentDiscovery.cs` — remove `IDynamicAgent` exclusion.
+
+In `Agent.cs` — delete the cumulative token state tracking block (`cumulative-input-tokens`, `cumulative-output-tokens`, `GetLongFromState` helper). OTel metrics already capture this via `TotalInputTokens`/`TotalOutputTokens` counters.
 
 - [ ] **Step 8: Remove AgentKindValue overrides**
 

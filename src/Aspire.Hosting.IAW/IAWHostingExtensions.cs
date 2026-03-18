@@ -1,6 +1,5 @@
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Azure;
-using Aspire.Hosting.Orleans;
 using Core;
 using Core.AI;
 using Microsoft.Extensions.Configuration;

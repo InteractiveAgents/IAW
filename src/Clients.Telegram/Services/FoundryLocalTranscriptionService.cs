@@ -1,7 +1,5 @@
 using System.Text;
 using Microsoft.AI.Foundry.Local;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 
 using Core.AI;
 

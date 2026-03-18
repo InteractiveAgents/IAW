@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using System.ClientModel;
 using OllamaSharp;
 using Core.AI;
-using Core.Contracts;
 using Core.Observability;
 
 namespace Aspire.IAW;

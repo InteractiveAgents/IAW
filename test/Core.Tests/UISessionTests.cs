@@ -1,6 +1,5 @@
 using Core.AI;
 using Core.Contracts;
-using Core.Contracts.UI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Journaling;
 using Orleans.TestingHost;
