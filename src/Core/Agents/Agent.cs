@@ -20,7 +20,7 @@ using Qdrant.Client.Grpc;
 
 namespace IAW.Core;
 
-[GrainType(IAWConstants.AgentGrainType)]
+[GrainType(IAWConstants.GrainTypes.Agent)]
 public abstract partial class Agent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
