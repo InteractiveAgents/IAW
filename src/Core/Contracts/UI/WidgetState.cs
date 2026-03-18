@@ -12,14 +12,14 @@ public abstract record WidgetState
 [GenerateSerializer]
 public sealed record ButtonGridState : WidgetState
 {
-    [Id(10)] public IReadOnlyList<ButtonRow> Rows { get; init; } = [];
+    [Id(10)] public IReadOnlyList<ButtonRow> Rows { get; init; } = Array.Empty<ButtonRow>();
     [Id(11)] public string? SelectedValue { get; init; }
 }
 
 [GenerateSerializer]
 public sealed record PaginatorState : WidgetState
 {
-    [Id(10)] public IReadOnlyList<string> Items { get; init; } = [];
+    [Id(10)] public IReadOnlyList<string> Items { get; init; } = Array.Empty<string>();
     [Id(11)] public int PageSize { get; init; }
     [Id(12)] public int CurrentPage { get; init; }
 }
@@ -27,7 +27,7 @@ public sealed record PaginatorState : WidgetState
 [GenerateSerializer]
 public sealed record WizardState : WidgetState
 {
-    [Id(10)] public IReadOnlyList<WizardStep> Steps { get; init; } = [];
+    [Id(10)] public IReadOnlyList<WizardStep> Steps { get; init; } = Array.Empty<WizardStep>();
     [Id(11)] public int CurrentStep { get; init; }
     [Id(12)] public IReadOnlyDictionary<string, string> Collected { get; init; } = new Dictionary<string, string>();
 }
@@ -35,14 +35,14 @@ public sealed record WizardState : WidgetState
 [GenerateSerializer]
 public sealed record MenuState : WidgetState
 {
-    [Id(10)] public MenuNode Root { get; init; } = new("Root", null, []);
-    [Id(11)] public IReadOnlyList<string> BreadCrumb { get; init; } = [];
+    [Id(10)] public MenuNode Root { get; init; } = new("Root", null, Array.Empty<MenuNode>());
+    [Id(11)] public IReadOnlyList<string> BreadCrumb { get; init; } = Array.Empty<string>();
 }
 
 [GenerateSerializer]
 public sealed record FormState : WidgetState
 {
-    [Id(10)] public IReadOnlyList<FormField> Fields { get; init; } = [];
+    [Id(10)] public IReadOnlyList<FormField> Fields { get; init; } = Array.Empty<FormField>();
     [Id(11)] public int CurrentField { get; init; }
     [Id(12)] public IReadOnlyDictionary<string, string> Values { get; init; } = new Dictionary<string, string>();
 }

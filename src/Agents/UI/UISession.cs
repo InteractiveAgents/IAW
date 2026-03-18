@@ -56,7 +56,7 @@ public class UISession(
     public Task RegisterApproval(string approvalId, string question, string[] options, string projectSlug, CancellationToken ct)
     {
         state.PendingApprovals[approvalId] = new PendingApproval(
-            approvalId, question, [.. options], projectSlug, 0, DateTimeOffset.UtcNow);
+            approvalId, question, options, projectSlug, 0, DateTimeOffset.UtcNow);
         return Task.CompletedTask;
     }
 
@@ -210,7 +210,7 @@ public class UISession(
         {
             Id = paginatorId,
             ProjectSlug = projectSlug,
-            Items = [.. items],
+            Items = items,
             PageSize = pageSize,
             CurrentPage = 0
         };
@@ -302,7 +302,7 @@ public class UISession(
         {
             Id = formId,
             ProjectSlug = projectSlug,
-            Fields = [.. fields],
+            Fields = fields,
             CurrentField = 0,
             Values = new Dictionary<string, string>(),
             CreatedAt = DateTimeOffset.UtcNow

@@ -7,49 +7,49 @@ namespace IAW.Core.Tests;
 public class MemoryBaseTests
 {
     [Fact]
-    public void Memory_extends_Agent()
+    public void MemoryAgentBase_extends_Agent()
     {
-        Assert.True(typeof(Memory).IsSubclassOf(typeof(Agent)));
+        Assert.True(typeof(MemoryAgentBase).IsSubclassOf(typeof(Agent)));
     }
 
     [Fact]
-    public void Memory_is_abstract()
+    public void MemoryAgentBase_is_abstract()
     {
-        Assert.True(typeof(Memory).IsAbstract);
+        Assert.True(typeof(MemoryAgentBase).IsAbstract);
     }
 
     [Fact]
-    public void Memory_has_Observe_method()
+    public void MemoryAgentBase_has_Observe_method()
     {
-        var method = typeof(Memory).GetMethod("Observe", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var method = typeof(MemoryAgentBase).GetMethod("Observe", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         Assert.NotNull(method);
     }
 
     [Fact]
-    public void Memory_has_Search_method()
+    public void MemoryAgentBase_has_Search_method()
     {
-        var method = typeof(Memory).GetMethod("Search", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var method = typeof(MemoryAgentBase).GetMethod("Search", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         Assert.NotNull(method);
     }
 
     [Fact]
-    public void Memory_has_Consolidate_method()
+    public void MemoryAgentBase_has_Consolidate_method()
     {
-        var method = typeof(Memory).GetMethod("Consolidate", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var method = typeof(MemoryAgentBase).GetMethod("Consolidate", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         Assert.NotNull(method);
     }
 
     [Fact]
-    public void Memory_has_Decay_method()
+    public void MemoryAgentBase_has_Decay_method()
     {
-        var method = typeof(Memory).GetMethod("Decay", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var method = typeof(MemoryAgentBase).GetMethod("Decay", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         Assert.NotNull(method);
     }
 
     [Fact]
-    public void Memory_has_Forget_method()
+    public void MemoryAgentBase_has_Forget_method()
     {
-        var method = typeof(Memory).GetMethod("Forget", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        var method = typeof(MemoryAgentBase).GetMethod("Forget", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
         Assert.NotNull(method);
     }
 }

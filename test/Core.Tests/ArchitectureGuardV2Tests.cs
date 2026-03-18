@@ -31,7 +31,7 @@ public class ArchitectureGuardV2Tests
     public void LLM_agents_extend_LLM_base()
     {
         var llmAgents = AgentsAssembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(LLM)) && !t.IsAbstract);
+            .Where(t => t.IsSubclassOf(typeof(LlmAgentBase)) && !t.IsAbstract);
 
         Assert.NotEmpty(llmAgents);
     }
@@ -40,7 +40,7 @@ public class ArchitectureGuardV2Tests
     public void Memory_agents_extend_Memory_base()
     {
         var memoryAgents = AgentsAssembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(Memory)) && !t.IsAbstract);
+            .Where(t => t.IsSubclassOf(typeof(MemoryAgentBase)) && !t.IsAbstract);
 
         Assert.NotEmpty(memoryAgents);
     }

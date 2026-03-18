@@ -39,10 +39,10 @@ public class FormTests : IAsyncLifetime
     private IUISession Session(string id) => _cluster.Client.GetGrain<IUISession>(id);
 
     static FormField SingleChoice(string name, string prompt, params Button[] options) =>
-        new(name, prompt, FormFieldType.SingleChoice, [.. options]);
+        new(name, prompt, FormFieldType.SingleChoice, options);
 
     static FormField MultiChoice(string name, string prompt, params Button[] options) =>
-        new(name, prompt, FormFieldType.MultiChoice, [.. options]);
+        new(name, prompt, FormFieldType.MultiChoice, options);
 
     static FormField FreeText(string name, string prompt) =>
         new(name, prompt, FormFieldType.FreeText, null);

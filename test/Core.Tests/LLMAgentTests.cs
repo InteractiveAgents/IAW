@@ -6,14 +6,14 @@ namespace IAW.Core.Tests;
 public class LLMAgentTests
 {
     [Fact]
-    public void LLM_extends_Agent()
+    public void LlmAgentBase_extends_Agent()
     {
-        Assert.True(typeof(LLM).IsSubclassOf(typeof(Agent)));
+        Assert.True(typeof(LlmAgentBase).IsSubclassOf(typeof(Agent)));
     }
 
     [Fact]
-    public void LLM_is_abstract()
+    public void LlmAgentBase_is_abstract()
     {
-        Assert.True(typeof(LLM).IsAbstract);
+        Assert.True(typeof(LlmAgentBase).IsAbstract);
     }
 }
