@@ -49,7 +49,7 @@ public class CodeOrchestratorAgent(
 
         RULES:
         - Use `builder.AddIAWClient()` from namespace `Aspire.IAW` to connect to the cluster.
-        - Agent interfaces: `Core.Contracts` (IAgent), `IAW.Agents.Infrastructure` (IShell, IFileSystem, IBuild, IGit)
+        - Agent interfaces: `Core.Contracts` (IAgent), `IAW.Agents.Infrastructure` (IShell, IFileSystem, IBuild, IGit, IAspire)
         - Get agents: client.GetGrain<IShell>("shell"), client.GetGrain<IFileSystem>("file-system"), etc.
         - Call await agent.GetResponse("prompt", default) to talk to agents. Use `default` for CancellationToken.
         - Always write result.json: { "status": "success"/"error", "summary": "...", "artifacts": [], "metrics": {} }
@@ -63,6 +63,7 @@ public class CodeOrchestratorAgent(
         - IBuild ("build"): dotnet build/test via GetResponse
         - IGit ("git"): git operations via GetResponse
         - IReviewer ("reviewer"): code review via GetResponse
+        - IAspire ("aspire"): Aspire infrastructure monitoring — resource health, logs, traces, restart/stop commands via GetResponse
         """;
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
