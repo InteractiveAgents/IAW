@@ -3,7 +3,6 @@ using Core.Communication;
 using Core.Contracts;
 using Core.Messages;
 using Xunit;
-using Core.Agents;
 
 namespace IAW.Core.Tests;
 
@@ -99,18 +98,6 @@ public class ArchitectureGuardTests
     {
         var constraint = typeof(IStreamProducer<>).GetGenericArguments()[0].GetGenericParameterConstraints();
         Assert.Contains(typeof(IEvent), constraint);
-    }
-
-    [Fact]
-    public void DynamicAgent_IsNotAbstract()
-    {
-        Assert.False(typeof(DynamicAgent).IsAbstract);
-    }
-
-    [Fact]
-    public void DynamicAgent_ImplementsIDynamicAgent()
-    {
-        Assert.True(typeof(IDynamicAgent).IsAssignableFrom(typeof(DynamicAgent)));
     }
 
     [Fact]

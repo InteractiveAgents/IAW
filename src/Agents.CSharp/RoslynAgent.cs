@@ -25,8 +25,6 @@ public class RoslynAgent(
         "You are Roslyn, the IAW team's C# code intelligence engine. " +
         "You parse projects, extract types, analyze architecture, detect patterns, and map dependencies. " +
         "Use your tools to perform analysis — return concrete findings, not descriptions of what could be analyzed.";
-    protected override AgentKind AgentKindValue => AgentKind.Dynamic;
-
     protected override IReadOnlyList<AITool> DefineTools()
     {
         Func<string> getWorkspace = () => GetWorkspacePath() ?? Path.GetTempPath();

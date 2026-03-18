@@ -73,13 +73,8 @@ sealed partial class OrleansAgentChatClient(IClusterClient cluster, ILogger<Orle
         if (GrainInterfaceMap.TryGetValue(agentId, out var interfaceType))
             return (IAgent)cluster.GetGrain(interfaceType, agentId);
 
-        // Fallback for dynamic agents
-        if (agentId.StartsWith("dynamic-"))
-            return cluster.GetGrain<IDynamicAgent>(agentId);
-
-        // Last resort: try first registered interface (personal-assistant)
-        logger.LogWarning("Unknown agent ID '{AgentId}', falling back to dynamic agent", agentId);
-        return cluster.GetGrain<IDynamicAgent>(agentId);
+        var known = string.Join(", ", GrainInterfaceMap.Keys);
+        throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }
 
     // Build a map of grain ID → grain interface type from loaded assemblies.
@@ -92,7 +87,6 @@ sealed partial class OrleansAgentChatClient(IClusterClient cluster, ILogger<Orle
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsInterface
                          && t != typeof(IAgent)
-                         && t != typeof(IDynamicAgent)
                          && typeof(IAgent).IsAssignableFrom(t)
                          && !t.IsGenericType);
 

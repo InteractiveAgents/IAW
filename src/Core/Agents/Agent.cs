@@ -232,17 +232,6 @@ public abstract partial class Agent(
         AgentTelemetry.TokenUsage.Record(usage.OutputTokens, outputTags);
         AgentTelemetry.TotalInputTokens.Add(usage.InputTokens, tags);
         AgentTelemetry.TotalOutputTokens.Add(usage.OutputTokens, tags);
-
-        var currentInput = GetLongFromState("cumulative-input-tokens");
-        var currentOutput = GetLongFromState("cumulative-output-tokens");
-        durableState.State["cumulative-input-tokens"] = new StateEntry("cumulative-input-tokens", currentInput + usage.InputTokens);
-        durableState.State["cumulative-output-tokens"] = new StateEntry("cumulative-output-tokens", currentOutput + usage.OutputTokens);
-    }
-
-    private long GetLongFromState(string key)
-    {
-        if (!durableState.State.TryGetValue(key, out var entry)) return 0;
-        return entry.Value is long l ? l : long.TryParse(entry.Value.ToString(), out var parsed) ? parsed : 0;
     }
 
     private async Task<string> BuildContextBlock(string prompt, CancellationToken ct)

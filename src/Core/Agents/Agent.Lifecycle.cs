@@ -8,14 +8,12 @@ public abstract partial class Agent
     private CancellationTokenSource _cts = new();
     protected CancellationToken AgentCancellation => _cts.Token;
     protected virtual string DisplayName => GetType().Name;
-    protected virtual AgentKind AgentKindValue => AgentKind.Static;
-
     public Task<AgentMetadata> GetMetadata(CancellationToken ct = default)
     {
         var type = GetType();
 
         return Task.FromResult(new AgentMetadata(
-            type.Name, DisplayName, Instructions, AgentKindValue,
+            type.Name, DisplayName, Instructions,
             DiscoverPublishedMessageTypes(type), DiscoverReceivedMessageTypes(type)));
     }
 

@@ -17,8 +17,6 @@ public class StreamNameTests
     {
         { typeof(CodeChangedEvent), "code.changed" },
         { typeof(AssignTaskCommand), "assign.task" },
-        { typeof(IAW.Agents.Messages.BuildMetricsCollectedEvent), "build.metrics.collected" },
-        { typeof(IAW.Agents.Messages.SpecReadyEvent), "spec.ready" },
         { typeof(IAW.Agents.Messages.TestsPassedEvent), "tests.passed" },
     };
 }

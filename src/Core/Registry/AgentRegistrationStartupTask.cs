@@ -1,6 +1,5 @@
 using Core.Communication;
 using Core.Contracts;
-using Core.Agents;
 using IAW.Core;
 
 namespace Core.Registry;
@@ -39,7 +38,6 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
             type.Name,
             GetAgentShortName(type.Name),
             "",
-            type.IsSubclassOf(typeof(DynamicAgent)) ? AgentKind.Dynamic : AgentKind.Static,
             pubs, subs);
     }
 

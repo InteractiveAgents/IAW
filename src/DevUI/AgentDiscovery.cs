@@ -15,7 +15,6 @@ static partial class AgentDiscovery
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsInterface
                          && t != typeof(IAgent)
-                         && t != typeof(IDynamicAgent)
                          && typeof(IAgent).IsAssignableFrom(t)
                          && !t.IsGenericType)
             .ToList();

@@ -47,7 +47,6 @@ public class AgentBasicTests : AgentTest<TestAgent>
         var agent = Agent(UniqueId("meta"));
         var metadata = await agent.GetMetadata(ct);
         Assert.Equal("Test Agent", metadata.DisplayName);
-        Assert.Equal(AgentKind.Static, metadata.Kind);
     }
 
     [Fact]

@@ -16,7 +16,6 @@ public static class InterfaceCatalog
         IReadOnlyList<string> Receives);
 
     private static readonly Type AgentInterface = typeof(IAgent);
-    private static readonly Type DynamicAgentInterface = typeof(IDynamicAgent);
     private static readonly Type StreamProducerDef = typeof(IStreamProducer<>);
     private static readonly Type StreamConsumerDef = typeof(IStreamConsumer<>);
     private static readonly Type ReceiverDef = typeof(IReceiver<>);
@@ -27,8 +26,7 @@ public static class InterfaceCatalog
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsInterface
                 && AgentInterface.IsAssignableFrom(t)
-                && t != AgentInterface
-                && t != DynamicAgentInterface)
+                && t != AgentInterface)
             .ToList();
 
         var concreteAgents = AppDomain.CurrentDomain.GetAssemblies()

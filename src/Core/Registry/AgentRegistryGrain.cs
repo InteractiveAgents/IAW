@@ -27,8 +27,6 @@ public class AgentRegistryGrain(
     public Task<IReadOnlyList<AgentRegistration>> QueryAsync(AgentQuery query)
     {
         var results = registrations.Values.AsEnumerable();
-        if (query.Kind is not null)
-            results = results.Where(r => r.Kind == query.Kind);
         if (query.Publishes is { Length: > 0 } pubs)
             results = results.Where(r => pubs.Any(p => r.Publishes.Contains(p)));
         if (query.Subscribes is { Length: > 0 } subs)

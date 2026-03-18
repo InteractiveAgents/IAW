@@ -16,9 +16,6 @@ internal sealed class AgentTools(IClusterClient orleans)
         if (entry is not null)
             return (IAgent)orleans.GetGrain(entry.InterfaceType, agentId);
 
-        if (agentId.StartsWith("dynamic-"))
-            return orleans.GetGrain<IDynamicAgent>(agentId);
-
         var known = string.Join(", ", InterfaceCatalog.Discover().Select(e => e.GrainId));
         throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }

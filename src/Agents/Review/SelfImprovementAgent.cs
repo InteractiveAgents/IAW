@@ -20,8 +20,7 @@ public class SelfImprovementAgent(
     : Agent(durableState, chatClient),
       ISelfImprovement,
       IReceiver<ReviewCompletedMessage>,
-      IStreamConsumer<TestsPassedEvent>,
-      IStreamConsumer<CodeChangedEvent>
+      IStreamConsumer<TestsPassedEvent>
 {
     protected override string DisplayName => "Self-Improvement Agent";
 
@@ -40,13 +39,8 @@ public class SelfImprovementAgent(
         Report what you found and what you did, not what you could do.
         """;
 
-    protected override AgentKind AgentKindValue => AgentKind.Static;
-
     public Task OnStreamEventAsync(TestsPassedEvent evt, StreamSequenceToken? token)
         => AccumulateTestMetrics(evt.Passed, evt.Failed);
-
-    public Task OnStreamEventAsync(CodeChangedEvent evt, StreamSequenceToken? token)
-        => RecordCodeChange(evt.Author, "code.changed", DateTimeOffset.UtcNow);
 
     private async Task AccumulateTestMetrics(int passed, int failed)
     {
@@ -55,21 +49,6 @@ public class SelfImprovementAgent(
 
         State["total-tests-passed"] = new StateEntry("total-tests-passed", (currentPassed + passed).ToString());
         State["total-tests-failed"] = new StateEntry("total-tests-failed", (currentFailed + failed).ToString());
-        await WriteStateAsync(default);
-    }
-
-    private async Task RecordCodeChange(string source, string eventName, DateTimeOffset timestamp)
-    {
-        var changeCount = GetIntFromState("code-changes-count");
-
-        State["code-changes-count"] = new StateEntry("code-changes-count", (changeCount + 1).ToString());
-        State[$"change-{changeCount + 1}"] = new StateEntry($"change-{changeCount + 1}",
-            JsonSerializer.Serialize(new
-            {
-                Source = source,
-                EventName = eventName,
-                Timestamp = timestamp
-            }));
         await WriteStateAsync(default);
     }
 
