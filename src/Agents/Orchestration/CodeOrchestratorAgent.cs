@@ -64,6 +64,11 @@ public class CodeOrchestratorAgent(
         - IGit ("git"): git operations via GetResponse
         - IReviewer ("reviewer"): code review via GetResponse
         - IAspire ("aspire"): Aspire infrastructure monitoring — resource health, logs, traces, restart/stop commands via GetResponse
+
+        ROUTING RULES:
+        - For ANY question about Aspire resources, system health, running services, logs, traces, or infrastructure status — ALWAYS use IAspire ("aspire"), NEVER use IShell
+        - IAspire has live MCP tools connected to the running Aspire dashboard — it can list resources, read logs, check traces, restart services
+        - IShell is for general shell commands (file operations, process management, etc.) — NOT for Aspire monitoring
         """;
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
