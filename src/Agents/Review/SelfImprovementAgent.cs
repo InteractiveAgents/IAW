@@ -16,7 +16,7 @@ namespace IAW.Agents.Review;
 
 public class SelfImprovementAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient),
       ISelfImprovement,
       IReceiver<ReviewCompletedMessage>,

@@ -1,0 +1,15 @@
+using Core;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using Microsoft.Extensions.AI;
+
+namespace IAW.Agents.LLM;
+
+public class Gpt54NanoAgent(
+    [AgentState] AgentDurableState durableState,
+    [Llm<Gpt54Nano>] IChatClient chatClient)
+    : LlmAgentBase(durableState, chatClient), IGpt54Nano
+{
+    protected override string DisplayName => "GPT-5.4 Nano";
+}

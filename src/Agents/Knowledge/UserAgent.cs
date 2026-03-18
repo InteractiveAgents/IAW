@@ -10,7 +10,7 @@ namespace IAW.Agents.Knowledge;
 
 public class UserAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IUser
 {
     private const string PreferencesKey = "user-preferences";

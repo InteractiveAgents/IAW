@@ -15,7 +15,7 @@ namespace IAW.Agents.Review;
 
 public class ReviewerAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient),
       IReviewer,
       IStreamConsumer<CodeChangedEvent>

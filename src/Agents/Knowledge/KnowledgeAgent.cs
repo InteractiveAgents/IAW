@@ -11,7 +11,7 @@ namespace IAW.Agents.Knowledge;
 
 public class KnowledgeAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IKnowledge
 {
     protected override string DisplayName => "Project Knowledge";

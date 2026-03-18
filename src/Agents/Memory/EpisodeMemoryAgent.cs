@@ -11,7 +11,7 @@ namespace IAW.Agents.Memory;
 
 public class EpisodeMemoryAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
+    IChatClient chatClient,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<EpisodeMemoryAgent> logger)

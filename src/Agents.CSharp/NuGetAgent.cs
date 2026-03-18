@@ -11,7 +11,7 @@ namespace IAW.Agents.CSharp;
 
 public class NuGetAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
+    IChatClient chatClient,
     IHttpClientFactory httpClientFactory)
     : Agent(durableState, chatClient), INuGet
 {

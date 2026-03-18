@@ -23,7 +23,8 @@ public static class IAWHostingExtensions
 
         var iaw = new IAWService(orleans, builder);
 
-        iaw.GitHubTokenParam = builder.AddParameter("github-token", secret: true);
+        iaw.GitHubTokenParam = builder.AddParameter("github-token", secret: true)
+            .WithDescription("Create at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo` scope", enableMarkdown: true);
 
         var storage = builder.AddAzureStorage("iaw-storage");
         iaw.Blobs = storage.AddBlobs("file-storage");
@@ -50,10 +51,12 @@ public static class IAWHostingExtensions
         }
 
         if (model.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase))
-            iaw.AnthropicKeyParam ??= iaw.AppBuilder.AddParameter("anthropic-api-key", secret: true);
+            iaw.AnthropicKeyParam ??= iaw.AppBuilder.AddParameter("anthropic-api-key", secret: true)
+                .WithDescription("Get your key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)", enableMarkdown: true);
 
         if (model.Provider.Equals("openai", StringComparison.OrdinalIgnoreCase))
-            iaw.OpenAiKeyParam ??= iaw.AppBuilder.AddParameter("openai-api-key", secret: true);
+            iaw.OpenAiKeyParam ??= iaw.AppBuilder.AddParameter("openai-api-key", secret: true)
+                .WithDescription("Get your key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)", enableMarkdown: true);
 
         return iaw;
     }

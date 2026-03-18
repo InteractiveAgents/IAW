@@ -87,6 +87,12 @@ public sealed class TelegramBotService(
         var telegramId = from.Id;
         var topicId = message.MessageThreadId;
 
+        // ensure GroupChatId is persisted so async event handlers (job results, notifications) can find it
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var storedChatId) || storedChatId != chatId.ToString())
+            await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
+
         // Photo message: download highest-res photo -> upload to blob -> send as ImageContent
         if (message.Photo is not null && message.Photo.Any())
         {

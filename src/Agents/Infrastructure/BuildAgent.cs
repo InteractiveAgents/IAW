@@ -11,7 +11,7 @@ namespace IAW.Agents.Infrastructure;
 
 public partial class BuildAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IBuild
 {
     protected override string DisplayName => "Build";

@@ -10,7 +10,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class AspireAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
+    IChatClient chatClient,
     ILogger<AspireAgent> logger)
     : Agent(durableState, chatClient), IAspire
 {

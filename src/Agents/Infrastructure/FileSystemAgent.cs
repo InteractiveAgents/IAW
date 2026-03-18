@@ -10,7 +10,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class FileSystemAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IFileSystem
 {
     protected override string DisplayName => "FileSystem";

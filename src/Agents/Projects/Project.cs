@@ -14,7 +14,7 @@ namespace IAW.Agents.Projects;
 [GrainType(IAWConstants.GrainTypes.Project)]
 public class Project(
     [ProjectState] ProjectDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IProject
 {
     protected override string Instructions => GetTopicSlug() switch

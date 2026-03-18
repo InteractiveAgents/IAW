@@ -17,7 +17,7 @@ namespace IAW.Agents.CSharp;
 
 public class RoslynAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>
 {
     protected override string DisplayName => "Roslyn";

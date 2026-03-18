@@ -12,7 +12,7 @@ namespace IAW.Agents.CSharp;
 
 public partial class DotNetAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
+    IChatClient chatClient,
     IHttpClientFactory httpClientFactory)
     : Agent(durableState, chatClient), IDotNet
 {

@@ -11,7 +11,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class GitAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
+    IChatClient chatClient)
     : Agent(durableState, chatClient), IGit
 {
     protected override string DisplayName => "Git";

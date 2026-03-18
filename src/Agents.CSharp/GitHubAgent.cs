@@ -10,7 +10,7 @@ namespace IAW.Agents.CSharp;
 
 public class GitHubAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
+    IChatClient chatClient,
     IGitHubClient gitHubClient)
     : Agent(durableState, chatClient), IGitHub
 {
