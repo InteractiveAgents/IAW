@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -14,7 +15,7 @@ public class PatternMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<PatternMemoryAgent> logger)
-    : global::Core.Memory(durableState, chatClient, memories, embedder, logger), IPatternMemory
+    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IPatternMemory
 {
     protected override string CollectionName => "iaw-pattern-memory";
     protected override string DisplayName => "Pattern Memory";

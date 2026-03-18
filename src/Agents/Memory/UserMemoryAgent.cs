@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -14,7 +15,7 @@ public class UserMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<UserMemoryAgent> logger)
-    : global::Core.Memory(durableState, chatClient, memories, embedder, logger), IUserMemory
+    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IUserMemory
 {
     protected override string CollectionName => "iaw-user-memory";
     protected override string DisplayName => "User Memory";

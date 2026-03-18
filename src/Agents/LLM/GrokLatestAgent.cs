@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -8,7 +9,7 @@ namespace IAW.Agents.LLM;
 public class GrokLatestAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<GrokLatest>] IChatClient chatClient)
-    : global::Core.LLM(durableState, chatClient), IGrokLatest
+    : LlmAgentBase(durableState, chatClient), IGrokLatest
 {
     protected override string DisplayName => "Grok Latest";
 }

@@ -4,10 +4,12 @@ using System.Threading.Channels;
 using Core;
 using Core.Agents;
 using Core.AI;
+using Core.Context;
 using Core.Contracts;
 using Core.Ingestion;
 using Core.Services;
 using ChatMessage = Core.Contracts.ChatMessage;
+using ContractsTextContent = Core.Contracts.TextContent;
 using Core.Observability;
 using Grpc.Core;
 using Microsoft.Agents.AI;
@@ -45,7 +47,7 @@ public abstract partial class Agent(
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
     protected IDurableList<AgentEvent> EventLog => durableState.EventLog;
     protected IStreamProvider StreamProvider => this.GetStreamProvider(IAWConstants.StreamProvider);
-    protected virtual IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() => Array.Empty<global::Core.Context.IAgentContextProvider>();
+    protected virtual IReadOnlyList<IAgentContextProvider> GetContextProviders() => Array.Empty<IAgentContextProvider>();
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -85,7 +87,7 @@ public abstract partial class Agent(
         {
             Role = "user",
             Content = prompt,
-            Parts = [new global::Core.Contracts.TextContent(prompt)]
+            Parts = [new ContractsTextContent(prompt)]
         };
         return GetResponseStream(message, cancellationToken);
     }

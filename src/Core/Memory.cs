@@ -7,7 +7,7 @@ using IAW.Core;
 
 namespace Core;
 
-public abstract class Memory(
+public abstract class MemoryAgentBase(
     [AgentState] AgentDurableState durableState,
     IChatClient chat,
     [Memory("memories")] IDurableList<MemoryEntry> memories,

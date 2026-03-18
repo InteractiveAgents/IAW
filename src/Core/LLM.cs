@@ -3,7 +3,7 @@ using Microsoft.Extensions.AI;
 
 namespace Core;
 
-public abstract class LLM(
+public abstract class LlmAgentBase(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
     : IAW.Core.Agent(durableState, chatClient)

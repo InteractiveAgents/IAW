@@ -22,7 +22,7 @@ public class ReviewerAgent(
 {
     protected override string DisplayName => "Reviewer";
 
-    protected override IReadOnlyList<global::Core.Context.IAgentContextProvider> GetContextProviders() =>
+    protected override IReadOnlyList<IAgentContextProvider> GetContextProviders() =>
     [
         new MemoryContextProvider([
             GrainFactory.GetGrain<IPatternMemory>("pattern-memory"),

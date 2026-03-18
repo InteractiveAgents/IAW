@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -8,7 +9,7 @@ namespace IAW.Agents.LLM;
 public class Qwen25Agent(
     [AgentState] AgentDurableState durableState,
     [Llm<Qwen25>] IChatClient chatClient)
-    : global::Core.LLM(durableState, chatClient), IQwen25
+    : LlmAgentBase(durableState, chatClient), IQwen25
 {
     protected override string DisplayName => "Qwen 2.5";
 }

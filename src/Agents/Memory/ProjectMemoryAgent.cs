@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -14,7 +15,7 @@ public class ProjectMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<ProjectMemoryAgent> logger)
-    : global::Core.Memory(durableState, chatClient, memories, embedder, logger), IProjectMemory
+    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IProjectMemory
 {
     protected override string CollectionName => "iaw-project-memory";
     protected override string DisplayName => "Project Memory";

@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -14,7 +15,7 @@ public class EpisodeMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<EpisodeMemoryAgent> logger)
-    : global::Core.Memory(durableState, chatClient, memories, embedder, logger), IEpisodeMemory
+    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IEpisodeMemory
 {
     protected override string CollectionName => "iaw-episode-memory";
     protected override string DisplayName => "Episode Memory";

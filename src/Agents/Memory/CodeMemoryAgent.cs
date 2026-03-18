@@ -1,3 +1,4 @@
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -14,7 +15,7 @@ public class CodeMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<CodeMemoryAgent> logger)
-    : global::Core.Memory(durableState, chatClient, memories, embedder, logger), ICodeMemory
+    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), ICodeMemory
 {
     protected override string CollectionName => "iaw-code-memory";
     protected override string DisplayName => "Code Memory";
