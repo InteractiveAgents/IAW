@@ -20,7 +20,35 @@ public class CodeOrchestratorAgent(
 
     protected override string DisplayName => "Code Orchestrator";
 
-    protected override string Instructions => """
+    protected override string Instructions => BuildInstructions();
+
+    private static string BuildInstructions()
+    {
+        var catalog = InterfaceCatalog.Discover();
+        var agentsByNamespace = catalog
+            .GroupBy(e => e.InterfaceType.Namespace ?? "Unknown")
+            .OrderBy(g => g.Key);
+
+        var agentSection = new StringBuilder();
+        agentSection.AppendLine("        Available agents (auto-discovered):");
+        agentSection.AppendLine("        Pick the most specialized agent for the task. Prefer domain-specific agents over general ones.");
+        agentSection.AppendLine();
+
+        foreach (var group in agentsByNamespace)
+        {
+            var domain = group.Key.Split('.').LastOrDefault() ?? group.Key;
+            agentSection.AppendLine($"        [{domain}]");
+            foreach (var entry in group.OrderBy(e => e.GrainId))
+            {
+                agentSection.Append($"        - {entry.InterfaceName} (\"{entry.GrainId}\"): client.GetGrain<{entry.InterfaceName}>(\"{entry.GrainId}\")");
+                if (entry.Produces.Count > 0)
+                    agentSection.Append($" — publishes: {string.Join(", ", entry.Produces)}");
+                agentSection.AppendLine();
+            }
+            agentSection.AppendLine();
+        }
+
+        return $"""
         You generate standalone C# console apps. Output ONLY valid C# code. No markdown. No explanation.
 
         TEMPLATE (always start with this exact boilerplate):
@@ -49,27 +77,15 @@ public class CodeOrchestratorAgent(
 
         RULES:
         - Use `builder.AddIAWClient()` from namespace `Aspire.IAW` to connect to the cluster.
-        - Agent interfaces: `Core.Contracts` (IAgent), `IAW.Agents.Infrastructure` (IShell, IFileSystem, IBuild, IGit, IAspire)
-        - Get agents: client.GetGrain<IShell>("shell"), client.GetGrain<IFileSystem>("file-system"), etc.
+        - Get agents via client.GetGrain<IInterfaceName>("grain-id") — see catalog below for IDs.
         - Call await agent.GetResponse("prompt", default) to talk to agents. Use `default` for CancellationToken.
-        - Always write result.json: { "status": "success"/"error", "summary": "...", "artifacts": [], "metrics": {} }
+        - Always write result.json with status, summary, artifacts, and metrics fields
         - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
         - Use simple string operations, not complex LINQ chains
         - Wrap everything in try/catch, write error to result.json in catch
-
-        Available agents:
-        - IShell ("shell"): run shell commands via GetResponse
-        - IFileSystem ("file-system"): read/write/list files via GetResponse
-        - IBuild ("build"): dotnet build/test via GetResponse
-        - IGit ("git"): git operations via GetResponse
-        - IReviewer ("reviewer"): code review via GetResponse
-        - IAspire ("aspire"): Aspire infrastructure monitoring — resource health, logs, traces, restart/stop commands via GetResponse
-
-        ROUTING RULES:
-        - For ANY question about Aspire resources, system health, running services, logs, traces, or infrastructure status — ALWAYS use IAspire ("aspire"), NEVER use IShell
-        - IAspire has live MCP tools connected to the running Aspire dashboard — it can list resources, read logs, check traces, restart services
-        - IShell is for general shell commands (file operations, process management, etc.) — NOT for Aspire monitoring
-        """;
+        - Pick the MOST SPECIALIZED agent for the task — don't use IShell when a domain agent exists
+        """ + "\n" + agentSection.ToString();
+    }
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
 
