@@ -5,6 +5,7 @@ using Core.Contracts;
 using Core.Contracts.UI;
 using Core.Services;
 using Microsoft.Extensions.Options;
+using Telegram;
 using Telegram.BotAPI;
 using Telegram.BotAPI.AvailableMethods;
 using Telegram.BotAPI.AvailableTypes;

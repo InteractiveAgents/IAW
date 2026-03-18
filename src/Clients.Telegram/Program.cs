@@ -2,6 +2,7 @@ using Aspire.IAW;
 using Core.AI;
 using Core.Services;
 using Microsoft.Extensions.Options;
+using Telegram;
 using Telegram.BotAPI;
 using Telegram.BotAPI.GettingUpdates;
 using TelegramClient;
