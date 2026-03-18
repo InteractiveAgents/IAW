@@ -110,11 +110,16 @@ public class AspireAgent(
 
     private string? ResolveAppHostPath()
     {
-        var workspace = GetWorkspacePath()
-                        ?? Environment.GetEnvironmentVariable("IAW__Workspace");
-        if (workspace is null) return null;
+        // Walk up from the assistant's bin directory to find the repo root containing src/IAW.AppHost
+        var baseDir = AppContext.BaseDirectory;
+        var dir = new DirectoryInfo(baseDir);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "src", "IAW.AppHost");
+            if (Directory.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
 
-        var appHostDir = Path.Combine(workspace, "src", "IAW.AppHost");
-        return Directory.Exists(appHostDir) ? appHostDir : null;
+        return null;
     }
 }
