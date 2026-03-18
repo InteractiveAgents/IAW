@@ -5,7 +5,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
+    <PackageId>IAW.Core</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>IAW Contributors</Authors>
+    <Description>Orleans-based multi-agent runtime with typed message system, streaming behaviors, and AI integration</Description>
+    <PackageTags>orleans;agents;ai;distributed;streaming</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IsPackable>true</IsPackable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="IAW.Core.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI" />
@@ -16,10 +27,13 @@
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <PackageReference Include="OpenAI" />
-    <PackageReference Include="Octokit" />
     <PackageReference Include="OllamaSharp" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+    <PackageReference Include="PdfPig" />
+    <PackageReference Include="Qdrant.Client" />
   </ItemGroup>
 
 </Project>

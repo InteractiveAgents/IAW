@@ -18,6 +18,7 @@ public sealed class MockChatClient : IChatClient
             var chatMessage = new ChatMessage(ChatRole.Assistant, response);
             return Task.FromResult(new ChatResponse(chatMessage));
         };
+        _streamFactory = (_, _, ct) => StreamChunksAsync([response], ct);
         return this;
     }
 

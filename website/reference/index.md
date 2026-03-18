@@ -1,308 +1,459 @@
 # API Reference
 
-Complete reference for all IAW V2 interfaces, contracts, and data types.
+Complete reference for all IAW interfaces, contracts, and data types.
 
-## IAgentV2
+## Core
 
-The root grain interface. Every V2 agent exposes this single interface:
+### IAgent
+
+The root grain interface. Every agent exposes this interface:
 
 ```csharp
-public interface IAgentV2 : IGrainWithStringKey
+public interface IAgent : IGrainWithStringKey
 {
-    Task<AgentProfile> GetProfileAsync(CancellationToken ct = default);
+    // Conversation
+    IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
+    Task<string> GetResponse(string prompt, CancellationToken ct);
+    Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken ct);
+    Task ClearHistoryAsync(CancellationToken ct);
 
-    Task<AgentReply> RespondAsync(AgentRequest request, CancellationToken ct = default);
+    // State
+    Task<AgentState> GetStateAsync(CancellationToken ct);
+    Task SetWorkspaceAsync(string path, CancellationToken ct);
 
-    Task AppendMessageAsync(AgentMessage message, CancellationToken ct = default);
-    Task<List<AgentMessage>> QueryMessagesAsync(AgentMessageQuery? query = null, CancellationToken ct = default);
+    // Metadata
+    Task<AgentMetadata> GetMetadataAsync(CancellationToken ct);
+    Task<AgentCapabilities> GetCapabilitiesAsync(CancellationToken ct);
 
-    Task SetMemoryAsync(string key, string value, CancellationToken ct = default);
-    Task<string?> GetMemoryAsync(string key, CancellationToken ct = default);
+    // Events
+    Task HandleEventAsync(AgentEvent agentEvent, CancellationToken ct);
+    Task<IReadOnlyList<AgentEvent>> GetEventLogAsync(CancellationToken ct);
 
-    Task AppendEventAsync(AgentEvent agentEvent, CancellationToken ct = default);
-    Task<List<AgentEvent>> QueryEventsAsync(AgentEventQuery? query = null, CancellationToken ct = default);
+    // Streams
+    Task PublishToStreamAsync(AgentEvent evt, CancellationToken ct);
+    Task<IReadOnlyList<string>> GetActiveSubscriptionsAsync(CancellationToken ct);
 
-    Task SubscribeAsync(string topic, string subscriberAgentId, CancellationToken ct = default);
-    Task NotifyAsync(NotificationEnvelope envelope, CancellationToken ct = default);
-    Task ReceiveNotificationAsync(NotificationEnvelope envelope, CancellationToken ct = default);
-    Task<List<NotificationRecord>> QueryNotificationsAsync(CancellationToken ct = default);
-
-    Task StartScheduleAsync(TimeSpan interval, int? maxTicks = null, CancellationToken ct = default);
-    Task StopScheduleAsync(CancellationToken ct = default);
-    Task<ScheduleStatus> GetScheduleStatusAsync(CancellationToken ct = default);
-
-    Task PublishStreamAsync(string streamNamespace, Guid streamId, string message, CancellationToken ct = default);
-
-    Task<string?> InvokeToolAsync(string toolName, Dictionary<string, string>? arguments = null, CancellationToken ct = default);
+    // Lifecycle
+    Task CancelAsync(CancellationToken ct);
 }
 ```
 
-## AgentV2 Override Points
+### Agent (base class)
 
-These are the methods you override when building agents:
+The abstract base class for all agents:
 
 ```csharp
-public abstract class AgentV2 : DurableGrain, IAgentV2, IRemindable
+public abstract partial class Agent(
+    AgentDurableState durableState,
+    IChatClient chatClient)
+    : DurableGrain, IAgent
+```
+
+#### Virtual Members
+
+| Member | Type | Default |
+|---|---|---|
+| `Instructions` | `string` | `"You are a helpful AI assistant..."` |
+| `DisplayName` | `string` | `GetType().Name` |
+| `DefineTools()` | `IReadOnlyList<AITool>` | Empty list |
+| `OnTrackingDueAsync(item, ct)` | `Task` | LLM-powered check with change detection |
+| `HandleEventAsync(evt, ct)` | `Task` | No-op |
+| `AgentKindValue` | `AgentKind` | `AgentKind.Static` |
+
+#### Protected Members
+
+| Member | Type | Purpose |
+|---|---|---|
+| `ChatClient` | `IChatClient` | The injected LLM client |
+| `History` | `IDurableList<ChatMessage>` | Conversation history |
+| `State` | `IDurableDictionary<string, StateEntry>` | Key-value state |
+| `EventLog` | `IDurableList<AgentEvent>` | Event audit log |
+| `TrackingItems` | `IDurableDictionary<string, TrackingItem>` | Tracking items |
+| `StreamProvider` | `IStreamProvider` | Orleans stream provider (`"agents"`) |
+| `AgentCancellation` | `CancellationToken` | Agent-scoped cancellation token |
+
+#### Protected Methods
+
+| Method | Purpose |
+|---|---|
+| `PublishAsync(name, payload, ct)` | Publish an untyped event |
+| `PublishTypedAsync<TEvent>(evt, ct)` | Publish a typed `IEvent` |
+| `GetWorkspacePath()` | Get current workspace path (or null) |
+| `WriteStateAsync(ct)` | Persist all state changes |
+| `BuildSafeErrorMessage(ex)` | Format exception for safe display |
+
+## Core.Communication.Messages
+
+### IAgentMessage
+
+```csharp
+public interface IAgentMessage
 {
-    // Required: agent identity and configuration
-    protected abstract AgentProfile Profile { get; }
-
-    // Optional: handle incoming requests (default returns "Not implemented")
-    protected virtual Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default);
-
-    // Optional: expose tools for LLM and InvokeToolAsync (default returns empty list)
-    protected virtual IReadOnlyList<AITool> DefineTools();
-
-    // Optional: handle scheduled ticks (default is no-op)
-    protected virtual Task OnScheduleTickAsync(int tickCount, CancellationToken ct = default);
-
-    // Optional: customize how subscriber grains are resolved
-    protected virtual IAgentV2 ResolveSubscriber(string subscriberId);
+    string SourceAgentId { get; }
+    string CorrelationId { get; }
+    DateTimeOffset Timestamp { get; }
 }
 ```
 
-### Protected Properties
+### ICommand
 
 ```csharp
-// Read access to the durable message list
-protected IDurableList<AgentMessage> Messages { get; }
-
-// Read access to the durable key-value memory
-protected IDurableDictionary<string, string> Memory { get; }
-
-// Read access to the durable event list
-protected IDurableList<AgentEvent> Events { get; }
-
-// The grain's primary key string
-protected string AgentId { get; }
+public interface ICommand : IAgentMessage;
 ```
 
-### Helper Methods
+### IEvent
 
 ```csharp
-// Call an LLM with the full message history and tools
-protected Task<AgentReply> RespondWithLlmAsync(
-    IChatClient chatClient, AgentRequest request, CancellationToken ct = default);
+public interface IEvent : IAgentMessage;
 ```
 
-## Contract Types
+### INotification
 
-### AgentProfile
+```csharp
+public interface INotification : IAgentMessage;
+```
 
-Returned by `GetProfileAsync`. Identifies the agent and its configuration.
+### Built-in Commands
+
+| Type | Fields |
+|---|---|
+| `AssignTaskCommand` | `Description`, `WorkspacePath?` |
+
+### Built-in Events
+
+| Type | Fields |
+|---|---|
+| `CodeChangedEvent` | `FilePaths`, `CommitSha?` |
+| `BuildCompletedEvent` | `Success`, `CommitSha?`, `Output?` |
+| `TestResultEvent` | `Passed`, `TotalTests`, `FailedTests`, `Summary?` |
+| `DeployCompletedEvent` | `Success`, `Environment`, `Version?` |
+| `HealthCheckEvent` | `ServiceName`, `Healthy`, `ResponseTimeMs?` |
+| `AgentActivatedEvent` | `AgentType` |
+| `StateChangedEvent` | `Key`, `OldValue`, `NewValue` |
+
+### Built-in Notifications
+
+| Type | Fields |
+|---|---|
+| `AlertNotification` | `Severity`, `Message` |
+| `ProgressNotification` | `Step`, `Status`, `Progress?` |
+| `ReviewRequestNotification` | `FilePath`, `Description` |
+
+## Core.Communication
+
+### IStreamConsumer&lt;TEvent&gt;
+
+```csharp
+public interface IStreamConsumer<TEvent> where TEvent : IEvent
+{
+    Task OnStreamEventAsync(TEvent evt, StreamSequenceToken? token);
+}
+```
+
+### IStreamProducer&lt;TEvent&gt;
+
+```csharp
+public interface IStreamProducer<TEvent> where TEvent : IEvent
+{
+    Task PublishToStreamAsync(TEvent evt, CancellationToken ct = default);
+}
+```
+
+### IBroadcaster&lt;TMessage&gt;
+
+```csharp
+public interface IBroadcaster<TMessage> where TMessage : IAgentMessage
+{
+    Task<BroadcastResult> BroadcastAsync(TMessage message, CancellationToken ct = default);
+    Task RegisterReceiverAsync(string receiverId);
+    Task UnregisterReceiverAsync(string receiverId);
+    Task<IReadOnlyList<string>> GetReceiversAsync();
+}
+```
+
+### IReceiver&lt;TMessage&gt;
+
+```csharp
+public interface IReceiver<TMessage> where TMessage : IAgentMessage
+{
+    Task<MessageReceipt> ReceiveAsync(TMessage message, CancellationToken ct = default);
+    Task<bool> CanReceiveAsync(CancellationToken ct = default);
+}
+```
+
+### INotifier&lt;TNotification&gt;
+
+```csharp
+public interface INotifier<TNotification> where TNotification : INotification
+{
+    Task NotifyAsync(TNotification notification, CancellationToken ct = default);
+    Task SubscribeObserverAsync(IAgentObserver<TNotification> observer);
+    Task UnsubscribeObserverAsync(IAgentObserver<TNotification> observer);
+}
+```
+
+### IAgentObserver&lt;TEvent&gt;
+
+```csharp
+public interface IAgentObserver<TEvent> : IGrainObserver where TEvent : INotification
+{
+    void OnEvent(TEvent evt);
+    void OnError(Exception ex);
+}
+```
+
+### BroadcastResult
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentProfile
-{
-    [Id(0)] public string Id { get; set; } = string.Empty;
-    [Id(1)] public string DisplayName { get; set; } = string.Empty;
-    [Id(2)] public string? Description { get; set; }
-    [Id(3)] public string Instructions { get; set; } = string.Empty;
-    [Id(4)] public List<string> Capabilities { get; set; } = [];
-}
+public record BroadcastResult(
+    [property: Id(0)] int TotalReceivers,
+    [property: Id(1)] int Delivered,
+    [property: Id(2)] int Failed,
+    [property: Id(3)] string[] FailedReceiverIds);
 ```
 
-### AgentRequest
-
-Input to `RespondAsync`.
+### MessageReceipt
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentRequest
-{
-    [Id(0)] public string Input { get; set; } = string.Empty;
-    [Id(1)] public string? ConversationId { get; set; }
-    [Id(2)] public Dictionary<string, string> Metadata { get; set; } = [];
-    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
-}
+public record MessageReceipt(
+    [property: Id(0)] bool Accepted,
+    [property: Id(1)] string ReceiptId,
+    [property: Id(2)] DateTimeOffset Timestamp,
+    [property: Id(3)] string? RejectionReason);
 ```
 
-### AgentReply
-
-Output from `RespondAsync` and `OnRespondAsync`.
-
-```csharp
-[GenerateSerializer]
-public sealed class AgentReply
-{
-    [Id(0)] public string Output { get; set; } = string.Empty;
-    [Id(1)] public string? ModelId { get; set; }
-    [Id(2)] public Dictionary<string, string> Metadata { get; set; } = [];
-    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
-}
-```
-
-### AgentMessage
-
-A single conversation turn stored by `AppendMessageAsync` and `RespondAsync`.
-
-```csharp
-[GenerateSerializer]
-public sealed class AgentMessage
-{
-    [Id(0)] public string MessageId { get; set; } = Guid.NewGuid().ToString("N");
-    [Id(1)] public string Role { get; set; } = string.Empty;
-    [Id(2)] public string Content { get; set; } = string.Empty;
-    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
-    [Id(4)] public Dictionary<string, string> Metadata { get; set; } = [];
-}
-```
-
-### AgentMessageQuery
-
-Filter for `QueryMessagesAsync`.
-
-```csharp
-[GenerateSerializer]
-public sealed class AgentMessageQuery
-{
-    [Id(0)] public int? Limit { get; set; }
-    [Id(1)] public DateTimeOffset? SinceUtc { get; set; }
-    [Id(2)] public string? Role { get; set; }
-    [Id(3)] public bool Descending { get; set; }
-}
-```
+## Core Data Types
 
 ### AgentEvent
 
-An event log entry created by `AppendEventAsync`.
+```csharp
+[GenerateSerializer]
+public record AgentEvent(
+    [property: Id(0)] string EventName,
+    [property: Id(1)] string SourceAgentId,
+    [property: Id(2)] string CorrelationId,
+    [property: Id(3)] DateTimeOffset Timestamp,
+    [property: Id(4)] Dictionary<string, object> Payload);
+```
+
+### AgentMetadata
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentEvent
-{
-    [Id(0)] public string EventId { get; set; } = Guid.NewGuid().ToString("N");
-    [Id(1)] public string Type { get; set; } = string.Empty;
-    [Id(2)] public string? Payload { get; set; }
-    [Id(3)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
-    [Id(4)] public Dictionary<string, string> Metadata { get; set; } = [];
-}
+public record AgentMetadata(
+    [property: Id(0)] string AgentType,
+    [property: Id(1)] string DisplayName,
+    [property: Id(2)] string Description,
+    [property: Id(3)] AgentKind Kind,
+    [property: Id(4)] string[] Capabilities,
+    [property: Id(5)] string[] Publishes,
+    [property: Id(6)] string[] Subscribes);
 ```
 
-### AgentEventQuery
-
-Filter for `QueryEventsAsync`.
+### AgentCapabilities
 
 ```csharp
 [GenerateSerializer]
-public sealed class AgentEventQuery
-{
-    [Id(0)] public int? Limit { get; set; }
-    [Id(1)] public DateTimeOffset? SinceUtc { get; set; }
-    [Id(2)] public string? Type { get; set; }
-    [Id(3)] public bool Descending { get; set; }
-}
+public record AgentCapabilities(
+    [property: Id(0)] bool HasMemory,
+    [property: Id(1)] bool HasP2P,
+    [property: Id(2)] bool HasEvents,
+    [property: Id(3)] bool HasTimers,
+    [property: Id(4)] bool IsCancellable,
+    [property: Id(5)] bool IsMultiState,
+    [property: Id(6)] bool HasTools,
+    [property: Id(7)] bool IsSecure);
 ```
 
-### ScheduleStatus
-
-Returned by `GetScheduleStatusAsync`.
+### AgentState
 
 ```csharp
 [GenerateSerializer]
-public sealed class ScheduleStatus
-{
-    [Id(0)] public bool IsRunning { get; set; }
-    [Id(1)] public TimeSpan Interval { get; set; }
-    [Id(2)] public int TickCount { get; set; }
-    [Id(3)] public int? MaxTicks { get; set; }
-}
+public record AgentState(
+    [property: Id(0)] Dictionary<string, StateEntry> Entries);
 ```
 
-### NotificationEnvelope
-
-A rich notification message used as input to `NotifyAsync` and `ReceiveNotificationAsync`.
+### StateEntry
 
 ```csharp
 [GenerateSerializer]
-public sealed class NotificationEnvelope
-{
-    [Id(0)] public string Topic { get; set; } = string.Empty;
-    [Id(1)] public string Payload { get; set; } = string.Empty;
-    [Id(2)] public string ContentType { get; set; } = "application/json";
-    [Id(3)] public string? Schema { get; set; }
-    [Id(4)] public string? SchemaVersion { get; set; }
-    [Id(5)] public string MessageId { get; set; } = Guid.NewGuid().ToString("N");
-    [Id(6)] public string? CorrelationId { get; set; }
-    [Id(7)] public Dictionary<string, string> Headers { get; set; } = [];
-    [Id(8)] public DateTimeOffset TimestampUtc { get; set; } = DateTimeOffset.UtcNow;
-}
+public record StateEntry(
+    [property: Id(0)] string Key,
+    [property: Id(1)] object Value);
 ```
 
-### NotificationRecord
-
-A delivered notification stored on the subscriber agent.
+### ChatMessage
 
 ```csharp
 [GenerateSerializer]
-public sealed class NotificationRecord
+public sealed record ChatMessage
 {
-    [Id(0)] public string Topic { get; set; } = string.Empty;
-    [Id(1)] public string Payload { get; set; } = string.Empty;
-    [Id(2)] public DateTimeOffset TimestampUtc { get; set; }
-    [Id(3)] public string ContentType { get; set; } = "application/json";
-    [Id(4)] public string? Schema { get; set; }
-    [Id(5)] public string? SchemaVersion { get; set; }
-    [Id(6)] public string MessageId { get; set; } = string.Empty;
-    [Id(7)] public string? CorrelationId { get; set; }
-    [Id(8)] public Dictionary<string, string> Headers { get; set; } = [];
+    [Id(0)] public string Role { get; init; } = string.Empty;
+    [Id(1)] public string Content { get; init; } = string.Empty;
+    [Id(2)] public DateTimeOffset TimestampUtc { get; init; } = DateTimeOffset.UtcNow;
 }
 ```
 
-## NotificationJson
-
-Static helper class for type-safe notification serialization and deserialization.
-
-### CreateEnvelope
+### TrackingItem
 
 ```csharp
-public static NotificationEnvelope CreateEnvelope<TPayload>(
-    string topic,
-    TPayload payload,
-    string? schema = null,
-    string? schemaVersion = null,
-    string? messageId = null,
-    string? correlationId = null,
-    IReadOnlyDictionary<string, string>? headers = null,
-    JsonSerializerOptions? serializerOptions = null)
+[GenerateSerializer]
+public record TrackingItem(
+    [property: Id(0)] string Id,
+    [property: Id(1)] string Description,
+    [property: Id(2)] TimeSpan Interval,
+    [property: Id(3)] DateTimeOffset CreatedAt,
+    [property: Id(4)] DateTimeOffset? LastCheckAt,
+    [property: Id(5)] string? LastResult);
 ```
 
-### ReadPayload
-
-Extension methods to deserialize the JSON payload from a `NotificationEnvelope` or `NotificationRecord`:
+### AgentKind
 
 ```csharp
-public static TPayload? ReadPayload<TPayload>(
-    this NotificationEnvelope notification,
-    JsonSerializerOptions? serializerOptions = null)
-
-public static TPayload? ReadPayload<TPayload>(
-    this NotificationRecord notification,
-    JsonSerializerOptions? serializerOptions = null)
+[GenerateSerializer]
+public enum AgentKind { Static, Dynamic }
 ```
 
-Both methods validate that `ContentType` contains `"json"` and throw `InvalidOperationException` if it does not.
-
-## ITelegramConversation
-
-Extends `IAgent` with Telegram-specific messaging. See the [Telegram Bot guide](/guide/telegram) for full usage details.
+### AgentResponse
 
 ```csharp
-public interface ITelegramConversation : IAgent
+public enum AgentResponseKind { Text, ToolCall, ToolResult, Error, Final }
+
+[GenerateSerializer]
+public record AgentResponse(
+    [property: Id(0)] AgentResponseKind Kind,
+    [property: Id(1)] string Content,
+    [property: Id(2)] string? ToolName = null,
+    [property: Id(3)] Dictionary<string, object>? Metadata = null);
+```
+
+### AgentConfiguration
+
+```csharp
+[GenerateSerializer]
+public record AgentConfiguration(
+    [property: Id(0)] string? DisplayName,
+    [property: Id(1)] string? SystemPrompt,
+    [property: Id(2)] string[]? ToolNames,
+    [property: Id(3)] string? WorkspacePath,
+    [property: Id(4)] string[]? SubscribeToStreams);
+```
+
+## Core.Registry
+
+### IAgentRegistryGrain
+
+```csharp
+public interface IAgentRegistryGrain : IGrainWithStringKey
 {
-    [OneWay]
-    Task HandleUpdate(TelegramBotUpdate update, CancellationToken ct = default);
-    Task<TelegramSendResult> SendText(long chatId, string text, int? threadId = null, CancellationToken ct = default);
-    Task<TelegramSendResult> SendMarkdown(long chatId, string markdown, int? threadId = null, CancellationToken ct = default);
-    Task<TelegramSendResult> SendKeyboard(long chatId, string text, TelegramInlineButton[][] buttons, int? threadId = null, CancellationToken ct = default);
-    Task<TelegramSendResult> EditMessage(long chatId, int messageId, string text, TelegramInlineButton[][]? buttons = null, CancellationToken ct = default);
-    Task SendTyping(long chatId, int? threadId = null, CancellationToken ct = default);
-    Task SetReaction(long chatId, int messageId, string emoji, CancellationToken ct = default);
-    Task PinMessage(long chatId, int messageId, int? threadId = null, CancellationToken ct = default);
-    Task<int> CreateTopic(long chatId, string name, CancellationToken ct = default);
-    Task<TelegramTopicRegistry> EnsureTopics(long chatId, CancellationToken ct = default);
-    Task SetWebhook(string url, string? secretToken = null, CancellationToken ct = default);
-    Task AnswerCallback(string callbackQueryId, string? text = null, CancellationToken ct = default);
+    Task RegisterAsync(AgentRegistration registration);
+    Task UnregisterAsync(string agentType);
+    Task<IReadOnlyList<AgentRegistration>> GetAllAsync();
+    Task<IReadOnlyList<AgentRegistration>> QueryAsync(AgentQuery query);
+    Task<AgentRegistration?> GetByTypeAsync(string agentType);
 }
 ```
+
+### AgentRegistration
+
+```csharp
+[GenerateSerializer]
+public record AgentRegistration(
+    [property: Id(0)] string AgentType,
+    [property: Id(1)] string DisplayName,
+    [property: Id(2)] string Description,
+    [property: Id(3)] AgentKind Kind,
+    [property: Id(4)] string[] Capabilities,
+    [property: Id(5)] string[] Publishes,
+    [property: Id(6)] string[] Subscribes);
+```
+
+### AgentQuery
+
+```csharp
+[GenerateSerializer]
+public record AgentQuery(
+    [property: Id(0)] AgentKind? Kind = null,
+    [property: Id(1)] string[]? Capabilities = null,
+    [property: Id(2)] string[]? Publishes = null,
+    [property: Id(3)] string[]? Subscribes = null);
+```
+
+## Core.Attributes
+
+### CapabilityAttribute
+
+Declares a capability for the agent registry:
+
+```csharp
+[Capability("code-review")]
+public class CodeReviewAgent : Agent { ... }
+```
+
+### PublishesAttribute
+
+Declares an event this agent publishes:
+
+```csharp
+[Publishes("review.completed")]
+public class CodeReviewAgent : Agent { ... }
+```
+
+### SubscribesAttribute
+
+Declares an event this agent subscribes to:
+
+```csharp
+[Subscribes("code.changed")]
+public class CodeReviewAgent : Agent { ... }
+```
+
+## Core.Tools
+
+### FileTools
+
+| Method | Params | Returns |
+|---|---|---|
+| `ReadFileAsync` | `path` | File contents or error |
+| `WriteFileAsync` | `path`, `content` | Confirmation |
+| `ListFiles` | `directory`, `pattern` | Matching file paths |
+| `SearchCode` | `pattern`, `directory`, `fileFilter` | Matching lines |
+
+### ShellTools
+
+| Method | Params | Returns |
+|---|---|---|
+| `RunDotnetAsync` | `arguments`, `workingDirectory?` | Command output |
+| `RunShellAsync` | `command`, `workingDirectory?` | Command output |
+
+### WebTools
+
+| Method | Params | Returns |
+|---|---|---|
+| `FetchUrlAsync` | `url` | Page content or error |
+
+### WorkspaceTools
+
+| Method | Params | Returns |
+|---|---|---|
+| `SetWorkspace` | `path` | Confirmation |
+| `GetWorkspace` | -- | Current path |
+
+## Core.Observability
+
+### AgentTelemetry
+
+| Metric | Type | Description |
+|---|---|---|
+| `agents.events.published` | Counter | Events published |
+| `agents.events.handled` | Counter | Events handled |
+| `agents.activations` | Counter | Agent activations |
+| `agents.messages.sent` | Counter | Messages processed |
+| `agents.conversations.errors` | Counter | Conversation errors |
+| `agents.events.handle_duration` | Histogram | Event handling duration (seconds) |
+| `agents.conversations.duration` | Histogram | Conversation turn duration (seconds) |
+
+ActivitySource name: `"IAW"`
+Meter name: `"IAW"`

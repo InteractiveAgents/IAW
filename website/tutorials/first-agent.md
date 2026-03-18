@@ -4,8 +4,8 @@ This tutorial walks you through creating an IAW agent from scratch, registering 
 
 ## Prerequisites
 
-- [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) installed
-- [.NET Aspire workload](https://learn.microsoft.com/dotnet/aspire/fundamentals/setup-tooling) installed
+- [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0)
+- [.NET Aspire workload](https://learn.microsoft.com/dotnet/aspire/fundamentals/setup-tooling)
 - An Anthropic API key (for LLM integration)
 
 ## Step 1: Create the Project
@@ -20,122 +20,64 @@ dotnet add package IAW.Core
 
 ## Step 2: Define the Agent
 
-Create a file `TodoAgent.cs`:
+Create a file `WeatherAgent.cs`:
 
 ```csharp
 using Core.AI;
 using Core.AI.Models;
-using Core.V2;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
-public class TodoAgent(
-    [Memory("v2-messages")] IDurableList<AgentMessage> messages,
-    [Memory("v2-memory")] IDurableDictionary<string, string> memory,
-    [Memory("v2-events")] IDurableList<AgentEvent> events,
-    [Memory("v2-subscriptions")] IDurableDictionary<string, List<string>> subscriptions,
-    [Memory("v2-notifications")] IDurableList<NotificationRecord> notifications,
-    [Memory("v2-tracking")] IDurableDictionary<string, string> tracking,
+public interface IWeatherAgent : IAgent { }
+
+public class WeatherAgent(
+    [AgentState] AgentDurableState durableState,
     [Llm<Claude45Haiku>] IChatClient chatClient)
-    : AgentV2(messages, memory, events, subscriptions, notifications, tracking)
+    : Agent(durableState, chatClient), IWeatherAgent
 {
-    protected override AgentProfile Profile => new()
-    {
-        Id = this.GetPrimaryKeyString(),
-        DisplayName = "Todo Manager",
-        Instructions = "You are a todo list manager. Help users create, list, and complete tasks. Use the available tools to manage the todo list.",
-        Capabilities = ["todos", "task-management"]
-    };
-
-    protected override Task<AgentReply> OnRespondAsync(AgentRequest request, CancellationToken ct = default)
-        => RespondWithLlmAsync(chatClient, request, ct);
-
-    protected override IReadOnlyList<AITool> DefineTools() =>
-    [
-        AIFunctionFactory.Create(AddTodo, "add_todo", "Add a new todo item"),
-        AIFunctionFactory.Create(ListTodos, "list_todos", "List all todo items"),
-        AIFunctionFactory.Create(CompleteTodo, "complete_todo", "Mark a todo as complete")
-    ];
-
-    private async Task<string> AddTodo(string title)
-    {
-        var id = Guid.NewGuid().ToString("N")[..8];
-        await SetMemoryAsync($"todo:{id}", title);
-
-        await AppendEventAsync(new AgentEvent
-        {
-            Type = "todo.added",
-            Payload = $"{{\"id\":\"{id}\",\"title\":\"{title}\"}}"
-        });
-
-        return $"Added todo '{title}' with ID {id}";
-    }
-
-    private async Task<string> ListTodos()
-    {
-        var allMemory = Memory
-            .Where(kv => kv.Key.StartsWith("todo:"))
-            .Select(kv => $"- [{kv.Key[5..]}] {kv.Value}");
-
-        var list = string.Join("\n", allMemory);
-        return string.IsNullOrEmpty(list) ? "No todos found." : list;
-    }
-
-    private async Task<string> CompleteTodo(string id)
-    {
-        var key = $"todo:{id}";
-        if (!Memory.ContainsKey(key))
-            return $"Todo {id} not found.";
-
-        var title = Memory[key];
-        await SetMemoryAsync($"done:{id}", title);
-
-        await AppendEventAsync(new AgentEvent
-        {
-            Type = "todo.completed",
-            Payload = $"{{\"id\":\"{id}\",\"title\":\"{title}\"}}"
-        });
-
-        return $"Completed todo '{title}'";
-    }
+    protected override string DisplayName => "Weather";
+    protected override string Instructions =>
+        "You are a weather assistant. Provide current weather information.";
 }
 ```
 
 ## Step 3: Add HTTP Endpoints
 
-Update `Program.cs` to register LLM providers and expose the agent via HTTP:
+Update `Program.cs`:
 
 ```csharp
-using Core.AI;
-using Core.V2;
+using IAW.Core;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
-builder.UseOrleans();
-builder.Services.AddLlmProviders(builder);
+builder.AddIAW();
 
 var app = builder.Build();
 
-app.MapGet("/todo/profile", async (IGrainFactory grains) =>
+app.MapGet("/weather/metadata", async (IGrainFactory grains) =>
 {
-    var agent = grains.GetGrain<IAgentV2>("todo-agent");
-    return await agent.GetProfileAsync();
+    var agent = grains.GetGrain<IWeatherAgent>("weather-agent");
+    return await agent.GetMetadata(default);
 });
 
-app.MapPost("/todo/ask", async (IGrainFactory grains, AgentRequest request) =>
+app.MapPost("/weather/ask", async (IGrainFactory grains, ChatRequest request) =>
 {
-    var agent = grains.GetGrain<IAgentV2>("todo-agent");
-    return await agent.RespondAsync(request);
+    var agent = grains.GetGrain<IWeatherAgent>("weather-agent");
+    var response = await agent.GetResponse(request.Prompt, default);
+    return new { response };
 });
 
-app.MapGet("/todo/events", async (IGrainFactory grains) =>
+app.MapGet("/weather/events", async (IGrainFactory grains) =>
 {
-    var agent = grains.GetGrain<IAgentV2>("todo-agent");
-    return await agent.QueryEventsAsync(new AgentEventQuery { Limit = 20, Descending = true });
+    var agent = grains.GetGrain<IWeatherAgent>("weather-agent");
+    return await agent.GetEventLog(default);
 });
 
 app.Run();
+
+record ChatRequest(string Prompt);
 ```
 
 ## Step 4: Create the AppHost
@@ -143,8 +85,7 @@ app.Run();
 Create an Aspire AppHost project or add to an existing one:
 
 ```csharp
-using Aspire;
-using Core.AI.Models;
+using Aspire.Hosting;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -152,15 +93,12 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Claude45Haiku>();
 
 builder.AddProject<Projects.MyAgentSilo>("silo")
-    .WithReference(iaw)
-    .WithLLMEnvironment(builder);
+    .WithReference(iaw);
 
 builder.Build().Run();
 ```
 
 ## Step 5: Configure the API Key
-
-Set up your Anthropic API key:
 
 ```bash
 cd src/IAW.AppHost
@@ -175,100 +113,52 @@ aspire run
 
 Open the Aspire dashboard (typically at `https://localhost:17293`) to see your silo running.
 
-## Step 7: Test
-
-Use curl or any HTTP client to interact with your agent:
+## Step 7: Test via HTTP
 
 ```bash
-# Get agent profile
-curl http://localhost:5000/todo/profile
+# Get agent metadata
+curl http://localhost:5000/weather/metadata
 
-# Ask the agent to add a todo
-curl -X POST http://localhost:5000/todo/ask \
+# Ask the agent about weather
+curl -X POST http://localhost:5000/weather/ask \
   -H "Content-Type: application/json" \
-  -d '{"input": "Add a todo to buy groceries"}'
+  -d '{"prompt": "What is the current weather in New York?"}'
 
-# Ask the agent to list todos
-curl -X POST http://localhost:5000/todo/ask \
+# Ask the agent another question
+curl -X POST http://localhost:5000/weather/ask \
   -H "Content-Type: application/json" \
-  -d '{"input": "List all my todos"}'
+  -d '{"prompt": "Will it rain tomorrow?"}'
 
 # View events
-curl http://localhost:5000/todo/events
+curl http://localhost:5000/weather/events
 ```
 
 ## Step 8: Write a Unit Test
 
-Create a test project:
-
-```bash
-dotnet new xunit -n MyAgent.Tests
-cd MyAgent.Tests
-dotnet add reference ../MyAgentSilo/MyAgentSilo.csproj
-dotnet add package Microsoft.Orleans.TestingHost
-dotnet add package Microsoft.Orleans.Journaling
-dotnet add package Microsoft.Orleans.Persistence.Memory
-dotnet add package Microsoft.Orleans.Reminders
-dotnet add package Microsoft.Orleans.Streaming
-```
-
-Write a test:
+Create a test project and write a test:
 
 ```csharp
-using Core.V2;
-using Microsoft.Extensions.DependencyInjection;
-using Orleans.Journaling;
-using Orleans.TestingHost;
+using IAW.Testing;
 using Xunit;
 
-public sealed class TodoAgentTests : IAsyncLifetime
+public sealed class WeatherAgentTests : AgentTest<WeatherAgent>
 {
-    private TestCluster _cluster = null!;
-
-    public async ValueTask InitializeAsync()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-        _cluster = builder.Build();
-        await _cluster.DeployAsync();
-    }
-
-    public async ValueTask DisposeAsync() => await _cluster.DisposeAsync();
-
     [Fact]
-    public async Task Profile_ReturnsTodoManager()
+    public async Task Metadata_ReturnsWeather()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("todo-test");
-        var profile = await agent.GetProfileAsync();
+        var agent = Agent("weather-test");
+        var metadata = await agent.GetMetadata(TestContext.Current.CancellationToken);
 
-        Assert.Equal("Todo Manager", profile.DisplayName);
-        Assert.Contains("todos", profile.Capabilities);
+        Assert.Equal("Weather", metadata.DisplayName);
     }
 
     [Fact]
-    public async Task Memory_PersistsAcrossCalls()
+    public async Task GetResponse_ReturnsText()
     {
-        var agent = _cluster.GrainFactory.GetGrain<IAgentV2>("memory-test");
+        var agent = Agent("weather-response-test");
+        var response = await agent.GetResponse("What's the weather?", TestContext.Current.CancellationToken);
 
-        await agent.SetMemoryAsync("key", "value");
-        var result = await agent.GetMemoryAsync("key");
-
-        Assert.Equal("value", result);
-    }
-
-    private sealed class SiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder siloBuilder)
-        {
-            siloBuilder
-                .AddMemoryGrainStorage("Default")
-                .AddMemoryGrainStorage("PubSubStore")
-                .AddMemoryStreams("agents")
-                .UseInMemoryReminderService();
-
-            siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
-            siloBuilder.AddStateMachineStorage();
-        }
+        Assert.False(string.IsNullOrEmpty(response));
     }
 }
 ```
@@ -281,7 +171,7 @@ dotnet test
 
 ## Next Steps
 
-- [Building Agents](/guide/agents) -- learn about all AgentV2 override points
-- [Notifications & Events](/guide/notifications) -- add pub/sub communication between agents
-- [Testing](/guide/testing) -- comprehensive testing patterns with TestCluster and Aspire
-- [MCP Server](/guide/mcp) -- orchestrate your agent from Claude Code
+- [Building Agents](/guide/agents) -- all override points and behavior interfaces
+- [Events & Streams](/guide/events-streams) -- connect agents with typed event pipelines
+- [Tools](/guide/behaviors/tools) -- built-in tools and custom tool creation
+- [Testing](/guide/testing) -- comprehensive testing patterns

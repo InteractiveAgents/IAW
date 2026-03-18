@@ -2,121 +2,84 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What Is IAW
-
-IAW (Interactive Agents Web) is an Orleans-based multi-agent runtime for .NET. Agents are Orleans grains extending `AgentV2` with durable journaled state. The system ships as NuGet packages and uses .NET Aspire for orchestration. All projects target `net11.0`.
-
-## Build & Run Commands
+## Build & Test Commands
 
 ```bash
-# Run (always use aspire CLI -- never dotnet run manually)
-aspire run                                                          # start everything (default)
-aspire run --project src/IAW.AppHost/Aspire.csproj                  # explicit AppHost path
-aspire run --log-level debug                                        # verbose output for troubleshooting
-aspire run --log-level trace                                        # maximum verbosity
-
-# Build
-dotnet build IAW.slnx                                               # build everything
-
-# Test
-dotnet test IAW.slnx                                                # run all tests
-dotnet test test/Core.Tests/IAW.Core.Tests.csproj                   # AgentTestV2<Agent> behavior + scenario tests
-dotnet test test/Integration.Tests/IAW.Integration.Tests.csproj     # Aspire integration tests only
-dotnet test IAW.slnx --filter "FullyQualifiedName~MethodName"       # run a single test by name
+dotnet build IAW.slnx                                    # build everything
+dotnet test IAW.slnx                                     # run all tests
+dotnet test test/Core.Tests                               # run core unit tests only
+dotnet test test/Integration.Tests                        # run integration tests only
+dotnet test --filter "FullyQualifiedName~AgentBasicTests"  # run a single test class
+dotnet test --filter "FullyQualifiedName~GetResponse_ReturnsLlmResponse"  # single test
+dotnet run --project src/IAW.AppHost/Aspire.csproj        # run via Aspire orchestrator
 ```
 
-## Solution Structure
-
-```
-src/
-  Core/Core.csproj                  -- Agent base class (AgentV2), V2 contracts, LLM integration
-  IAW.AppHost/Aspire.csproj         -- Aspire orchestration (AppHost)
-  IAW.MCP/MCP.csproj                -- MCP server bridge (Orleans client, HTTP transport)
-  IAW.ServiceDefaults/              -- Shared Aspire defaults (OpenTelemetry, health checks)
-  Clients.Telegram.Bot/             -- Telegram bot (Orleans silo, ports 11112/30001)
-  DevUI/                            -- Microsoft Agent Framework DevUI (Orleans client → IAgent grains)
-samples/
-  Samples/Samples.csproj            -- Primary Orleans silo (ports 11111/30000), ~20 HTTP sample endpoints
-  IAW.Testing/IAW.Testing.csproj    -- Testing framework: AgentTestV2<T>, AspireAgentTest<T>, ScenarioBuilder
-test/
-  Core.Tests/                       -- AgentTestV2<Agent> behavior tests + architecture guards
-  Integration.Tests/                -- AspireAgentTest<Agent> cross-silo integration tests
-```
-
-Central package management via `Directory.Packages.props` -- all package versions are declared there.
+CI runs on `windows-latest` with .NET 11.0 preview SDK. The `global.json` pins SDK version `11.0.100-preview.1.26104.118`.
 
 ## Architecture
 
-### Agent Model (V2)
+### Orleans Agent Framework
 
-**AgentV2** (durable, distributed): Extends `DurableGrain` (Orleans Journaling). All state (`messages`, `memory`, `events`, `subscriptions`, `notifications`, `tracking`) is managed internally by the base class. Derived agents do NOT pass `[Memory]` constructor parameters -- they only override `Profile` and `OnRespondAsync`.
+Every agent is an **Orleans grain** inheriting from `Agent` (abstract, `[GrainType("agent-v3")]`) in `src/Core/Agents/Agent.cs`. The base class is split across partial files:
 
-**IAgentV2** -- flat interface (no composed behavior interfaces):
-- `GetProfileAsync` -- agent identity, capabilities, instructions
-- `RespondAsync` -- send a request, get a reply
-- `AppendMessageAsync` / `QueryMessagesAsync` -- conversation history
-- `SetMemoryAsync` / `GetMemoryAsync` -- key/value memory store
-- `AppendEventAsync` / `QueryEventsAsync` -- event log
-- `SubscribeAsync` / `NotifyAsync` / `ReceiveNotificationAsync` / `QueryNotificationsAsync` -- pub/sub
-- `StartScheduleAsync` / `StopScheduleAsync` / `GetScheduleStatusAsync` -- timers/reminders
-- `PublishStreamAsync` -- Orleans streaming
-- `InvokeToolAsync` -- tool invocation
+| File | Responsibility |
+|------|---------------|
+| `Agent.cs` | Core: activation, LLM streaming, response handling, context enrichment |
+| `Agent.Events.cs` | Typed event publishing to Orleans streams |
+| `Agent.Lifecycle.cs` | Activation hooks, reminder management, deactivation |
+| `Agent.State.cs` | Durable state (history, key-value dict, event log) via `AgentDurableState` |
+| `Agent.Streams.cs` | Auto-subscribe to streams based on `IStreamConsumer<T>` interfaces |
+| `Agent.Tools.cs` | AI tool registration and invocation |
+| `Agent.Tracking.cs` | Periodic monitoring via Orleans reminders |
+| `Agent.Observers.cs` | Stream observer pattern |
 
-**Agent (V1 shim)**: The original `Agent` class now extends `AgentV2` for backward compatibility. `IAgent` extends `IAgentV2`.
+**Durable state** uses Orleans Journaling (`DurableGrain` + `IDurableList`/`IDurableDictionary`), not classic `[Persistent]` state.
 
-### LLM Integration
+### Key Patterns
 
-Models are registered in `src/Core/AI/Models/` as singletons extending `LLMModel`. Each has a provider (Anthropic/OpenAI/Ollama) and a ServiceKey.
+- **Constructor injection via attributes**: `[AgentState]` injects `AgentDurableState`, `[Llm<TModel>]` injects model-specific `IChatClient`
+- **Communication**: Three patterns — direct `IAgent.GetResponse()` calls, typed P2P via `IReceiver<TMessage>`, pub/sub via `IStreamProducer<T>`/`IStreamConsumer<T>` over Orleans streams (provider name: `"agents"`)
+- **Context enrichment**: Agents override `GetContextProviders()` to inject memory/project/task context into prompts before LLM calls
+- **History management**: `DurableChatHistoryProvider` auto-summarizes at 40 messages via `HistorySummarizer`
 
-**Injection into grains** uses `[LlmAttribute<TModel>]` on a constructor parameter, which Orleans resolves via `LlmAttributeMapper<TModel>` to a keyed `IChatClient`.
+### Project Layout
 
-**AppHost declaration**: `AddIAW("name").WithLLM<Sonnet46>()` registers models; `.WithLLMEnvironment(builder)` injects config + API key parameters into service projects.
+| Project | Purpose | Packable |
+|---------|---------|----------|
+| `src/Core` (IAW.Core) | Agent base class, contracts, AI integration, tools, observability | Yes |
+| `src/Agents` (IAW.Agents) | 65 agent implementations (infrastructure, LLM wrappers, memory, orchestration) | Yes |
+| `src/Agents.CSharp` (IAW.Agents.CSharp) | Roslyn, DotNet, GitHub, NuGet agents | Yes |
+| `src/Aspire.Hosting.IAW` | AppHost integration: `AddIAW()`, `IAWService`, `WithLLM<T>()`, `WithReference(iaw)` | Yes |
+| `src/Aspire.IAW.Client` | Service integration: silo `AddIAW()`, client `AddIAWClient()`, OTel, health | Yes |
+| `src/IAW.Testing` (IAW.Testing) | `AgentTest<TAgent>` base class with TestCluster, MockChatClient | Yes |
+| `src/IAW.AppHost` | Aspire AppHost — defines distributed topology via `Aspire.Hosting.IAW` | No |
+| `src/IAW.Assistant` | Production silo hosting all agents (single `builder.AddIAW()` call) | No |
+| `src/IAW.MCP` | MCP server bridge (localhost:5300) for Claude Code | No |
+| `src/DevUI` | Blazor web UI for agent interaction | No |
+| `src/Clients.Telegram` | Telegram bot client with Ngrok tunneling | No |
 
-**Provider registration**: `AddLlmProviders(this IHostApplicationBuilder)` in `LlmRegistration.cs` reads `AI:LLM:Models` config and registers `IChatClient` per model with OpenTelemetry wrapping.
+### Aspire Hosting (`src/IAW.AppHost`)
 
-### Aspire Hosting
+`builder.AddIAW("iaw")` returns `IAWService` which chains `.WithLLM<T>()`, `.WithOllama()`, `.WithVoice2Text<T>()`, `.WithStorage()`, `.WithVectorDb()`. `.WithReference(iaw)` on a project auto-propagates Orleans membership, API keys, model config, blob/qdrant connections, and WaitFor dependencies. No separate `WithLLMEnvironment()` needed.
 
-`IAWExtensions.cs` provides:
-- `AddIAW(name)` -- creates Orleans resource with in-memory storage/streams/reminders
-- `WithLLM<TModel>()` -- declares which LLM models to use
-- `WithLLMEnvironment()` -- injects `AI__LLM__Models__*` env vars + API key secrets
+Key ports: assistant silo on 30000 (gateway) / 11111 (silo), MCP on 5300.
 
-Multi-silo setup: `samples` on ports 11111/30000, `telegram-bot` on 11112/30001, joined via `PrimarySiloEndpoint` config.
+### Testing (`src/IAW.Testing`)
 
-### DevUI (Microsoft Agent Framework)
+Inherit from `AgentTest<TAgent>` — it spins up a `TestCluster` with memory storage, mock LLM (`MockChatClient` returning `"mock-response"`), and all model mappers registered. Use `Agent(UniqueId("prefix"))` to get grain references with unique IDs per test run. Tests use xunit.v3 with `TestContext.Current.CancellationToken`.
 
-DevUI provides a web-based chat UI for interacting with Orleans agents. It runs as an **Orleans client** (not a silo) connecting to the `samples` silo via gateway.
+### Observability
 
-**Architecture**: DevUI → `OrleansAgentChatClient : IChatClient` → `IClusterClient.GetGrain<IAgent>(agentId)` → `RespondAsync()` → response.
-
-`OrleansAgentChatClient` bridges `Microsoft.Extensions.AI.IChatClient` to Orleans `IAgent` grains. The `AddAIAgent()` registration passes the grain ID as `instructions`, which the client uses for routing. GenAI telemetry flows through the grain's `UseOpenTelemetry()` pipeline.
-
-Well-known agents are registered in `Program.cs`: `personal-assistant`, `roslyn`, `dotnet`, `nuget`, `github`, `reviewer`, `fs`, `shell`, `git`, `build`, `knowledge`, `user`, `planning`, `notification`.
-
-### MCP Server
-
-`IAW.MCP` runs as an Orleans client connecting to `samples` silo. Exposes 8 orchestration tools via MCP HTTP transport: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`, `agent_trigger_self_improvement`.
-
-### Orleans Streaming
-
-Stream provider named `"agents"`. Behavior streams use namespaces `"agent-events"`, `"agent-history"`, `"agent-notifications"` keyed by agent ID. Custom streams supported via `PublishStreamAsync(namespace, streamId, message)`.
-
-### Serializable Contracts
-
-All grain-to-grain types use `[GenerateSerializer]` and `[Id(n)]` attributes. V2 contracts live in `src/Core/V2/`: `AgentProfile`, `AgentRequest`, `AgentReply`, `AgentMessage`, `AgentEvent`, `ScheduleStatus`, etc.
-
-## Test Patterns
-
-**IAW.Testing package** (`samples/IAW.Testing`): Ships `AgentTestV2<T>` and `AspireAgentTest<T>` base classes. Any class inheriting `AgentTestV2<T>` automatically gets 16 universal behavior tests covering all IAgentV2 behaviors. Includes a fluent `ScenarioBuilder` for multi-agent orchestration (`Given/When/Then`) and `MockChatClient` for LLM simulation.
-
-**Unit tests** (`test/Core.Tests`): `CoreAgentTests : AgentTestV2<Agent>` -- single line inherits all behavior tests. `ScenarioBuilderTests` exercises the fluent scenario API. `ArchitectureGuardTests` validates design constraints via reflection.
-
-**Integration tests** (`test/Integration.Tests`): `OrleansAgentIntegrationTests : AspireAgentTest<Agent>` -- boots full Aspire app, tests HTTP endpoints + direct Orleans client. Uses the same `Scenario` builder for cross-silo tests.
-
-**Writing new agent tests**: Just inherit `AgentTestV2<YourAgent>` -- all behaviors pass automatically. Add custom `[Fact]` methods for agent-specific logic.
+OpenTelemetry with activity source `"IAW"` and meter `"IAW"`. Metrics: `Activations`, `MessagesSent`, `ConversationErrors`, `ConversationDuration`, `TokenUsage`, `TotalInputTokens`, `TotalOutputTokens`. Gen AI semantic conventions on trace spans (`gen_ai.agent.id`, `gen_ai.usage.input_tokens`, etc.).
 
 ## Code Style
 
-- No `/// <summary>` XML doc comments. Only small inline comments in exceptional cases.
-- Self-explanatory C# naming over documentation.
-- All serializable Orleans types need `[GenerateSerializer]` and `[Id(n)]` attributes.
+- **No** default `/// <summary>` comments — only small inline comments in exceptional cases
+- Self-explanatory C# naming over comments
+- `TreatWarningsAsErrors` is enabled globally (suppressed: `ORLEANSEXP005`)
+- C# `LangVersion` is `preview` (latest features)
+- Centralized package versioning in `Directory.Packages.props`
+
+## MCP Integration
+
+`.mcp.json` configures three MCP servers: `iaw` (localhost:5300), `aspire` (CLI), `context7` (npm). The IAW MCP server in `src/IAW.MCP` exposes agent tools: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`, `agent_trigger_self_improvement`.

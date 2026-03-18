@@ -1,88 +1,111 @@
-using Core;
-using Core.V2;
+using System.Text.Json;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Text.Json;
+using Core.Contracts;
+using Core.Orchestration;
 
 internal sealed class AgentTools(IClusterClient orleans)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
-    private static readonly string[] WellKnownAgentIds =
-    [
-        "personal-assistant", "roslyn", "dotnet", "nuget", "github",
-        "reviewer", "self-improvement", "fs", "shell", "git",
-        "build", "knowledge", "user", "planning", "notification"
-    ];
+    private IAgent ResolveAgent(string agentId)
+    {
+        var entry = InterfaceCatalog.Discover()
+            .FirstOrDefault(e => string.Equals(e.GrainId, agentId, StringComparison.OrdinalIgnoreCase));
+
+        if (entry is not null)
+            return (IAgent)orleans.GetGrain(entry.InterfaceType, agentId);
+
+        var known = string.Join(", ", InterfaceCatalog.Discover().Select(e => e.GrainId));
+        throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
+    }
 
     [McpServerTool(Name = "agent_list_all")]
-    [Description("List all registered agents with their profile and capabilities.")]
+    [Description("List all registered agents with their metadata and capabilities.")]
     public async Task<string> AgentListAll(CancellationToken ct)
     {
-        var results = new List<AgentProfile>();
-        foreach (var id in WellKnownAgentIds)
+        var catalog = InterfaceCatalog.Discover();
+        var results = new List<object>();
+        foreach (var entry in catalog)
         {
-            var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:id);
-            var profile = await agent.GetProfileAsync(ct);
-            results.Add(profile);
+            try
+            {
+                var agent = ResolveAgent(entry.GrainId);
+                var metadata = await agent.GetMetadata(ct);
+                var capabilities = await agent.GetCapabilities(ct);
+                results.Add(new
+                {
+                    id = entry.GrainId,
+                    interfaceName = entry.InterfaceName,
+                    produces = entry.Produces,
+                    consumes = entry.Consumes,
+                    receives = entry.Receives,
+                    metadata,
+                    capabilities
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                results.Add(new { id = entry.GrainId, error = "Agent not available" });
+            }
         }
         return JsonSerializer.Serialize(results, JsonOptions);
     }
 
     [McpServerTool(Name = "assistant_chat")]
-    [Description("Send a message to the PersonalAssistant and get a response.")]
+    [Description("Send a message to the project assistant and get a response.")]
     public async Task<string> AssistantChat(
-        [Description("The message to send to the assistant")] string message,
-        CancellationToken ct)
+        [Description("The message to send")] string message,
+        [Description("Project ID (default: general)")] string projectId = "general",
+        CancellationToken ct = default)
     {
-        var assistant = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"personal-assistant");
-        var request = new AgentRequest { Input = message };
-        var reply = await assistant.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { reply.Output, reply.ModelId, reply.TimestampUtc }, JsonOptions);
+        var agent = ResolveAgent(projectId);
+        var response = await agent.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { agentId = projectId, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_send_message")]
     [Description("Send a message to any agent by ID and get a response.")]
     public async Task<string> AgentSendMessage(
-        [Description("The agent grain ID (e.g. 'roslyn', 'shell', 'github')")] string agentId,
+        [Description("The agent grain ID (e.g. 'roslyn', 'shell', 'git-hub')")] string agentId,
         [Description("The message to send")] string message,
         CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var request = new AgentRequest { Input = message };
-        var reply = await agent.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { agentId, reply.Output, reply.ModelId, reply.TimestampUtc }, JsonOptions);
+        var agent = ResolveAgent(agentId);
+        var response = await agent.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { agentId, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_get_status")]
-    [Description("Get an agent's profile and recent activity.")]
+    [Description("Get an agent's metadata, capabilities, and recent events.")]
     public async Task<string> AgentGetStatus(
         [Description("The agent grain ID")] string agentId,
         CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var profile = await agent.GetProfileAsync(ct);
-        var recentMessages = await agent.QueryMessagesAsync(
-            new AgentMessageQuery { Limit = 5, Descending = true }, ct);
-        var schedule = await agent.GetScheduleStatusAsync(ct);
-        return JsonSerializer.Serialize(new { profile, recentMessages, schedule }, JsonOptions);
+        var agent = ResolveAgent(agentId);
+        var metadata = await agent.GetMetadata(ct);
+        var capabilities = await agent.GetCapabilities(ct);
+        var allEvents = await agent.GetEventLog(ct);
+        var recentEvents = allEvents.TakeLast(5).ToList();
+        return JsonSerializer.Serialize(new { metadata, capabilities, recentEvents }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_assign_task")]
-    [Description("Assign a task to PersonalAssistant for delegation to the engineering team.")]
+    [Description("Assign a task to a project assistant for handling.")]
     public async Task<string> AgentAssignTask(
         [Description("Task description")] string task,
         [Description("Priority: low, medium, high")] string priority = "medium",
+        [Description("Project ID (default: general)")] string projectId = "general",
         CancellationToken ct = default)
     {
-        var pa = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"personal-assistant");
-        var request = new AgentRequest
-        {
-            Input = task,
-            Metadata = new() { ["priority"] = priority, ["type"] = "task" }
-        };
-        var reply = await pa.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { task, priority, reply.Output }, JsonOptions);
+        var agent = ResolveAgent(projectId);
+        var prompt = $"[TASK] Priority: {priority}\n\n{task}";
+        var response = await agent.GetResponse(prompt, ct);
+        return JsonSerializer.Serialize(new { task, priority, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_get_events")]
@@ -92,26 +115,27 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Maximum number of events to return")] int limit = 20,
         CancellationToken ct = default)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var events = await agent.QueryEventsAsync(
-            new AgentEventQuery { Limit = limit, Descending = true }, ct);
+        var agent = ResolveAgent(agentId);
+        var allEvents = await agent.GetEventLog(ct);
+        var events = allEvents.TakeLast(limit).ToList();
         return JsonSerializer.Serialize(events, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_get_metrics")]
-    [Description("Get agent performance metrics including message count, event count, and schedule status.")]
+    [Description("Get agent performance metrics including metadata, event count, history count, and capabilities.")]
     public async Task<string> AgentGetMetrics(
         [Description("The agent grain ID")] string agentId,
         CancellationToken ct = default)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:agentId);
-        var profile = await agent.GetProfileAsync(ct);
-        var messageCount = (await agent.QueryMessagesAsync(ct: ct)).Count;
-        var eventCount = (await agent.QueryEventsAsync(ct: ct)).Count;
-        var schedule = await agent.GetScheduleStatusAsync(ct);
+        var agent = ResolveAgent(agentId);
+        var metadata = await agent.GetMetadata(ct);
+        var capabilities = await agent.GetCapabilities(ct);
+        var eventCount = (await agent.GetEventLog(ct)).Count;
+        var historyCount = (await agent.GetHistory(ct)).Count;
         return JsonSerializer.Serialize(new
         {
-            profile.Id, profile.DisplayName, messageCount, eventCount, schedule
+            metadata.AgentType, metadata.DisplayName, metadata.Description,
+            eventCount, historyCount, capabilities
         }, JsonOptions);
     }
 
@@ -119,12 +143,9 @@ internal sealed class AgentTools(IClusterClient orleans)
     [Description("Trigger self-improvement analysis across the agent team.")]
     public async Task<string> AgentTriggerSelfImprovement(CancellationToken ct)
     {
-        var agent = orleans.GetGrain<IAgent>(grainClassNamePrefix: "Samples.SmartAgent", primaryKey:"self-improvement");
-        var request = new AgentRequest
-        {
-            Input = "Analyze recent agent interactions and propose improvements"
-        };
-        var reply = await agent.RespondAsync(request, ct);
-        return JsonSerializer.Serialize(new { reply.Output, reply.TimestampUtc }, JsonOptions);
+        var agent = ResolveAgent("self-improvement");
+        var response = await agent.GetResponse(
+            "Analyze recent agent interactions and propose improvements", ct);
+        return JsonSerializer.Serialize(new { response }, JsonOptions);
     }
 }

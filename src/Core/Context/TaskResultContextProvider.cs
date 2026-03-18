@@ -1,0 +1,40 @@
+using Microsoft.Extensions.AI;
+using Qdrant.Client;
+
+namespace Core.Context;
+
+public class TaskResultContextProvider(
+    QdrantClient qdrantClient,
+    IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
+    string userId) : IAgentContextProvider
+{
+    public string Name => "task-results";
+
+    public async Task<IReadOnlyList<string>> GetContextAsync(string agentId, string prompt, CancellationToken ct = default)
+    {
+        var collectionName = $"task-results-{userId}";
+
+        try
+        {
+            if (!await qdrantClient.CollectionExistsAsync(collectionName, ct))
+                return [];
+
+            var embeddings = await embeddingGenerator.GenerateAsync([prompt], cancellationToken: ct);
+            var queryVector = embeddings[0].Vector.ToArray();
+            var results = await qdrantClient.SearchAsync(
+                collectionName, queryVector, limit: 3, cancellationToken: ct);
+
+            return [.. results
+                .Where(r => r.Score > 0.5f)
+                .Select(r => $"[past task result] {r.Payload["text"]}")];
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return [];
+        }
+    }
+}

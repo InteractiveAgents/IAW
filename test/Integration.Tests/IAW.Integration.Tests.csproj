@@ -2,10 +2,13 @@
   <PropertyGroup>
     <TargetFramework>net11.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\IAW.Testing\IAW.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Agents\Agents.csproj" />
+    <ProjectReference Include="..\..\src\Agents.CSharp\Agents.CSharp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
