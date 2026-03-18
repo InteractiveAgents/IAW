@@ -1,4 +1,5 @@
 using System.Text;
+using Core;
 using Core.AI;
 using Core.Contracts;
 using Core.Contracts.UI;
@@ -219,7 +220,7 @@ public sealed class TelegramBotService(
         var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
 
         var prefs = await userProfile.GetPreferences(ct);
-        if (prefs.ContainsKey("setup-complete"))
+        if (prefs.ContainsKey(IAWConstants.StateKeys.SetupComplete))
         {
             await botClient.SendMessageAsync(chatId, "Already set up! Topics should be ready.");
             return;
@@ -248,7 +249,7 @@ public sealed class TelegramBotService(
         }
 
         await userProfile.RegisterProject("general", "general", ct);
-        await userProfile.SetPreference("group-chat-id", chatId.ToString(), ct);
+        await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
 
         var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n- Scheduled \u2014 recurring jobs dashboard\n- Notifications \u2014 system alerts\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview of all active work.";
         var welcomeButtons = new InlineKeyboardMarkup([
@@ -269,7 +270,7 @@ public sealed class TelegramBotService(
             var dashMsg = await botClient.SendMessageAsync(chatId, dashboardText, messageThreadId: scheduledTopicId);
             try { await botClient.PinChatMessageAsync(chatId, dashMsg.MessageId); }
             catch (Exception ex) { logger.LogWarning(ex, "Could not pin scheduled dashboard"); }
-            await userProfile.SetPreference("scheduled-dashboard-msgid", dashMsg.MessageId.ToString(), ct);
+            await userProfile.SetPreference(IAWConstants.StateKeys.ScheduledDashboardMsgId, dashMsg.MessageId.ToString(), ct);
         }
 
         var personalTopicId = await userProfile.GetTopicId("personal", ct);
@@ -283,7 +284,7 @@ public sealed class TelegramBotService(
             catch (Exception ex) { logger.LogWarning(ex, "Could not create default weather job"); }
         }
 
-        await userProfile.SetPreference("setup-complete", "true", ct);
+        await userProfile.SetPreference(IAWConstants.StateKeys.SetupComplete, "true", ct);
         logger.LogInformation("Setup complete for user {TelegramId}", telegramId);
     }
 
@@ -376,7 +377,7 @@ public sealed class TelegramBotService(
         var slug = parts[1];
         var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
         var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue("group-chat-id", out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
             return;
 
         var topicId = await userProfile.GetTopicId(slug, ct);
@@ -419,7 +420,7 @@ public sealed class TelegramBotService(
 
         var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
         var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue("group-chat-id", out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
             return;
 
         var slug = projectSlug.Contains('/') ? projectSlug.Split('/')[1] : "general";
@@ -472,7 +473,7 @@ public sealed class TelegramBotService(
 
         var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
         var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue("group-chat-id", out var chatIdStr) || !long.TryParse(chatIdStr, out var groupChatId))
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var groupChatId))
             return (0, null);
 
         var topicId = await userProfile.GetTopicId(targetTopicSlug, ct);

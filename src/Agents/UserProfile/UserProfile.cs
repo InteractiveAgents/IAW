@@ -1,9 +1,10 @@
+using Core;
 using Core.Contracts;
 using Orleans.Journaling;
 
 namespace IAW.Agents;
 
-[GrainType("user-profile-v1")]
+[GrainType(IAWConstants.GrainTypes.UserProfile)]
 public class UserProfile(
     [UserProfileState] UserProfileDurableState state)
     : DurableGrain, IUserProfile

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -9,7 +10,7 @@ using Microsoft.Extensions.AI;
 
 namespace IAW.Agents.Orchestration;
 
-[GrainType("code-orchestrator-v1")]
+[GrainType(IAWConstants.GrainTypes.CodeOrchestrator)]
 public class CodeOrchestratorAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<Sonnet46>] IChatClient chatClient)

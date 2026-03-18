@@ -5,6 +5,12 @@ using Orleans.Streams;
 
 namespace TelegramClient;
 
+static class TelegramEvents
+{
+    public const string NotificationSent = "notification.sent";
+    public const string WizardStarted = "wizard.started";
+}
+
 public sealed class StreamSubscriber(
     IClusterClient clusterClient,
     TelegramBotService botService,
@@ -22,7 +28,7 @@ public sealed class StreamSubscriber(
             var streamProvider = clusterClient.GetStreamProvider(IAWConstants.StreamProvider);
 
             var notificationStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "notification.sent"));
+                StreamId.Create(IAWConstants.StreamProvider, TelegramEvents.NotificationSent));
             await notificationStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -36,7 +42,7 @@ public sealed class StreamSubscriber(
             });
 
             var approvalStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "approval.requested"));
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.ApprovalRequested));
             await approvalStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -54,7 +60,7 @@ public sealed class StreamSubscriber(
             });
 
             var dashboardStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "dashboard.changed"));
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.DashboardChanged));
             await dashboardStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -70,7 +76,7 @@ public sealed class StreamSubscriber(
             });
 
             var wizardStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "wizard.started"));
+                StreamId.Create(IAWConstants.StreamProvider, TelegramEvents.WizardStarted));
             await wizardStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -88,7 +94,7 @@ public sealed class StreamSubscriber(
             });
 
             var jobCompletedStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "job.completed"));
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.JobCompleted));
             await jobCompletedStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -105,7 +111,7 @@ public sealed class StreamSubscriber(
             });
 
             var progressStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "orchestration.progress"));
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.OrchestrationProgress));
             await progressStream.SubscribeAsync(async (evt, token) =>
             {
                 try
@@ -122,7 +128,7 @@ public sealed class StreamSubscriber(
             });
 
             var completedStream = streamProvider.GetStream<AgentEvent>(
-                StreamId.Create(IAWConstants.StreamProvider, "orchestration.completed"));
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.OrchestrationCompleted));
             await completedStream.SubscribeAsync(async (evt, token) =>
             {
                 try

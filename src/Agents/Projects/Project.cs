@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Context;
@@ -10,7 +11,7 @@ using Qdrant.Client;
 
 namespace IAW.Agents.Projects;
 
-[GrainType("project-v1")]
+[GrainType(IAWConstants.GrainTypes.Project)]
 public class Project(
     [ProjectState] ProjectDurableState durableState,
     [Llm<Sonnet46>] IChatClient chatClient)
@@ -135,7 +136,7 @@ public class Project(
     private async Task<string> Execute(
         [Description("What to do, step by step")] string plan)
     {
-        var grainId = Orleans.Runtime.GrainId.Create("code-orchestrator-v1", "code-orchestrator");
+        var grainId = Orleans.Runtime.GrainId.Create(IAWConstants.GrainTypes.CodeOrchestrator, "code-orchestrator");
         var orchestrator = GrainFactory.GetGrain<ICodeOrchestrator>(grainId);
         var result = await orchestrator.ExecuteCodeOrchestration(plan, CancellationToken.None);
         return result;
@@ -147,7 +148,7 @@ public class Project(
         [Description("Available options for the user to choose from")] string[] options)
     {
         var approvalId = Guid.NewGuid().ToString("N")[..8];
-        await PublishAsync("approval.requested", new Dictionary<string, object>
+        await PublishAsync(IAWConstants.Events.ApprovalRequested, new Dictionary<string, object>
         {
             ["approvalId"] = approvalId,
             ["question"] = question,
@@ -322,7 +323,7 @@ public class Project(
         };
         await PublishDashboardChanged();
 
-        await PublishAsync("job.completed", new Dictionary<string, object>
+        await PublishAsync(IAWConstants.Events.JobCompleted, new Dictionary<string, object>
         {
             ["projectKey"] = this.GetPrimaryKeyString(),
             ["jobName"] = job.Name,
@@ -376,7 +377,7 @@ public class Project(
             GeneratedAt = DateTimeOffset.UtcNow
         };
         var markdown = DashboardRenderer.Render(dashboard);
-        await PublishAsync("dashboard.changed", new Dictionary<string, object>
+        await PublishAsync(IAWConstants.Events.DashboardChanged, new Dictionary<string, object>
         {
             ["projectKey"] = this.GetPrimaryKeyString(),
             ["renderedMarkdown"] = markdown

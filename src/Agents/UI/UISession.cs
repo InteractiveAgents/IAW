@@ -1,10 +1,11 @@
+using Core;
 using Core.Contracts;
 using Core.Contracts.UI;
 using Orleans.Journaling;
 
 namespace IAW.Agents.UI;
 
-[GrainType("ui-session-v1")]
+[GrainType(IAWConstants.GrainTypes.UISession)]
 public class UISession(
     [UISessionState] UISessionDurableState state)
     : DurableGrain, IUISession, IRemindable

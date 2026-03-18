@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using Core;
 using Core.Contracts;
 using Microsoft.Extensions.AI;
 using Orleans.Journaling;
@@ -60,7 +61,7 @@ public abstract partial class Agent : IRemindable
 
         if (item.LastResult is not null && result != item.LastResult)
         {
-            await PublishAsync("tracking.changed", new Dictionary<string, object>
+            await PublishAsync(IAWConstants.Events.TrackingChanged, new Dictionary<string, object>
             {
                 ["TrackingId"] = item.Id,
                 ["Description"] = item.Description,
