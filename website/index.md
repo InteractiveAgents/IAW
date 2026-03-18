@@ -31,19 +31,18 @@ dotnet add package IAW.Core
 ### Create your first agent
 
 ```csharp
-using Core.V3;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 public interface IGreeterAgent : IAgent;
 
 public class GreeterAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IGreeterAgent
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IGreeterAgent
 {
     protected override string Instructions => "You are a friendly greeter.";
     protected override string DisplayName => "Greeter";
@@ -62,8 +61,7 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Sonnet46>();
 
 builder.AddProject<Projects.MySilo>("silo")
-    .WithReference(iaw)
-    .WithLLMEnvironment(builder);
+    .WithReference(iaw);
 
 builder.Build().Run();
 ```

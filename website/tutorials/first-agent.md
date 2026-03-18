@@ -1,6 +1,6 @@
 # Build Your First Agent
 
-This tutorial walks you through creating a V3 IAW agent from scratch, registering it in the Aspire AppHost, and testing it.
+This tutorial walks you through creating an IAW agent from scratch, registering it in the Aspire AppHost, and testing it.
 
 ## Prerequisites
 

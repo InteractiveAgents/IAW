@@ -21,21 +21,20 @@ The personal assistant:
 ## Agent Code
 
 ```csharp
-using Core.V3;
-using Core.V3.Communication;
-using Core.V3.Messages;
+using Core.AI;
+using Core.AI.Models;
+using Core.Communication;
+using Core.Communication.Messages;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 public interface IPersonalAssistantAgent : IAgent;
 
 public class PersonalAssistantAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems),
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient),
       IPersonalAssistantAgent,
       IReceiver<ProgressNotification>,
       IBroadcaster<AssignTaskCommand>

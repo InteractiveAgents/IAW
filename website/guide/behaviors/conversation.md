@@ -1,6 +1,6 @@
 # Conversation Behavior
 
-Every V3 agent has built-in conversation capabilities powered by `Microsoft.Extensions.AI` and the Microsoft Agent Framework. This page covers `GetResponse`, `GetResponseStream`, conversation history, and context providers.
+Every agent has built-in conversation capabilities powered by `Microsoft.Extensions.AI` and the Microsoft Agent Framework. This page covers `GetResponse`, `GetResponseStream`, conversation history, and context providers.
 
 ## GetResponse
 
@@ -94,7 +94,7 @@ The system prompt is set once during `OnActivateAsync` when the `AIAgent` is cre
 For advanced scenarios, implement `IAIContextProvider` to inject additional context into conversations:
 
 ```csharp
-using Core.V3.Context;
+using Core.Context;
 
 public interface IAIContextProvider
 {

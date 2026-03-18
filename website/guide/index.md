@@ -1,6 +1,6 @@
 # Getting Started
 
-Interactive Agents (IAW) is an Orleans-based multi-agent runtime for .NET. Agents are durable grains that communicate through typed messages, Orleans streams, and AI-powered conversation. V3 introduces behavior composition via interfaces, a typed message hierarchy, and stream-based event pipelines.
+Interactive Agents (IAW) is an Orleans-based multi-agent runtime for .NET. Agents are durable grains that communicate through typed messages, Orleans streams, and AI-powered conversation. IAW provides behavior composition via interfaces, a typed message hierarchy, and stream-based event pipelines.
 
 ## Prerequisites
 
@@ -17,29 +17,28 @@ dotnet add package IAW.Core
 
 ## Creating Your First Agent
 
-Every agent extends the `Agent` base class from `Core.V3`. Override `Instructions` and `DisplayName`:
+Every agent extends the `Agent` base class from `IAW.Core`. Override `Instructions` and `DisplayName`:
 
 ```csharp
-using Core.V3;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 public interface IGreeterAgent : IAgent;
 
 public class GreeterAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IGreeterAgent
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IGreeterAgent
 {
     protected override string Instructions => "You are a friendly greeter.";
     protected override string DisplayName => "Greeter";
 }
 ```
 
-The constructor takes five durable state parameters that Orleans manages automatically. You never create these yourself -- Orleans injects them when the grain activates.
+The constructor takes the durable state and chat client that Orleans manages automatically. You never create these yourself -- Orleans injects them when the grain activates.
 
 ## Aspire Integration
 
@@ -55,8 +54,7 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Sonnet46>();
 
 builder.AddProject<Projects.MySilo>("silo")
-    .WithReference(iaw)
-    .WithLLMEnvironment(builder);
+    .WithReference(iaw);
 
 builder.Build().Run();
 ```
@@ -68,7 +66,7 @@ builder.Build().Run();
 - Memory-based reminders
 - State machine storage for durable collections
 
-`WithLLM<TModel>()` registers an LLM model. `WithLLMEnvironment()` injects environment variables for model IDs, provider types, and API keys into the project.
+`WithLLM<TModel>()` registers an LLM model. `WithReference(iaw)` injects environment variables for model IDs, provider types, and API keys into the project.
 
 ## Running
 
@@ -117,19 +115,18 @@ var subscriptions = await agent.GetActiveSubscriptionsAsync(ct);
 The `Agent` base class takes an `IChatClient` (from `Microsoft.Extensions.AI`) in its constructor. On activation, it creates an `AIAgent` from the Microsoft Agent Framework with durable chat history:
 
 ```csharp
-using Core.V3;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 public interface IAssistantAgent : IAgent;
 
 public class AssistantAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IAssistantAgent
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IAssistantAgent
 {
     protected override string Instructions =>
         "You are a helpful personal assistant. Be concise and accurate.";
@@ -140,7 +137,7 @@ public class AssistantAgent(
 
 ## Next Steps
 
-- [Architecture](/guide/architecture) -- understand the V3 class hierarchy, behavior composition, and stream patterns
+- [Architecture](/guide/architecture) -- understand the class hierarchy, behavior composition, and stream patterns
 - [Building Agents](/guide/agents) -- constructor params, custom tools, override points
 - [Events & Streams](/guide/events-streams) -- typed events, stream composition, pipeline patterns
 - [Message Types](/guide/messages) -- ICommand, IEvent, INotification

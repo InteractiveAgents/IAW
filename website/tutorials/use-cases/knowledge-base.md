@@ -21,19 +21,18 @@ The knowledge base agent:
 
 ```csharp
 using System.ComponentModel;
-using Core.V3;
+using Core.AI;
+using Core.AI.Models;
+using Core.Contracts;
+using IAW.Core;
 using Microsoft.Extensions.AI;
-using Orleans.Journaling;
 
 public interface IKnowledgeBaseAgent : IAgent;
 
 public class KnowledgeBaseAgent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
-    : Agent(state, eventLog, chatClient, history, trackingItems), IKnowledgeBaseAgent
+    [AgentState] AgentDurableState durableState,
+    [Llm<Claude45Haiku>] IChatClient chatClient)
+    : Agent(durableState, chatClient), IKnowledgeBaseAgent
 {
     protected override string Instructions =>
         "You are a knowledge base agent. Answer questions using the indexed documents " +

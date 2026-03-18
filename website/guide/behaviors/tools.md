@@ -1,6 +1,6 @@
 # Tools Behavior
 
-V3 agents come with four built-in tool classes and support custom tools via `DefineTools()`. Tools are registered with the LLM on activation and can be called by the AI during conversation.
+Agents come with four built-in tool classes and support custom tools via `DefineTools()`. Tools are registered with the LLM on activation and can be called by the AI during conversation.
 
 ## Built-in Tools
 

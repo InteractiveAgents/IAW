@@ -1,6 +1,6 @@
 # Message Types
 
-V3 uses a typed message hierarchy for all inter-agent communication. Every message implements `IAgentMessage` and falls into one of three categories: commands, events, or notifications.
+IAW uses a typed message hierarchy for all inter-agent communication. Every message implements `IAgentMessage` and falls into one of three categories: commands, events, or notifications.
 
 ## IAgentMessage
 
@@ -135,7 +135,7 @@ public interface IAgentObserver<TEvent> : IGrainObserver where TEvent : INotific
 ### Custom Command
 
 ```csharp
-using Core.V3.Messages;
+using Core.Communication.Messages;
 
 [GenerateSerializer]
 public record DeployCommand(

@@ -1,12 +1,12 @@
 # API Reference
 
-Complete reference for all IAW V3 interfaces, contracts, and data types.
+Complete reference for all IAW interfaces, contracts, and data types.
 
-## Core.V3
+## Core
 
 ### IAgent
 
-The root grain interface. Every V3 agent exposes this interface:
+The root grain interface. Every agent exposes this interface:
 
 ```csharp
 public interface IAgent : IGrainWithStringKey
@@ -40,15 +40,12 @@ public interface IAgent : IGrainWithStringKey
 
 ### Agent (base class)
 
-The abstract base class for all V3 agents:
+The abstract base class for all agents:
 
 ```csharp
 public abstract partial class Agent(
-    [Memory("agent-state")] IDurableDictionary<string, StateEntry> state,
-    [Memory("agent-events")] IDurableList<AgentEvent> eventLog,
-    IChatClient chatClient,
-    [Memory("v3-history")] IDurableList<ChatMessage> history,
-    [Memory("v3-tracking")] IDurableDictionary<string, TrackingItem> trackingItems)
+    AgentDurableState durableState,
+    IChatClient chatClient)
     : DurableGrain, IAgent
 ```
 
@@ -85,7 +82,7 @@ public abstract partial class Agent(
 | `WriteStateAsync(ct)` | Persist all state changes |
 | `BuildSafeErrorMessage(ex)` | Format exception for safe display |
 
-## Core.V3.Messages
+## Core.Communication.Messages
 
 ### IAgentMessage
 
@@ -142,7 +139,7 @@ public interface INotification : IAgentMessage;
 | `ProgressNotification` | `Step`, `Status`, `Progress?` |
 | `ReviewRequestNotification` | `FilePath`, `Description` |
 
-## Core.V3.Communication
+## Core.Communication
 
 ### IStreamConsumer&lt;TEvent&gt;
 
@@ -227,7 +224,7 @@ public record MessageReceipt(
     [property: Id(3)] string? RejectionReason);
 ```
 
-## Core.V3 Data Types
+## Core Data Types
 
 ### AgentEvent
 
@@ -344,7 +341,7 @@ public record AgentConfiguration(
     [property: Id(4)] string[]? SubscribeToStreams);
 ```
 
-## Core.V3.Registry
+## Core.Registry
 
 ### IAgentRegistryGrain
 
@@ -384,7 +381,7 @@ public record AgentQuery(
     [property: Id(3)] string[]? Subscribes = null);
 ```
 
-## Core.V3.Attributes
+## Core.Attributes
 
 ### CapabilityAttribute
 
@@ -413,7 +410,7 @@ Declares an event this agent subscribes to:
 public class CodeReviewAgent : Agent { ... }
 ```
 
-## Core.V3.Tools
+## Core.Tools
 
 ### FileTools
 
@@ -444,7 +441,7 @@ public class CodeReviewAgent : Agent { ... }
 | `SetWorkspace` | `path` | Confirmation |
 | `GetWorkspace` | -- | Current path |
 
-## Core.V3.Observability
+## Core.Observability
 
 ### AgentTelemetry
 
