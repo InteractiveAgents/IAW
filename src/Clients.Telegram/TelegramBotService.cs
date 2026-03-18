@@ -352,10 +352,46 @@ public sealed class TelegramBotService(
         if (groupChatId == 0) return;
 
         var text = $"*{EscapeMarkdown(evt.EventName)}* from `{evt.SourceAgentId}`\n" +
-                   string.Join("\n", evt.Payload.Select(p => $"  {p.Key}: {p.Value}"));
+                   string.Join("\n", evt.Payload.Select(p => $"  {EscapeMarkdown(p.Key)}: {EscapeMarkdown(p.Value?.ToString() ?? "")}"));
 
-        await botClient.SendMessageAsync(groupChatId, text,
-            messageThreadId: notifTopicId, parseMode: FormatStyles.MarkdownV2);
+        try
+        {
+            await botClient.SendMessageAsync(groupChatId, text,
+                messageThreadId: notifTopicId, parseMode: FormatStyles.MarkdownV2);
+        }
+        catch (BotRequestException)
+        {
+            var plainText = $"{evt.EventName} from {evt.SourceAgentId}\n" +
+                            string.Join("\n", evt.Payload.Select(p => $"  {p.Key}: {p.Value}"));
+            await botClient.SendMessageAsync(groupChatId, plainText, messageThreadId: notifTopicId);
+        }
+    }
+
+    public async Task SendJobResultAsync(string projectKey, string jobName, string result, CancellationToken ct)
+    {
+        var parts = projectKey.Split('/');
+        if (parts.Length < 2 || !long.TryParse(parts[0], out _)) return;
+
+        var userId = parts[0];
+        var slug = parts[1];
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue("group-chat-id", out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+            return;
+
+        var topicId = await userProfile.GetTopicId(slug, ct);
+        var text = $"*{EscapeMarkdown(jobName)}*\n\n{EscapeMarkdown(result)}";
+
+        try
+        {
+            await botClient.SendMessageAsync(chatId, text,
+                messageThreadId: topicId, parseMode: FormatStyles.MarkdownV2);
+        }
+        catch (BotRequestException)
+        {
+            // fallback without markdown if escaping still fails
+            await botClient.SendMessageAsync(chatId, $"{jobName}\n\n{result}", messageThreadId: topicId);
+        }
     }
 
     public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)

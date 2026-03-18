@@ -125,7 +125,7 @@ public class Project(
                 "Cancel an active scheduled job."),
             AIFunctionFactory.Create(ListJobsTool, nameof(ListJobsTool),
                 "List all scheduled jobs."),
-AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
+            AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
                 "Search past task results, conversations, and documents for relevant context"),
         ];
     }
@@ -321,17 +321,31 @@ AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
             LastResult = response
         };
         await PublishDashboardChanged();
+
+        await PublishAsync("job.completed", new Dictionary<string, object>
+        {
+            ["projectKey"] = this.GetPrimaryKeyString(),
+            ["jobName"] = job.Name,
+            ["result"] = response
+        });
     }
 
-    [Description("Schedule a recurring job")]
+    [Description("Schedule a recurring job. Automatically replaces any existing job with the same name.")]
     private async Task<string> ScheduleJobTool(
         [Description("Job name")] string name,
         [Description("Interval in minutes between runs")] int intervalMinutes,
         [Description("What the job should do each run")] string description)
     {
+        var existing = durableState.Schedules.Values
+            .Where(j => j.Active && j.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        foreach (var old in existing)
+            await CancelJob(old.Id, CancellationToken.None);
+
         var interval = TimeSpan.FromMinutes(intervalMinutes);
         var job = await ScheduleJob(name, interval, description, CancellationToken.None);
-        return $"Job '{job.Id}' scheduled: {job.Name} — runs every {intervalMinutes} minutes";
+        var replaced = existing.Count > 0 ? $" (replaced {existing.Count} existing)" : "";
+        return $"Job '{job.Id}' scheduled: {job.Name} — runs every {intervalMinutes} minutes{replaced}";
     }
 
     [Description("Cancel a scheduled job")]

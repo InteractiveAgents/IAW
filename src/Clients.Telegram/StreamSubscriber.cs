@@ -87,6 +87,23 @@ public sealed class StreamSubscriber(
                 }
             });
 
+            var jobCompletedStream = streamProvider.GetStream<AgentEvent>(
+                StreamId.Create(IAWConstants.StreamProvider, "job.completed"));
+            await jobCompletedStream.SubscribeAsync(async (evt, token) =>
+            {
+                try
+                {
+                    var projectKey = evt.Payload.GetValueOrDefault("projectKey")?.ToString() ?? "";
+                    var jobName = evt.Payload.GetValueOrDefault("jobName")?.ToString() ?? "";
+                    var result = evt.Payload.GetValueOrDefault("result")?.ToString() ?? "";
+                    await botService.SendJobResultAsync(projectKey, jobName, result, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to send job result to Telegram");
+                }
+            });
+
             var progressStream = streamProvider.GetStream<AgentEvent>(
                 StreamId.Create(IAWConstants.StreamProvider, "orchestration.progress"));
             await progressStream.SubscribeAsync(async (evt, token) =>
@@ -121,7 +138,7 @@ public sealed class StreamSubscriber(
                 }
             });
 
-            logger.LogInformation("Subscribed to agent notification, approval, dashboard, wizard, and orchestration streams");
+            logger.LogInformation("Subscribed to agent notification, approval, dashboard, wizard, job completed, and orchestration streams");
         }
         catch (Exception ex)
         {
