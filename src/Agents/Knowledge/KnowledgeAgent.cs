@@ -7,7 +7,7 @@ using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.Knowledge;
+namespace IAW.Agents.Memory;
 
 public class KnowledgeAgent(
     [AgentState] AgentDurableState durableState,

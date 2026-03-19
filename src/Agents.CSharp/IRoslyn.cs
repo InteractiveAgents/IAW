@@ -1,6 +1,6 @@
 using Core.Contracts;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public interface IRoslyn : IAgent
 {

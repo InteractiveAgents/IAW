@@ -1,7 +1,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public static class OrchestrationCompiler
 {

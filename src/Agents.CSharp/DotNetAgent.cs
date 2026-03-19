@@ -8,7 +8,7 @@ using Core.AI.Models;
 using Core.Communication;
 using Core.Communication.Messages;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public partial class DotNetAgent(
     [AgentState] AgentDurableState durableState,

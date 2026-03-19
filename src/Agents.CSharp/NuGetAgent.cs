@@ -1,13 +1,13 @@
 using System.Text.Json;
 using System.Xml.Linq;
 using IAW.Core;
-using IAW.Agents.CSharp.Models;
+using IAW.Agents.Coding.Models;
 using Microsoft.Extensions.AI;
 using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public class NuGetAgent(
     [AgentState] AgentDurableState durableState,

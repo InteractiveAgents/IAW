@@ -1,12 +1,12 @@
 using IAW.Core;
-using IAW.Agents.CSharp.Models;
+using IAW.Agents.Coding.Models;
 using Microsoft.Extensions.AI;
 using Octokit;
 using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public class GitHubAgent(
     [AgentState] AgentDurableState durableState,

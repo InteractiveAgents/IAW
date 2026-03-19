@@ -1,7 +1,7 @@
 using Core.Contracts;
 using Core.Tools;
 
-namespace IAW.Agents.Infrastructure;
+namespace IAW.Agents.System;
 
 public interface IFileSystem : IAgent
 {

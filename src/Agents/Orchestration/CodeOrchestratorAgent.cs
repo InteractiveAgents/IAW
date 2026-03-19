@@ -62,7 +62,8 @@ public class CodeOrchestratorAgent(
         using Aspire.IAW;
         using Orleans;
         using Core.Contracts;
-        using IAW.Agents.Infrastructure;
+        using IAW.Agents.System;
+        using IAW.Agents.Coding;
 
         var builder = Host.CreateApplicationBuilder(args);
         builder.AddIAWClient();

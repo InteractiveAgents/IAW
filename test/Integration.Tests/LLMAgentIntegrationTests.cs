@@ -1,7 +1,7 @@
 using Core.AI.Models;
 using Core.Contracts;
 using Core.Orchestration;
-using IAW.Agents.LLM;
+using IAW.Agents.Models;
 using IAW.Testing;
 using Xunit;
 

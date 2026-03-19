@@ -12,7 +12,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Qdrant.Client;
 
-namespace IAW.Agents.Projects;
+namespace IAW.Agents.Orchestration;
 
 [GrainType(IAWConstants.GrainTypes.Project)]
 public class Project(

@@ -7,7 +7,7 @@ using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.Infrastructure;
+namespace IAW.Agents.Coding;
 
 public class GitAgent(
     [AgentState] AgentDurableState durableState,

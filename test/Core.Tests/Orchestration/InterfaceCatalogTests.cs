@@ -1,6 +1,6 @@
 using Core.Orchestration;
-using IAW.Agents.CSharp;
-using IAW.Agents.Infrastructure;
+using IAW.Agents.Coding;
+using IAW.Agents.System;
 using Xunit;
 
 namespace IAW.Core.Tests.Orchestration;

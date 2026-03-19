@@ -1,6 +1,6 @@
 using Core.Contracts;
 
-namespace IAW.Agents.Infrastructure;
+namespace IAW.Agents.Coding;
 
 public interface IGit : IAgent
 {

@@ -4,7 +4,7 @@ using Core.Tools;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace IAW.Agents.CSharp.Tools;
+namespace IAW.Agents.Coding.Tools;
 
 public class RoslynTools(Func<string> getWorkspacePath)
 {

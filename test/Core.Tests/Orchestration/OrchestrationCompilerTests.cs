@@ -1,4 +1,4 @@
-using IAW.Agents.CSharp;
+using IAW.Agents.Coding;
 using Xunit;
 
 namespace IAW.Core.Tests.Orchestration;

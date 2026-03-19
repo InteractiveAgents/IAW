@@ -1,6 +1,6 @@
 using Core.Contracts;
 
-namespace IAW.Agents.Knowledge;
+namespace IAW.Agents.Memory;
 
 public interface IKnowledge : IAgent
 {

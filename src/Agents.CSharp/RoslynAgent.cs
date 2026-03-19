@@ -13,7 +13,7 @@ using Core.AI;
 using Core.AI.Models;
 using Core.Communication.Messages;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public class RoslynAgent(
     [AgentState] AgentDurableState durableState,

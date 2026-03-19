@@ -4,7 +4,7 @@ using Core.AI.Models;
 using Core.Contracts;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.LLM;
+namespace IAW.Agents.Models;
 
 public class Qwen25Agent(
     [AgentState] AgentDurableState durableState,

@@ -2,7 +2,7 @@ using Core.Communication;
 using Core.Communication.Messages;
 using Core.Contracts;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public interface IDotNet : IAgent, IReceiver<CodeChangedMessage>
 {

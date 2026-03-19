@@ -1,7 +1,7 @@
-using IAW.Agents.CSharp.Models;
+using IAW.Agents.Coding.Models;
 using Core.Contracts;
 
-namespace IAW.Agents.CSharp;
+namespace IAW.Agents.Coding;
 
 public interface IGitHub : IAgent
 {

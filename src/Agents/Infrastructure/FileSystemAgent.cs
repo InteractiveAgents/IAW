@@ -6,7 +6,7 @@ using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.Infrastructure;
+namespace IAW.Agents.System;
 
 public class FileSystemAgent(
     [AgentState] AgentDurableState durableState,
