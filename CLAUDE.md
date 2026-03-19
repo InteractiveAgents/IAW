@@ -68,6 +68,25 @@ Key ports: assistant silo on 30000 (gateway) / 11111 (silo), MCP on 5300.
 
 Inherit from `AgentTest<TAgent>` — it spins up a `TestCluster` with memory storage, mock LLM (`MockChatClient` returning `"mock-response"`), and all model mappers registered. Use `Agent(UniqueId("prefix"))` to get grain references with unique IDs per test run. Tests use xunit.v3 with `TestContext.Current.CancellationToken`.
 
+### Code Orchestration (`src/Agents/Orchestration`)
+
+The Project agent delegates complex tasks to `CodeOrchestratorAgent` via the `Execute` tool. The orchestrator:
+
+1. Receives a natural-language plan
+2. Generates a standalone C# console app that connects to the cluster as an Orleans client (`builder.AddIAWClient()`)
+3. The generated code calls agent grains directly via `client.GetGrain<IAgent>("grain-id").GetResponse()`
+4. Executes the project with `dotnet run`, captures output, returns `result.json`
+
+Agent grain IDs are computed from interface names by `InterfaceCatalog.ComputeGrainId()` — strips leading "I", inserts "-" at lowercase→uppercase transitions, lowercases. Example: `ISonnet46` → `sonnet46`, `IGpt4oMini` → `gpt4o-mini`.
+
+### LLM Model Comparison
+
+The Project agent has a `CompareModelsTool` that sends the same prompt to multiple LLM wrapper agents in parallel. Each LLM agent (e.g. `Gpt54MiniAgent`, `Sonnet46Agent`) wraps a specific model via `[Llm<TModel>]`. The tool collects response text, wall-clock duration, and token usage (`GetLastUsage()`) for side-by-side comparison. Results include a metrics table and full responses. Traces are visible in Aspire with `gen_ai.*` attributes.
+
+### Default LLM Model
+
+The first model in the AppHost `WithLLM<T>()` chain becomes the default (non-keyed) `IChatClient`. Agents without `[Llm<T>]` use this default. Only agents needing a specific model (like ShellAgent with Haiku, or LLM wrapper agents) use `[Llm<T>]`.
+
 ### Observability
 
 OpenTelemetry with activity source `"IAW"` and meter `"IAW"`. Metrics: `Activations`, `MessagesSent`, `ConversationErrors`, `ConversationDuration`, `TokenUsage`, `TotalInputTokens`, `TotalOutputTokens`. Gen AI semantic conventions on trace spans (`gen_ai.agent.id`, `gen_ai.usage.input_tokens`, etc.).

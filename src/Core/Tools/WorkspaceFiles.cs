@@ -7,10 +7,10 @@ namespace Core.Tools;
 // git-aware file enumeration + token-efficient comparison
 public static class WorkspaceFiles
 {
-    private static readonly HashSet<string> FallbackExclusions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git", ".vs", ".idea", "bin", "obj", "node_modules", "TestResults", ".claude", "packages"
-    };
+    private static readonly HashSet<string> FallbackExclusions =
+    [
+        with(StringComparer.OrdinalIgnoreCase), ".git", ".vs", ".idea", "bin", "obj", "node_modules", "TestResults", ".claude", "packages"
+    ];
 
     public static async Task<string[]> EnumerateFilesAsync(
         string directory, string pattern = "*", CancellationToken ct = default)

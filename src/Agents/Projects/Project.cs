@@ -1,9 +1,12 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.Text;
 using Core;
 using Core.AI;
 using Core.AI.Models;
 using Core.Context;
 using Core.Contracts;
+using Core.Orchestration;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +30,7 @@ public class Project(
             - RequestApprovalTool: ask user to choose or confirm before acting
             - Recall: search past results and documents
             - ScheduleJobTool/CancelJobTool: manage recurring tasks
+            - CompareModelsTool: send same prompt to multiple LLMs and compare speed/tokens/quality
 
             BEHAVIOR:
             - If you can answer from knowledge or memory, answer directly
@@ -59,6 +63,7 @@ public class Project(
             - RequestApprovalTool: ask user to choose or confirm
             - Recall: search past results and documents
             - ScheduleJobTool/CancelJobTool: recurring tasks
+            - CompareModelsTool: compare LLM responses side-by-side
 
             If the request is clear, call Execute immediately.
             If ambiguous, explain your plan and use RequestApprovalTool first.
@@ -128,6 +133,8 @@ public class Project(
                 "List all scheduled jobs."),
             AIFunctionFactory.Create(RecallTool, nameof(RecallTool),
                 "Search past task results, conversations, and documents for relevant context"),
+            AIFunctionFactory.Create(CompareModelsTool, nameof(CompareModelsTool),
+                "Send the same prompt to multiple LLM models in parallel and compare their responses, speed, and token usage."),
         ];
     }
 
@@ -365,6 +372,98 @@ public class Project(
         var lines = jobs.Select(j =>
             $"[{j.Id}] {j.Name}: {j.Description} (every {j.Interval.TotalMinutes}min, active: {j.Active}, last: {j.LastRunAt?.ToString("g") ?? "never"})");
         return Task.FromResult(string.Join("\n", lines));
+    }
+
+    [Description("Compare multiple LLM models by sending the same prompt to each in parallel. Returns responses with timing and token usage.")]
+    private async Task<string> CompareModelsTool(
+        [Description("The prompt to send to all models")] string prompt,
+        [Description("Model names to compare (e.g. 'gpt54mini,sonnet46,claude45haiku'). Use 'all' for all configured LLM agents.")] string models = "all")
+    {
+        var catalog = InterfaceCatalog.Discover();
+        var llmAgentType = typeof(LlmAgentBase);
+        var llmEntries = catalog.Where(e =>
+        {
+            var implementor = AppDomain.CurrentDomain.GetAssemblies()
+                .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+                .FirstOrDefault(t => t is { IsAbstract: false, IsClass: true } && e.InterfaceType.IsAssignableFrom(t));
+            return implementor is not null && llmAgentType.IsAssignableFrom(implementor);
+        }).ToList();
+
+        if (!models.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            var requested = models.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(m => m.ToLowerInvariant().Replace("-", "").Replace(".", "").Replace(" ", ""))
+                .ToHashSet();
+            llmEntries = llmEntries.Where(e => requested.Contains(e.GrainId.Replace("-", ""))).ToList();
+        }
+
+        if (llmEntries.Count == 0)
+            return $"No matching LLM agents found. Available: {string.Join(", ", catalog.Select(e => e.GrainId))}";
+
+        var tasks = llmEntries.Select(async entry =>
+        {
+            var agent = (IAgent)GrainFactory.GetGrain(entry.InterfaceType, entry.GrainId);
+            await agent.ClearHistory(CancellationToken.None);
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                var response = await agent.GetResponse(prompt, CancellationToken.None);
+                sw.Stop();
+                var usage = await agent.GetLastUsage(CancellationToken.None);
+                return new
+                {
+                    Model = entry.GrainId,
+                    Response = response,
+                    DurationMs = sw.ElapsedMilliseconds,
+                    InputTokens = usage?.InputTokens ?? 0,
+                    OutputTokens = usage?.OutputTokens ?? 0,
+                    TotalTokens = usage?.TotalTokens ?? 0,
+                    Error = (string?)null
+                };
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                return new
+                {
+                    Model = entry.GrainId,
+                    Response = "",
+                    DurationMs = sw.ElapsedMilliseconds,
+                    InputTokens = 0L,
+                    OutputTokens = 0L,
+                    TotalTokens = 0L,
+                    Error = (string?)ex.Message
+                };
+            }
+        }).ToList();
+
+        var results = await Task.WhenAll(tasks);
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Model Comparison — {results.Length} models");
+        sb.AppendLine();
+        sb.AppendLine("| Model | Duration | Input Tokens | Output Tokens | Total Tokens |");
+        sb.AppendLine("|-------|----------|-------------|--------------|-------------|");
+
+        foreach (var r in results.OrderBy(r => r.DurationMs))
+        {
+            if (r.Error is not null)
+                sb.AppendLine($"| {r.Model} | ERROR | — | — | {r.Error} |");
+            else
+                sb.AppendLine($"| {r.Model} | {r.DurationMs}ms | {r.InputTokens} | {r.OutputTokens} | {r.TotalTokens} |");
+        }
+
+        sb.AppendLine();
+        foreach (var r in results.OrderBy(r => r.DurationMs))
+        {
+            sb.AppendLine($"### {r.Model}");
+            if (r.Error is not null)
+                sb.AppendLine($"Error: {r.Error}");
+            else
+                sb.AppendLine(r.Response);
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
     }
 
     private async Task PublishDashboardChanged()
