@@ -327,32 +327,24 @@ Users create new threads via Telegram command or button. Each gets:
 
 ### IThread Interface
 
+Thread is just an Agent. Conversation, history, streaming, callbacks — all inherited from `IAgent`. Thread-specific capabilities (task board, jobs, recall) are interface methods that auto-register as tools:
+
 ```csharp
-public interface IThread : IGrainWithStringKey
+public interface IThread : IAgent
 {
-    // Conversation
-    Task<AgentResponse> SendMessage(string message, CancellationToken ct);
-    IAsyncEnumerable<UIPart> SendMessageStream(string message, CancellationToken ct);
-    Task<List<ChatMessage>> GetHistory(CancellationToken ct);
-    Task ClearHistory(CancellationToken ct);
-
-    // Callbacks (from UI interactions)
-    Task<AgentResponse> HandleCallback(string callbackId, string value, CancellationToken ct);
-
-    // Task board
+    // Task board — auto-registered as LLM tools
     Task AddTask(string title, string? description, CancellationToken ct);
     Task UpdateTask(string taskId, string status, CancellationToken ct);
     Task<List<ThreadTask>> ListTasks(CancellationToken ct);
 
-    // Job scheduling
+    // Job scheduling — auto-registered as LLM tools
     Task ScheduleJob(string name, string prompt, TimeSpan interval, CancellationToken ct);
     Task CancelJob(string name, CancellationToken ct);
     Task<List<ThreadJob>> ListJobs(CancellationToken ct);
-
-    // Thread management
-    Task<ThreadMetadata> GetMetadata(CancellationToken ct);
 }
 ```
+
+No `SendMessage`, `GetHistory`, `HandleCallback` — those live on `IAgent` where they belong. Every agent is conversational. Thread is just an agent with task/job management bolted on via its interface.
 
 ### Thread Responsibilities
 
@@ -571,7 +563,84 @@ Flow continues → Ready → Orchestrate
 
 ---
 
-## 8. CodeOrchestrator Changes
+## 8. Tools Architecture
+
+### Two Sources of Tools
+
+Every agent has tools from two sources, both available to its LLM during `GetResponse()`:
+
+**1. Interface methods (auto-discovered)**
+
+The base `Agent` class reflects on the grain interface and registers every method (beyond `IAgent` base methods) as an AI tool automatically:
+
+```csharp
+public interface IDotNet : IAgent
+{
+    Task<BuildResult> BuildAsync(string project, CancellationToken ct);
+    Task<TestResult> TestAsync(string? filter, CancellationToken ct);
+    Task FormatAsync(CancellationToken ct);
+}
+```
+
+These methods are:
+- Callable directly from code: `await dotnet.BuildAsync("Core", ct)` — typed, zero tokens
+- Available to the agent's LLM as tools: "BuildAsync", "TestAsync", "FormatAsync"
+- Available in generated orchestration code as typed calls
+
+The base `Agent` class auto-discovers them:
+
+```csharp
+// In Agent base class (automatic, no manual DefineTools override needed)
+protected virtual IEnumerable<AIFunction> DiscoverInterfaceTools()
+{
+    // Reflect on the concrete grain interface (IDotNet, IGit, etc.)
+    // Each method beyond IAgent becomes an AI tool
+    // Method name = tool name, parameters = tool parameters
+    // [Description] attributes provide tool descriptions for the LLM
+}
+```
+
+**2. External tools (MCP, custom)**
+
+For tools that come from external sources (MCP servers, dynamic tools), agents override `DefineAdditionalTools()`:
+
+```csharp
+public class AspireAgent(
+    [AgentState] AgentDurableState durableState,
+    IChatClient chatClient,
+    IMcpClient aspireMcp)
+    : Agent(durableState, chatClient), IAspire
+{
+    // IAspire interface methods → auto-registered as tools
+
+    // MCP tools from Aspire server → registered via override
+    protected override IEnumerable<AIFunction> DefineAdditionalTools()
+        => aspireMcp.GetTools();
+}
+```
+
+### Tool Resolution for LLM
+
+When the agent's LLM processes a `GetResponse()` call, it sees all tools from both sources in a single flat list. It doesn't know or care where a tool came from.
+
+### Calling Patterns Summary
+
+| Caller | Path | Tokens | Example |
+|--------|------|--------|---------|
+| Code (orchestration) | Typed interface method | Zero | `await dotnet.BuildAsync("Core", ct)` |
+| Code (ambiguous request) | `GetResponse()` → LLM reasons → calls tools | Yes | `await dotnet.GetResponse("build and check for warnings")` |
+| LLM (during reasoning) | Calls interface method as AI tool | N/A (already in LLM context) | LLM calls "BuildAsync" tool |
+| LLM (external capability) | Calls MCP tool | N/A | LLM calls "aspire_list_resources" tool |
+
+### What Changes From Today
+
+- `DefineTools()` manual overrides are **deleted** from most agents — interface methods auto-register
+- `DefineAdditionalTools()` replaces `DefineTools()` for agents that need MCP/external tools
+- Agents that had tools duplicating their interface methods (most of them) get simpler — just the interface
+
+---
+
+## 9. CodeOrchestrator Changes
 
 ### Dynamic IDs in Generated Code
 
@@ -606,7 +675,7 @@ The orchestrator's system prompt uses `AgentRegistry.ToPromptStringAsync()` inst
 
 ---
 
-## 9. What Gets Deleted
+## 10. What Gets Deleted
 
 | Component | Reason |
 |-----------|--------|
@@ -618,10 +687,30 @@ The orchestrator's system prompt uses `AgentRegistry.ToPromptStringAsync()` inst
 | `SelfImprovementAgent` | Dead code |
 | `AspireAgent` | Marker interface, does nothing |
 | `BuildAgent` | Merged into DotNet |
-| Separate approval/wizard/form interfaces | Replaced by UIPart + HandleCallback |
+| `DefineTools()` manual overrides (most agents) | Interface methods auto-register as tools |
+| Separate approval/wizard/form interfaces | Replaced by UIPart + HandleCallback on IAgent |
 | Separate "scheduled"/"notifications" topics | Events route to originating thread |
 
-## 10. AgentSelector Model Strategy
+### IAgent Additions
+
+```csharp
+public interface IAgent : IGrainWithStringKey
+{
+    // Existing
+    Task<string> GetResponse(string prompt, CancellationToken ct);
+    IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
+    Task<List<ChatMessage>> GetHistory(CancellationToken ct);
+    Task ClearHistory(CancellationToken ct);
+    Task<AgentMetadata> GetMetadata(CancellationToken ct);
+    Task<AgentCapabilities> GetCapabilities(CancellationToken ct);
+    Task<TokenUsage?> GetLastUsage(CancellationToken ct);
+
+    // New — any agent can handle UI callbacks
+    Task<AgentResponse> HandleCallback(string callbackId, string value, CancellationToken ct);
+}
+```
+
+## 11. AgentSelector Model Strategy
 
 The `AgentSelectorAgent` uses the **default model** (first in the `WithLLM<T>()` chain, no `[Llm<T>]` attribute). This is intentional — the selector's job is lightweight reasoning over a small candidate list (10-15 agents), not heavy generation. The default model is sufficient.
 
@@ -629,7 +718,7 @@ If selection quality becomes a bottleneck, the selector can be upgraded to a spe
 
 ---
 
-## 11. Embedding Dimension
+## 12. Embedding Dimension
 
 The `AgentRecord.DescriptionEmbedding` dimension depends on the embedding model configured via `IEmbeddingGenerator`. The `[VectorStoreVector]` attribute dimension must match the deployed model:
 
@@ -643,7 +732,7 @@ The dimension is set at Qdrant collection creation time. If the embedding model 
 
 ---
 
-## 12. Dynamic Agent Cleanup
+## 13. Dynamic Agent Cleanup
 
 ### Problem
 
@@ -661,7 +750,7 @@ Additionally, a periodic **cleanup reminder** on the AgentRegistry grain scans f
 
 ---
 
-## 13. Migration Strategy
+## 14. Migration Strategy
 
 ### State Migration
 
@@ -696,7 +785,7 @@ Additionally, a periodic **cleanup reminder** on the AgentRegistry grain scans f
 
 ---
 
-## 14. MCP Server Updates
+## 15. MCP Server Updates
 
 The MCP server (`src/IAW.MCP`) must adapt to the new architecture:
 
@@ -716,7 +805,7 @@ MCP responses can include structured `UIPart` data in JSON format, enabling MCP 
 
 ---
 
-## 15. Technology Choices
+## 16. Technology Choices
 
 | Concern | Technology |
 |---------|-----------|
