@@ -143,33 +143,15 @@ public static class ClusterClientExtensions
 {
     // New instance with auto-generated ID
     public static T Get<T>(this IClusterClient client) where T : IAgent
-        => client.GetGrain<T>($"{AgentTypeName<T>()}-{Guid.NewGuid():N[..8]}");
+        => client.GetGrain<T>($"{typeof(T).Name}-{Guid.NewGuid():N[..8]}");
 
     // Scoped instance — same scope+type = same agent (reusable)
     public static T Get<T>(this IClusterClient client, string scope) where T : IAgent
-        => client.GetGrain<T>($"{scope}/{AgentTypeName<T>()}");
-
-    private static string AgentTypeName<T>() where T : IAgent
-    {
-        var name = typeof(T).Name;
-        if (name.StartsWith('I') && name.Length > 1 && char.IsUpper(name[1]))
-            name = name[1..];
-        // Insert hyphens at lowercase→uppercase transitions, then lowercase
-        var sb = new StringBuilder();
-        for (int i = 0; i < name.Length; i++)
-        {
-            if (i > 0 && char.IsUpper(name[i]) && char.IsLower(name[i - 1]))
-                sb.Append('-');
-            sb.Append(char.ToLowerInvariant(name[i]));
-        }
-        return sb.ToString(); // IGpt4oMini → gpt4o-mini, IFileSystem → file-system
-    }
+        => client.GetGrain<T>($"{scope}/{typeof(T).Name}");
 }
 ```
 
-Same pattern on `IGrainFactory` for agent-to-agent usage.
-
-Note: `AgentTypeName<T>()` preserves the existing hyphenation convention (lowercase→uppercase transitions get hyphens) to maintain consistency with traces, logs, and `gen_ai.agent.id` spans.
+IDs use the interface name directly — no transformation: `task-a1b2/IGit`, `IDotNet-3f8a2b1c`. Same pattern on `IGrainFactory` for agent-to-agent usage.
 
 ### Singletons
 
