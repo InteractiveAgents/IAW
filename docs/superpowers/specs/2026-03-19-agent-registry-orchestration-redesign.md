@@ -327,24 +327,13 @@ Users create new threads via Telegram command or button. Each gets:
 
 ### IThread Interface
 
-Thread is just an Agent. Conversation, history, streaming, callbacks — all inherited from `IAgent`. Thread-specific capabilities (task board, jobs, recall) are interface methods that auto-register as tools:
+Thread is just an Agent. Conversation, history, streaming, callbacks, scheduling — all inherited from `IAgent`. Thread has no additional interface methods:
 
 ```csharp
-public interface IThread : IAgent
-{
-    // Task board — auto-registered as LLM tools
-    Task AddTask(string title, string? description, CancellationToken ct);
-    Task UpdateTask(string taskId, string status, CancellationToken ct);
-    Task<List<ThreadTask>> ListTasks(CancellationToken ct);
-
-    // Job scheduling — auto-registered as LLM tools
-    Task ScheduleJob(string name, string prompt, TimeSpan interval, CancellationToken ct);
-    Task CancelJob(string name, CancellationToken ct);
-    Task<List<ThreadJob>> ListJobs(CancellationToken ct);
-}
+public interface IThread : IAgent { }
 ```
 
-No `SendMessage`, `GetHistory`, `HandleCallback` — those live on `IAgent` where they belong. Every agent is conversational. Thread is just an agent with task/job management bolted on via its interface.
+The Thread agent class configures its behavior through its system prompt and context providers. It manages a task board internally as durable state (exposed through conversation, not typed methods). Scheduling uses `IAgent.ScheduleJob`/`ScheduleRecurringJob` which every agent has.
 
 ### Thread Responsibilities
 
@@ -563,7 +552,51 @@ Flow continues → Ready → Orchestrate
 
 ---
 
-## 8. Tools Architecture
+## 8. Agent Communication Model
+
+Three communication mechanisms, three coupling levels, three use cases. This is the core of how agents interact.
+
+| | `IReceiver<T>` | Streams (`IStreamConsumer<T>`) | Observers (`IGrainObserver`) |
+|---|---|---|---|
+| **Direction** | Sender → specific receiver | Publisher → any subscriber | Grain → subscribed watchers |
+| **Coupling** | Tight — sender knows receiver | Loose — publisher doesn't know subscribers | Medium — grain holds observer refs |
+| **Typing** | Strongly typed messages | Strongly typed events | Custom observer interface |
+| **Who initiates** | Sender pushes | Subscriber subscribes to stream | Watcher subscribes to grain |
+| **Delivery** | Synchronous, awaitable | Async, fire-and-forget | Direct callback, in-memory |
+| **Persistence** | No | Depends on stream provider | No |
+| **Use case** | "Hey DotNet, code changed — react" | "Code changed event happened, anyone who cares" | "Telegram client watching for real-time updates" |
+
+### How They Work Together
+
+```
+1. Git agent commits code
+   └── IReceiver: sends CodeChangedMessage directly to DotNet agent
+       (tight coupling — Git KNOWS DotNet needs to react)
+
+2. DotNet runs tests, publishes result
+   └── Stream: publishes TestsPassedEvent to stream
+       (loose coupling — DotNet doesn't know who cares)
+
+3. Telegram client watching the thread
+   └── Observer: subscribed to Thread grain, gets real-time
+       UI updates pushed instantly (no polling, no stream overhead)
+```
+
+### Agent Base Class Partials
+
+| Partial file | Mechanism | Purpose |
+|---|---|---|
+| `Agent.Streams.cs` | Streams | Auto-subscribe to streams based on `IStreamConsumer<T>` interfaces |
+| `Agent.Observers.cs` | Observers | Subscribe/unsubscribe watchers, push notifications to them |
+| `Agent.Scheduling.cs` | Durable Jobs | Schedule/cancel jobs, receive and process fired jobs |
+
+Note: `IReceiver<T>` is implemented directly on the agent's grain interface (e.g., `IDotNet : IAgent, IReceiver<CodeChangedMessage>`) — no partial file needed.
+
+Note: This table and explanation must be added to the website documentation (`website/guide/communication.md`) as it defines the core communication architecture.
+
+---
+
+## 9. Tools Architecture
 
 ### Two Sources of Tools
 
@@ -696,7 +729,7 @@ The orchestrator's system prompt uses `AgentRegistry.ToPromptStringAsync()` inst
 ```csharp
 public interface IAgent : IGrainWithStringKey
 {
-    // Existing
+    // Existing — conversation
     Task<string> GetResponse(string prompt, CancellationToken ct);
     IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
     Task<List<ChatMessage>> GetHistory(CancellationToken ct);
@@ -705,10 +738,32 @@ public interface IAgent : IGrainWithStringKey
     Task<AgentCapabilities> GetCapabilities(CancellationToken ct);
     Task<TokenUsage?> GetLastUsage(CancellationToken ct);
 
-    // New — any agent can handle UI callbacks
+    // New — UI callbacks (any agent can emit UIParts and handle responses)
     Task<AgentResponse> HandleCallback(string callbackId, string value, CancellationToken ct);
+
+    // New — scheduling via Durable Jobs v2 (replaces Reminders v1)
+    Task ScheduleJob(string name, TimeSpan delay, string prompt, CancellationToken ct);
+    Task ScheduleRecurringJob(string name, TimeSpan interval, string prompt, CancellationToken ct);
+    Task CancelJob(string name, CancellationToken ct);
+    Task<List<ScheduledJobInfo>> ListJobs(CancellationToken ct);
 }
 ```
+
+### Agent Base Class Partials (updated)
+
+| Partial file | Responsibility |
+|---|---|
+| `Agent.cs` | Core: activation, LLM streaming, response handling, context enrichment |
+| `Agent.Events.cs` | Typed event publishing to Orleans streams |
+| `Agent.Lifecycle.cs` | Activation hooks, deactivation |
+| `Agent.State.cs` | Durable state (history, key-value dict, event log) |
+| `Agent.Streams.cs` | Auto-subscribe to streams based on `IStreamConsumer<T>` interfaces |
+| `Agent.Tools.cs` | Auto-discovery of interface methods as AI tools + additional tools |
+| `Agent.Scheduling.cs` | Durable Jobs v2: schedule/cancel/receive jobs (replaces `Agent.Tracking.cs`) |
+| `Agent.Observers.cs` | Observer pattern for real-time push to watchers |
+
+**Deleted partials:**
+- `Agent.Tracking.cs` — replaced by `Agent.Scheduling.cs` (Durable Jobs v2 instead of Reminders v1)
 
 ## 11. AgentSelector Model Strategy
 
