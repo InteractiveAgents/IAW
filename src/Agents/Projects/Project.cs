@@ -271,7 +271,7 @@ public class Project(
     public Task<IReadOnlyList<ProjectTask>> GetTasks(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ProjectTask>>(durableState.Tasks.ToArray());
 
-    public async Task<ScheduledJob> ScheduleJob(string name, TimeSpan interval, string description, CancellationToken ct)
+    public new async Task<ScheduledJob> ScheduleJob(string name, TimeSpan interval, string description, CancellationToken ct)
     {
         var job = new ScheduledJob
         {
@@ -289,7 +289,7 @@ public class Project(
         return job;
     }
 
-    public async Task CancelJob(string jobId, CancellationToken ct)
+    public new async Task CancelJob(string jobId, CancellationToken ct)
     {
         if (!durableState.Schedules.TryGetValue(jobId, out var job))
             throw new KeyNotFoundException($"Job {jobId} not found");

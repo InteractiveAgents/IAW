@@ -1,3 +1,5 @@
+using Core.UI;
+
 namespace Core.Contracts;
 
 public interface IAgent : IGrainWithStringKey
@@ -10,6 +12,16 @@ public interface IAgent : IGrainWithStringKey
     Task<string> GetResponse(string prompt, CancellationToken ct);
     Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken ct);
     Task ClearHistory(CancellationToken ct);
+
+    // Rich responses & callbacks
+    Task<AgentResponse> GetRichResponse(string prompt, CancellationToken ct = default);
+    Task<AgentResponse> HandleCallback(string callbackId, string value, CancellationToken ct = default);
+
+    // Scheduling
+    Task ScheduleJob(string name, TimeSpan delay, string prompt, CancellationToken ct = default);
+    Task ScheduleRecurringJob(string name, TimeSpan interval, string prompt, CancellationToken ct = default);
+    Task CancelJob(string name, CancellationToken ct = default);
+    Task<List<ScheduledJobInfo>> ListJobs(CancellationToken ct = default);
 
     // State
     Task<AgentState> GetState(CancellationToken ct);

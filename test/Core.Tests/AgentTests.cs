@@ -1,6 +1,7 @@
 using Core;
 using Core.Contracts;
 using Core.Messages;
+using Core.UI;
 using IAW.Testing;
 using Xunit;
 
@@ -115,6 +116,32 @@ public class AgentBasicTests : AgentTest<TestAgent>
         var agent = Agent(UniqueId("no-streams"));
         var subs = await agent.GetActiveSubscriptions(ct);
         Assert.Empty(subs);
+    }
+
+    [Fact]
+    public async Task HandleCallback_ReturnsEmptyByDefault()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<ITestAgent>(UniqueId("cb"));
+        var result = await agent.HandleCallback("unknown", "val", TestContext.Current.CancellationToken);
+        Assert.Empty(result.Parts);
+    }
+
+    [Fact]
+    public async Task GetRichResponse_WrapsTextInAgentResponse()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<ITestAgent>(UniqueId("rich"));
+        var result = await agent.GetRichResponse("Hello", TestContext.Current.CancellationToken);
+        Assert.Single(result.Parts);
+        var textPart = Assert.IsType<TextPart>(result.Parts[0]);
+        Assert.Equal("mock-response", textPart.Content);
+    }
+
+    [Fact]
+    public async Task ListJobs_ReturnsEmptyByDefault()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<ITestAgent>(UniqueId("jobs"));
+        var jobs = await agent.ListJobs(TestContext.Current.CancellationToken);
+        Assert.Empty(jobs);
     }
 }
 
