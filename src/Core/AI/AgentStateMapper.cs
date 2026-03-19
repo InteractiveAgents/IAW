@@ -23,7 +23,7 @@ public sealed class AgentStateMapper : IAttributeToFactoryMapper<AgentStateAttri
                 services.GetRequiredKeyedService<IDurableDictionary<string, StateEntry>>("agent-state"),
                 services.GetRequiredKeyedService<IDurableList<AgentEvent>>("agent-events"),
                 services.GetRequiredKeyedService<IDurableList<ChatMessage>>("history"),
-                services.GetRequiredKeyedService<IDurableDictionary<string, TrackingItem>>("tracking"));
+                services.GetRequiredKeyedService<IDurableDictionary<string, ScheduledJobItem>>("scheduled-jobs"));
         };
     }
 }

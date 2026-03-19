@@ -6,12 +6,12 @@ public class ProjectDurableState(
     IDurableDictionary<string, StateEntry> state,
     IDurableList<AgentEvent> eventLog,
     IDurableList<ChatMessage> history,
-    IDurableDictionary<string, TrackingItem> trackingItems,
+    IDurableDictionary<string, ScheduledJobItem> scheduledJobs,
     IDurableList<ProjectTask> tasks,
     IDurableDictionary<string, ScheduledJob> schedules,
     IDurableDictionary<string, FileReference> files,
     IDurableDictionary<string, string> projectMeta)
-    : AgentDurableState(state, eventLog, history, trackingItems)
+    : AgentDurableState(state, eventLog, history, scheduledJobs)
 {
     public IDurableList<ProjectTask> Tasks => tasks;
     public IDurableDictionary<string, ScheduledJob> Schedules => schedules;

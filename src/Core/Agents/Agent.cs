@@ -75,7 +75,7 @@ public abstract partial class Agent(
 
         await SubscribeToStreamConsumerInterfaces();
 
-        foreach (var kvp in durableState.TrackingItems)
+        foreach (var kvp in durableState.ScheduledJobs)
             await this.RegisterOrUpdateReminder(kvp.Key, TimeSpan.Zero, kvp.Value.Interval);
 
         await base.OnActivateAsync(cancellationToken);
@@ -386,18 +386,6 @@ public abstract partial class Agent(
         var text = await GetResponse(prompt, ct);
         return new UIAgentResponse([new TextPart(text)]);
     }
-
-    public virtual Task ScheduleJob(string name, TimeSpan delay, string prompt, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public virtual Task ScheduleRecurringJob(string name, TimeSpan interval, string prompt, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public virtual Task CancelJob(string name, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public virtual Task<List<ScheduledJobInfo>> ListJobs(CancellationToken ct = default)
-        => Task.FromResult(new List<ScheduledJobInfo>());
 
     protected static string BuildSafeErrorMessage(Exception ex)
         => $"An error occurred: {ex.GetType().Name} — {ex.Message}";

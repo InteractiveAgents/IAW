@@ -397,9 +397,9 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
 
 #endregion
 
-#region Tracking & Reminders
+#region Scheduling & Reminders
 
-public class AgentTrackingTests : AgentTest<TrackingTestAgent>
+public class AgentSchedulingTests : AgentTest<SchedulingTestAgent>
 {
     [Fact]
     public async Task GetCapabilities_HasTimersIsTrue()
@@ -411,46 +411,67 @@ public class AgentTrackingTests : AgentTest<TrackingTestAgent>
     }
 
     [Fact]
-    public async Task GetEventLog_InitiallyEmpty_OnTrackingAgent()
+    public async Task GetEventLog_InitiallyEmpty_OnSchedulingAgent()
     {
         var ct = TestContext.Current.CancellationToken;
-        var agent = Agent(UniqueId("track"));
+        var agent = Agent(UniqueId("sched"));
         var log = await agent.GetEventLog(ct);
         Assert.Empty(log);
     }
 
     [Fact]
-    public async Task StartTracking_ThenStop_DoesNotThrow()
+    public async Task ScheduleJob_StoresInState()
     {
+        var agent = Agent(UniqueId("sched-store"));
         var ct = TestContext.Current.CancellationToken;
-        var id = UniqueId("track-lifecycle");
-        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
-        await grain.StartTestTracking("monitor-1", "Check CPU", TimeSpan.FromMinutes(5), ct);
-        await grain.StopTestTracking("monitor-1", ct);
+        await agent.ScheduleJob("test-job", TimeSpan.FromMinutes(5), "do something", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Single(jobs);
+        Assert.Equal("test-job", jobs[0].Name);
+        Assert.Equal("do something", jobs[0].Prompt);
     }
 
     [Fact]
-    public async Task StopTracking_NonExistent_DoesNotThrow()
+    public async Task CancelJob_RemovesFromState()
     {
+        var agent = Agent(UniqueId("cancel"));
         var ct = TestContext.Current.CancellationToken;
-        var id = UniqueId("track-noexist");
-        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
-        await grain.StopTestTracking("nonexistent", ct);
+        await agent.ScheduleJob("j1", TimeSpan.FromMinutes(5), "prompt", ct);
+        await agent.CancelJob("j1", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Empty(jobs);
     }
 
     [Fact]
-    public async Task Reminder_FiresOnTrackingDueAsync()
+    public async Task ScheduleRecurringJob_StoresWithInterval()
+    {
+        var agent = Agent(UniqueId("recur"));
+        var ct = TestContext.Current.CancellationToken;
+        await agent.ScheduleRecurringJob("poll", TimeSpan.FromMinutes(30), "check status", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Single(jobs);
+        Assert.Equal(TimeSpan.FromMinutes(30), jobs[0].Interval);
+    }
+
+    [Fact]
+    public async Task CancelJob_NonExistent_DoesNotThrow()
     {
         var ct = TestContext.Current.CancellationToken;
-        var id = UniqueId("remind-fire");
-        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
-        await grain.StartTestTracking("remind-1", "Test reminder", TimeSpan.FromMinutes(1), ct);
+        var agent = Agent(UniqueId("cancel-noexist"));
+        await agent.CancelJob("nonexistent", ct);
+    }
+
+    [Fact]
+    public async Task ScheduleRecurringJob_ReminderFires_AgentStillResponds()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("remind-fire"));
+        await agent.ScheduleRecurringJob("remind-1", TimeSpan.FromMinutes(1), "Test reminder", ct);
 
         // in-memory reminder fires with dueTime=Zero, so it should fire quickly
         await Task.Delay(3000, ct);
 
-        // verify the agent didn't crash and still responds
-        var response = await ((IAgent)grain).GetResponse("Are you alive?", ct);
+        var response = await agent.GetResponse("Are you alive?", ct);
         Assert.Equal("mock-response", response);
     }
 }

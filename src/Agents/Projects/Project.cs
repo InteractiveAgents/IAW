@@ -283,8 +283,7 @@ public class Project(
             Active = true
         };
         durableState.Schedules[job.Id] = job;
-        var trackingItem = new TrackingItem(job.Id, job.Description, interval, DateTimeOffset.UtcNow, null, null);
-        await StartTrackingAsync(job.Id, trackingItem, interval, ct);
+        await ScheduleRecurringJob(job.Id, interval, job.Description, ct);
         await PublishDashboardChanged();
         return job;
     }
@@ -295,7 +294,7 @@ public class Project(
             throw new KeyNotFoundException($"Job {jobId} not found");
 
         durableState.Schedules[jobId] = job with { Active = false };
-        await StopTrackingAsync(jobId, ct);
+        await base.CancelJob(jobId, ct);
         await PublishDashboardChanged();
     }
 
@@ -313,15 +312,15 @@ public class Project(
     public Task<ProjectContext> GetProjectContext(CancellationToken ct) =>
         Task.FromResult(new ProjectContext());
 
-    protected override async Task OnTrackingDueAsync(TrackingItem item, CancellationToken ct)
+    protected override async Task OnScheduledJobDueAsync(ScheduledJobItem scheduledJob, CancellationToken ct)
     {
-        if (!durableState.Schedules.TryGetValue(item.Id, out var job) || !job.Active)
+        if (!durableState.Schedules.TryGetValue(scheduledJob.Name, out var job) || !job.Active)
         {
-            await base.OnTrackingDueAsync(item, ct);
+            await base.OnScheduledJobDueAsync(scheduledJob, ct);
             return;
         }
 
-        var response = await GetResponse(item.Description, ct);
+        var response = await GetResponse(scheduledJob.Prompt, ct);
         durableState.Schedules[job.Id] = job with
         {
             LastRunAt = DateTimeOffset.UtcNow,

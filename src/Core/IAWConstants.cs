@@ -7,8 +7,7 @@ public static class IAWConstants
     public static class Events
     {
         public const string ApprovalRequested = "approval.requested";
-        public const string TrackingChanged = "tracking.changed";
-        public const string DashboardChanged = "dashboard.changed";
+public const string DashboardChanged = "dashboard.changed";
         public const string JobCompleted = "job.completed";
         public const string OrchestrationProgress = "orchestration.progress";
         public const string OrchestrationCompleted = "orchestration.completed";

@@ -23,7 +23,7 @@ public sealed class ProjectStateMapper : IAttributeToFactoryMapper<ProjectStateA
                 services.GetRequiredKeyedService<IDurableDictionary<string, StateEntry>>("agent-state"),
                 services.GetRequiredKeyedService<IDurableList<AgentEvent>>("agent-events"),
                 services.GetRequiredKeyedService<IDurableList<ChatMessage>>("history"),
-                services.GetRequiredKeyedService<IDurableDictionary<string, TrackingItem>>("tracking"),
+                services.GetRequiredKeyedService<IDurableDictionary<string, ScheduledJobItem>>("scheduled-jobs"),
                 services.GetRequiredKeyedService<IDurableList<ProjectTask>>("project-tasks"),
                 services.GetRequiredKeyedService<IDurableDictionary<string, ScheduledJob>>("project-schedules"),
                 services.GetRequiredKeyedService<IDurableDictionary<string, FileReference>>("project-files"),
