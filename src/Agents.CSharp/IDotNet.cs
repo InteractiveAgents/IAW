@@ -6,9 +6,19 @@ namespace IAW.Agents.CSharp;
 
 public interface IDotNet : IAgent, IReceiver<CodeChangedMessage>
 {
+    Task<BuildRunResult> BuildAsync(string projectPath, string configuration = "Debug", CancellationToken ct = default);
     Task<TestRunResult> TestAsync(string? filter = null, CancellationToken ct = default);
     Task<string> FormatAsync(CancellationToken ct = default);
 }
+
+[GenerateSerializer]
+public sealed record BuildRunResult(
+    [property: Id(0)] bool Success,
+    [property: Id(1)] string Output,
+    [property: Id(2)] int Warnings,
+    [property: Id(3)] int Errors,
+    [property: Id(4)] TimeSpan Duration,
+    [property: Id(5)] string[] Diagnostics);
 
 [GenerateSerializer]
 public sealed record TestRunResult(

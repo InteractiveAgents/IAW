@@ -24,6 +24,48 @@ public partial class DotNetAgent(
         "You are DotNet, the IAW team's .NET toolchain specialist. " +
         "You run tests, format code, and manage builds. Execute operations immediately and report results.";
 
+    public async Task<BuildRunResult> BuildAsync(
+        string projectPath, string configuration = "Debug", CancellationToken ct = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var psi = new ProcessStartInfo("dotnet", $"build \"{projectPath}\" -c {configuration}")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi);
+        if (process is null)
+        {
+            sw.Stop();
+            return new BuildRunResult(false, "Failed to start build process", 0, 1, sw.Elapsed, ["Process start failed"]);
+        }
+
+        var output = await process.StandardOutput.ReadToEndAsync(ct);
+        var error = await process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+        sw.Stop();
+
+        var fullOutput = output + error;
+        var warnings = CountBuildPattern(fullOutput, BuildWarningRegex());
+        var errors = CountBuildPattern(fullOutput, BuildErrorRegex());
+        var diagnostics = ExtractBuildDiagnostics(fullOutput);
+        var succeeded = process.ExitCode == 0;
+
+        await PublishAsync(succeeded ? "build.succeeded" : "build.failed", new Dictionary<string, object>
+        {
+            ["ProjectPath"] = projectPath,
+            ["Configuration"] = configuration,
+            ["Warnings"] = warnings,
+            ["Errors"] = errors,
+            ["DurationMs"] = (long)sw.Elapsed.TotalMilliseconds
+        }, ct);
+
+        return new BuildRunResult(succeeded, fullOutput, warnings, errors, sw.Elapsed, diagnostics);
+    }
+
     public async Task<TestRunResult> TestAsync(string? filter = null, CancellationToken ct = default)
     {
         var solutionPath = FindSolutionFromWorkspace();
@@ -217,6 +259,26 @@ public partial class DotNetAgent(
         }
         return null;
     }
+
+    private static int CountBuildPattern(string input, Regex regex) => regex.Matches(input).Count;
+
+    private static string[] ExtractBuildDiagnostics(string output)
+    {
+        var diagnostics = new List<string>();
+        foreach (var line in output.Split('\n'))
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Contains(": error ") || trimmed.Contains(": warning "))
+                diagnostics.Add(trimmed);
+        }
+        return [.. diagnostics];
+    }
+
+    [GeneratedRegex(@": warning ")]
+    private static partial Regex BuildWarningRegex();
+
+    [GeneratedRegex(@": error ")]
+    private static partial Regex BuildErrorRegex();
 
     [GeneratedRegex(@"Failed:\s+(?<failed>\d+).*?Passed:\s+(?<passed>\d+).*?Total:\s+(?<total>\d+)", RegexOptions.Singleline)]
     private static partial Regex TestResultRegex();

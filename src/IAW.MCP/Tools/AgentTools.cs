@@ -138,14 +138,4 @@ internal sealed class AgentTools(IClusterClient orleans)
             eventCount, historyCount, capabilities
         }, JsonOptions);
     }
-
-    [McpServerTool(Name = "agent_trigger_self_improvement")]
-    [Description("Trigger self-improvement analysis across the agent team.")]
-    public async Task<string> AgentTriggerSelfImprovement(CancellationToken ct)
-    {
-        var agent = ResolveAgent("self-improvement");
-        var response = await agent.GetResponse(
-            "Analyze recent agent interactions and propose improvements", ct);
-        return JsonSerializer.Serialize(new { response }, JsonOptions);
-    }
 }
