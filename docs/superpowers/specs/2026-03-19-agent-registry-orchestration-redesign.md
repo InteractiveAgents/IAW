@@ -143,7 +143,7 @@ public static class ClusterClientExtensions
 {
     // New instance with auto-generated ID
     public static T Get<T>(this IClusterClient client) where T : IAgent
-        => client.GetGrain<T>($"{typeof(T).Name}-{Guid.NewGuid():N[..8]}");
+        => client.GetGrain<T>($"{typeof(T).Name}-{Guid.NewGuid().ToString("N")[..8]}");
 
     // Scoped instance — same scope+type = same agent (reusable)
     public static T Get<T>(this IClusterClient client, string scope) where T : IAgent
@@ -685,7 +685,7 @@ var git = client.GetGrain<IGit>("git");
 
 New generated code:
 ```csharp
-var taskId = $"task-{Guid.NewGuid():N[..8]}";
+var taskId = $"task-{Guid.NewGuid().ToString("N")[..8]}";
 var git = client.Get<IGit>(taskId);
 var dotnet = client.Get<IDotNet>(taskId);
 // Each agent has isolated state for this orchestration
