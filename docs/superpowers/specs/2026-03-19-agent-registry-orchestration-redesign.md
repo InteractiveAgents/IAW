@@ -122,19 +122,19 @@ Every agent instance gets a unique string ID. The interface type defines WHAT it
 IDs follow the convention `{scope}/{agent-type}` or are auto-generated:
 
 ```
-task-2f8a/git          — Git agent scoped to a specific orchestration task
-task-2f8a/dotnet       — DotNet agent for the same task
-user-123/personal      — User's personal thread (persists across sessions)
-sel-9x3b               — Short-lived ephemeral agent
+task-2f8a/IGit         — Git agent scoped to a specific orchestration task
+task-2f8a/IDotNet      — DotNet agent for the same task
+user-123/IThread       — User's personal thread (persists across sessions)
+IAgentSelector-9x3b    — Short-lived ephemeral agent
 ```
 
 ### Scoping Rules
 
 | Scope | Pattern | Lifecycle | Example |
 |-------|---------|-----------|---------|
-| Task-scoped | `task-{id}/{type}` | Created by orchestration, live for task duration, resumable | `task-a1b2/git` |
-| User-scoped | `user-{id}/{type}` | Persist across sessions | `user-123/personal` |
-| Ephemeral | `{type}-{guid}` | One-off, no reuse | `selector-8f2a3b` |
+| Task-scoped | `task-{id}/{InterfaceName}` | Created by orchestration, live for task duration, resumable | `task-a1b2/IGit` |
+| User-scoped | `user-{id}/{InterfaceName}` | Persist across sessions | `user-123/IThread` |
+| Ephemeral | `{InterfaceName}-{guid}` | One-off, no reuse | `IAgentSelector-8f2a3b` |
 
 ### API
 
@@ -253,8 +253,8 @@ public interface IAgentRegistry : IGrainWithStringKey
 ### Technology
 
 - **`Microsoft.Extensions.VectorData.Abstractions`** (GA, v10.0.1) as the abstraction layer
-- **`Microsoft.SemanticKernel.Connectors.Qdrant`** as the Qdrant connector
-- **`HybridSearchAsync`** for combined vector + keyword + structured filtering
+- **`Microsoft.Extensions.VectorData.Qdrant`** as the Qdrant connector (standalone, no SemanticKernel dependency)
+- **`IKeywordHybridSearch<T>.HybridSearchAsync()`** for combined vector + keyword + structured filtering
 
 ---
 
@@ -340,7 +340,7 @@ The Thread agent class configures its behavior through its system prompt and con
 - **Conversation management** — history, streaming responses
 - **Routing** — decides if request needs orchestration or can be answered directly
 - **Task board** — AddTask, UpdateTask, ListTasks
-- **Job scheduling** — ScheduleJob, CancelJob, ListJobs (Orleans reminders)
+- **Job scheduling** — ScheduleJob, CancelJob, ListJobs (Durable Jobs v2)
 - **Recall** — Qdrant search over past results and documents
 - **UI generation** — returns `AgentResponse` with semantic `UIPart` lists
 - **Callback routing** — maintains `callbackId → agent` mapping, routes user interactions
@@ -638,17 +638,18 @@ protected virtual IEnumerable<AIFunction> DiscoverInterfaceTools()
 For tools that come from external sources (MCP servers, dynamic tools), agents override `DefineAdditionalTools()`:
 
 ```csharp
-public class AspireAgent(
+// Example: an agent that extends its capabilities with tools from an MCP server
+public class SomeAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient,
-    IMcpClient aspireMcp)
-    : Agent(durableState, chatClient), IAspire
+    IMcpClient externalMcp)
+    : Agent(durableState, chatClient), ISomeAgent
 {
-    // IAspire interface methods → auto-registered as tools
+    // ISomeAgent interface methods → auto-registered as tools
 
-    // MCP tools from Aspire server → registered via override
+    // MCP tools from external server → registered via override
     protected override IEnumerable<AIFunction> DefineAdditionalTools()
-        => aspireMcp.GetTools();
+        => externalMcp.GetTools();
 }
 ```
 
@@ -673,7 +674,7 @@ When the agent's LLM processes a `GetResponse()` call, it sees all tools from bo
 
 ---
 
-## 9. CodeOrchestrator Changes
+## 10. CodeOrchestrator Changes
 
 ### Dynamic IDs in Generated Code
 
@@ -708,7 +709,7 @@ The orchestrator's system prompt uses `AgentRegistry.ToPromptStringAsync()` inst
 
 ---
 
-## 10. What Gets Deleted
+## 11. What Gets Deleted
 
 | Component | Reason |
 |-----------|--------|
@@ -729,9 +730,12 @@ The orchestrator's system prompt uses `AgentRegistry.ToPromptStringAsync()` inst
 ```csharp
 public interface IAgent : IGrainWithStringKey
 {
-    // Existing — conversation
+    // Existing — conversation (returns plain text for agent-to-agent calls)
     Task<string> GetResponse(string prompt, CancellationToken ct);
     IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
+
+    // New — rich response with UIParts (used by Thread for user-facing responses)
+    Task<AgentResponse> GetRichResponse(string prompt, CancellationToken ct);
     Task<List<ChatMessage>> GetHistory(CancellationToken ct);
     Task ClearHistory(CancellationToken ct);
     Task<AgentMetadata> GetMetadata(CancellationToken ct);
@@ -765,7 +769,7 @@ public interface IAgent : IGrainWithStringKey
 **Deleted partials:**
 - `Agent.Tracking.cs` — replaced by `Agent.Scheduling.cs` (Durable Jobs v2 instead of Reminders v1)
 
-## 11. AgentSelector Model Strategy
+## 12. AgentSelector Model Strategy
 
 The `AgentSelectorAgent` uses the **default model** (first in the `WithLLM<T>()` chain, no `[Llm<T>]` attribute). This is intentional — the selector's job is lightweight reasoning over a small candidate list (10-15 agents), not heavy generation. The default model is sufficient.
 
@@ -773,7 +777,7 @@ If selection quality becomes a bottleneck, the selector can be upgraded to a spe
 
 ---
 
-## 12. Embedding Dimension
+## 13. Embedding Dimension
 
 The `AgentRecord.DescriptionEmbedding` dimension depends on the embedding model configured via `IEmbeddingGenerator`. The `[VectorStoreVector]` attribute dimension must match the deployed model:
 
@@ -787,7 +791,7 @@ The dimension is set at Qdrant collection creation time. If the embedding model 
 
 ---
 
-## 13. Dynamic Agent Cleanup
+## 14. Dynamic Agent Cleanup
 
 ### Problem
 
@@ -805,7 +809,7 @@ Additionally, a periodic **cleanup reminder** on the AgentRegistry grain scans f
 
 ---
 
-## 14. Migration Strategy
+## 15. Migration Strategy
 
 ### State Migration
 
@@ -840,7 +844,7 @@ Additionally, a periodic **cleanup reminder** on the AgentRegistry grain scans f
 
 ---
 
-## 15. MCP Server Updates
+## 16. MCP Server Updates
 
 The MCP server (`src/IAW.MCP`) must adapt to the new architecture:
 
@@ -860,7 +864,7 @@ MCP responses can include structured `UIPart` data in JSON format, enabling MCP 
 
 ---
 
-## 16. Technology Choices
+## 17. Technology Choices
 
 | Concern | Technology |
 |---------|-----------|
