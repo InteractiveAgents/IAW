@@ -31,5 +31,6 @@ public interface IAgentSelector : IAgent
         - Return ONLY the JSON object, no markdown fences, no extra text.
         """;
 
+    [ResponseTimeout("00:05:00")]
     Task<SelectionResult> SelectAsync(string userRequest, CancellationToken ct = default);
 }
