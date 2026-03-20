@@ -17,6 +17,7 @@ public const string DashboardChanged = "dashboard.changed";
     {
         public const string Agent = "agent";
         public const string Project = "project";
+        public const string Thread = "thread";
         public const string CodeOrchestrator = "code-orchestrator";
         public const string UserProfile = "user-profile";
         public const string UISession = "ui-session";
