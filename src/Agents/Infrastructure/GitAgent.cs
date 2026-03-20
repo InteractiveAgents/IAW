@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
@@ -12,37 +11,8 @@ namespace IAW.Agents.Coding;
 public class GitAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), IGit
+    : Agent<IGit>(durableState, chatClient), IGit
 {
-    protected override string DisplayName => "Git";
-
-    public static string AgentDescription => "Manages git version control operations including commits, branches, diffs, and repository history.";
-    public static string[] AgentCapabilities => ["git", "commit", "branch", "diff", "version-control", "repository"];
-
-    protected override string Instructions => """
-        You are Git, the IAW team's version control specialist. Manage commits, branches, diffs, and repository state.
-
-        CAPABILITIES:
-        - View repository status and staged changes
-        - Create, switch, merge, and delete branches
-        - Commit with descriptive messages
-        - Stage specific files or patterns
-        - View commit history and detailed diffs
-        - Revert commits and stash/unstash changes
-
-        OUTPUT FORMAT:
-        - Commit results: "Committed <hash>: <message>"
-        - Status: list staged, unstaged, and untracked files
-        - Logs: show hash, author, subject in concise format
-        - Diffs: show file paths and line changes
-
-        RULES:
-        - Always run git status before commits to verify staged changes
-        - Write commit messages in imperative mood, max 72 characters for subject line
-        - Never force-push or rewrite public history
-        - For merge conflicts, report conflicting files and let the user decide resolution
-        - Report results concisely; include exit code and error messages on failure
-        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {

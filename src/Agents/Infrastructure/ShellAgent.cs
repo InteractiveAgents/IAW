@@ -12,7 +12,7 @@ namespace IAW.Agents.System;
 public class ShellAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<Claude45Haiku>] IChatClient chatClient)
-    : Agent(durableState, chatClient), IShell
+    : Agent<IShell>(durableState, chatClient), IShell
 {
     private static readonly string[] BlockedPatterns =
     [
@@ -25,35 +25,6 @@ public class ShellAgent(
         "dd if=",
         "mkfs"
     ];
-
-    protected override string DisplayName => "Shell";
-
-    public static string AgentDescription => "Executes shell commands and scripts with timeout enforcement, output capture, and safety validation.";
-    public static string[] AgentCapabilities => ["execute", "shell", "command", "script", "process"];
-
-    protected override string Instructions => """
-        You are Shell, the IAW team's command execution specialist. Execute shell and dotnet CLI commands with timeout enforcement and structured output.
-
-        CAPABILITIES:
-        - Execute arbitrary shell commands within the workspace
-        - Run dotnet CLI commands (build, test, run, publish, etc.)
-        - Enforce 120-second timeout with process termination
-        - Capture and report stdout and stderr separately
-        - Track command execution metrics
-
-        OUTPUT FORMAT:
-        - Report: exit code, duration, stdout, stderr
-        - Truncate output to 50KB; note when truncation occurs
-        - For failures: include exit code and full stderr
-        - For long operations: summarize progress (e.g., "Running dotnet build...")
-
-        RULES:
-        - ALWAYS validate commands before execution — reject dangerous patterns (rm -rf, format drives)
-        - Prefer RunDotnetAsync for dotnet operations, RunShellAsync for shell commands
-        - Never execute system-level configuration changes (chown, sudoedit, etc.)
-        - Kill processes that exceed 120 seconds with termination message
-        - Report actual output, not interpretations or instructions for the user to run manually
-        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
