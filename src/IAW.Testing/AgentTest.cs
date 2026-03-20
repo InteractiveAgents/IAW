@@ -19,7 +19,8 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
             .AddMemoryGrainStorage("Default")
             .AddMemoryGrainStorage("PubSubStore")
             .AddMemoryStreams(IAWConstants.StreamProvider)
-            .UseInMemoryReminderService();
+            .UseInMemoryReminderService()
+            .UseInMemoryDurableJobs();
 
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();

@@ -22,6 +22,7 @@
     <PackageReference Include="Microsoft.Agents.AI" />
     <PackageReference Include="Microsoft.Orleans.Journaling" />
     <PackageReference Include="Microsoft.Orleans.Reminders" />
+    <PackageReference Include="Microsoft.Orleans.DurableJobs" />
     <PackageReference Include="Microsoft.Orleans.Sdk" />
     <PackageReference Include="Microsoft.Orleans.Streaming" />
     <PackageReference Include="Anthropic" />

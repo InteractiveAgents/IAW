@@ -1,3 +1,4 @@
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,6 +30,16 @@ public static class IAWClientExtensions
             silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
             silo.AddStateMachineStorage();
             silo.AddDashboard();
+            silo.UseAzureBlobDurableJobs(optionsBuilder =>
+            {
+                optionsBuilder.Configure<IServiceProvider>((options, sp) =>
+                {
+                    var blobClient = sp.GetService<BlobServiceClient>();
+                    if (blobClient is not null)
+                        options.BlobServiceClient = blobClient;
+                    options.ContainerName = "durable-jobs";
+                });
+            });
         });
 
         builder.AddLlmProviders();

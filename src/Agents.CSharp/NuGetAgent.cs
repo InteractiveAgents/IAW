@@ -30,7 +30,7 @@ public class NuGetAgent(
         State["interval-ticks"] = new StateEntry("interval-ticks", checkEvery.Ticks);
         await WriteStateAsync(ct);
 
-        await this.RegisterOrUpdateReminder("check-packages", checkEvery, checkEvery);
+        await ScheduleRecurringJob("check-packages", checkEvery, "check-packages", ct);
     }
 
     public Task<IReadOnlyList<PackageUpdate>> GetOutdatedAsync(CancellationToken ct = default)
@@ -51,11 +51,11 @@ public class NuGetAgent(
         return Task.FromResult<IReadOnlyList<PackageUpdate>>(updates);
     }
 
-    public override async Task ReceiveReminder(string reminderName, TickStatus status)
+    protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
-        if (reminderName != "check-packages")
+        if (job.Name != "check-packages")
         {
-            await base.ReceiveReminder(reminderName, status);
+            await base.OnScheduledJobDueAsync(job, ct);
             return;
         }
 
@@ -93,6 +93,7 @@ public class NuGetAgent(
             }
         }
 
+        ScheduledJobs[job.Name] = job with { LastRunAt = DateTimeOffset.UtcNow };
         await WriteStateAsync();
     }
 

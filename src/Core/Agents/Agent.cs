@@ -75,8 +75,7 @@ public abstract partial class Agent(
 
         await SubscribeToStreamConsumerInterfaces();
 
-        foreach (var kvp in durableState.ScheduledJobs)
-            await this.RegisterOrUpdateReminder(kvp.Key, TimeSpan.Zero, kvp.Value.Interval);
+        await RescheduleExistingJobsAsync(cancellationToken);
 
         await base.OnActivateAsync(cancellationToken);
     }

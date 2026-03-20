@@ -99,4 +99,4 @@ OpenTelemetry with activity source `"IAW"` and meter `"IAW"`. Metrics: `Activati
 
 ## MCP Integration
 
-`.mcp.json` configures three MCP servers: `iaw` (localhost:5300), `aspire` (CLI), `context7` (npm). The IAW MCP server in `src/IAW.MCP` exposes agent tools: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`, `agent_trigger_self_improvement`.
+`.mcp.json` configures three MCP servers: `iaw` (localhost:5300), `aspire` (CLI), `context7` (npm). The IAW MCP server in `src/IAW.MCP` exposes agent tools: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`.

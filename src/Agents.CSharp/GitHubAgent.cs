@@ -43,7 +43,7 @@ public class GitHubAgent(
 
         await WriteStateAsync(ct);
 
-        await this.RegisterOrUpdateReminder("check-releases", checkEvery, checkEvery);
+        await ScheduleRecurringJob("check-releases", checkEvery, "check-releases", ct);
     }
 
     public async Task CreateIssue(string repo, string title, string body, CancellationToken ct = default)
@@ -64,11 +64,11 @@ public class GitHubAgent(
         return Task.FromResult<ReleaseInfo?>(new ReleaseInfo(tag, tag, string.Empty, null));
     }
 
-    public override async Task ReceiveReminder(string reminderName, TickStatus status)
+    protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
-        if (reminderName != "check-releases")
+        if (job.Name != "check-releases")
         {
-            await base.ReceiveReminder(reminderName, status);
+            await base.OnScheduledJobDueAsync(job, ct);
             return;
         }
 
@@ -104,5 +104,7 @@ public class GitHubAgent(
         {
             // no releases yet
         }
+
+        ScheduledJobs[job.Name] = job with { LastRunAt = DateTimeOffset.UtcNow };
     }
 }
