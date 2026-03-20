@@ -1,57 +1,15 @@
-using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Orleans.Dashboard;
-using Orleans.Journaling;
 using Core.AI;
-using Core.Services;
 
 namespace Aspire.IAW;
 
+// Orleans client configuration. Called by MCP, DevUI, Telegram (grain consumers).
+// For silo configuration, see IAWSiloExtensions.cs.
 public static class IAWClientExtensions
 {
-    public static TBuilder AddIAW<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
-    {
-        builder.ConfigureOpenTelemetry();
-        builder.AddDefaultHealthChecks();
-        builder.Services.AddServiceDiscovery();
-        builder.Services.ConfigureHttpClientDefaults(http =>
-        {
-            http.AddStandardResilienceHandler();
-            http.AddServiceDiscovery();
-        });
-
-        builder.UseOrleans(silo =>
-        {
-            silo.Configure<Orleans.Configuration.EndpointOptions>(ep =>
-                ep.AdvertisedIPAddress = System.Net.IPAddress.Loopback);
-            silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
-            silo.AddStateMachineStorage();
-            silo.AddDashboard();
-            silo.UseAzureBlobDurableJobs(optionsBuilder =>
-            {
-                optionsBuilder.Configure<IServiceProvider>((options, sp) =>
-                {
-                    var blobClient = sp.GetService<BlobServiceClient>();
-                    if (blobClient is not null)
-                        options.BlobServiceClient = blobClient;
-                    options.ContainerName = "durable-jobs";
-                });
-            });
-        });
-
-        builder.AddLlmProviders();
-        builder.AddEmbeddingProvider();
-
-        builder.AddAzureBlobServiceClient("file-storage");
-        builder.AddQdrantClient("qdrant");
-        builder.Services.AddSingleton<BlobFileStorage>();
-
-        return builder;
-    }
-
     public static TBuilder AddIAWClient<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
         builder.ConfigureOpenTelemetry();
