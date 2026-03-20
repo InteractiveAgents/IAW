@@ -3,6 +3,7 @@ using System.Text;
 using Core;
 using Core.AI;
 using Core.AI.Models;
+using Core.Communication.Messages;
 using Core.Contracts;
 using Core.Orchestration;
 using Core.Registry;
@@ -128,6 +129,13 @@ public class CodeOrchestratorAgent(
                 var errorSummary = log.Length > 2000 ? log[^2000..] : log;
                 return $"Code execution failed (exit code {exitCode}).\nWorkspace: {taskDir}\nLast output:\n{errorSummary}";
             }
+
+            await PublishToStream(new CodeChangedMessage(
+                taskDir, "", $"Code orchestration completed for task {taskId}")
+            {
+                FilePaths = Directory.GetFiles(taskDir, "*.cs", SearchOption.AllDirectories).ToList(),
+                SourceAgentId = this.GetPrimaryKeyString()
+            }, ct);
 
             var resultPath = Path.Combine(taskDir, "result.json");
             if (File.Exists(resultPath))

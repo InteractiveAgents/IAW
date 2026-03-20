@@ -167,6 +167,13 @@ public partial class DotNetAgent(
             ["EditorConfigCreated"] = editorConfigCreated.ToString()
         }, ct);
 
+        if (changedFiles.Count > 0)
+            await PublishToStream(new CodeChangedMessage(solutionPath, "", "dotnet format completed")
+            {
+                FilePaths = changedFiles,
+                SourceAgentId = this.GetPrimaryKeyString()
+            }, ct);
+
         var summary = editorConfigCreated
             ? $"Formatted {changedFiles.Count} files. Created .editorconfig from dotnet/runtime."
             : $"Formatted {changedFiles.Count} files.";
