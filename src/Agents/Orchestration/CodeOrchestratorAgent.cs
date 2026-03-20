@@ -60,6 +60,7 @@ public class CodeOrchestratorAgent(
         using Microsoft.Extensions.Hosting;
         using Aspire.IAW;
         using Orleans;
+        using Core;
         using Core.Contracts;
         using IAW.Agents.System;
         using IAW.Agents.Coding;
@@ -69,7 +70,9 @@ public class CodeOrchestratorAgent(
         using var host = builder.Build();
         await host.StartAsync();
         var client = host.Services.GetRequiredService<IClusterClient>();
+        var taskId = "task-" + Guid.NewGuid().ToString("N");
 
+        // Use client.Get<IAgentInterface>(taskId) to create isolated agent instances
         // YOUR CODE HERE
 
         await host.StopAsync();
@@ -77,7 +80,9 @@ public class CodeOrchestratorAgent(
 
         RULES:
         - Use `builder.AddIAWClient()` from namespace `Aspire.IAW` to connect to the cluster.
-        - Get agents via client.GetGrain<IInterfaceName>("grain-id") — see catalog below for available agents.
+        - Add `using Core;` at the top to access the `Get<T>()` extension methods.
+        - Create a `taskId` variable at the start: `var taskId = "task-" + Guid.NewGuid().ToString("N");`
+        - Get agents via `client.Get<IInterfaceName>(taskId)` — this creates isolated agent instances scoped to this task.
         - Call await agent.GetResponse("prompt", default) to talk to agents. Use `default` for CancellationToken.
         - Always write result.json with status, summary, artifacts, and metrics fields
         - Keep code SHORT. Under 80 lines. No unnecessary abstractions.

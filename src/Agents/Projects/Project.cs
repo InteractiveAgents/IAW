@@ -146,8 +146,7 @@ public class Project(
     private async Task<string> Execute(
         [Description("What to do, step by step")] string plan)
     {
-        var grainId = Orleans.Runtime.GrainId.Create(IAWConstants.GrainTypes.CodeOrchestrator, "code-orchestrator");
-        var orchestrator = GrainFactory.GetGrain<ICodeOrchestrator>(grainId);
+        var orchestrator = GrainFactory.Get<ICodeOrchestrator>();
         var result = await orchestrator.ExecuteCodeOrchestration(plan, CancellationToken.None);
         return result;
     }
@@ -405,6 +404,7 @@ public class Project(
         if (llmRecords.Count == 0)
             return $"No matching LLM agents found. Available: {string.Join(", ", allAgents.Select(r => r.AgentType))}";
 
+        var compareScope = $"compare-{Guid.NewGuid():N}";
         var interfaceTypeCache = AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsInterface && typeof(IAgent).IsAssignableFrom(t) && t != typeof(IAgent))
@@ -415,8 +415,7 @@ public class Project(
             if (!interfaceTypeCache.TryGetValue(record.InterfaceName, out var interfaceType))
                 return new { Model = record.DisplayName, Response = "", DurationMs = 0L, InputTokens = 0L, OutputTokens = 0L, TotalTokens = 0L, Error = (string?)$"Interface {record.InterfaceName} not found" };
 
-            var agent = (IAgent)GrainFactory.GetGrain(interfaceType, record.InterfaceName.TrimStart('I').ToLowerInvariant());
-            await agent.ClearHistory(CancellationToken.None);
+            var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{compareScope}/{interfaceType.Name}");
             var sw = Stopwatch.StartNew();
             try
             {

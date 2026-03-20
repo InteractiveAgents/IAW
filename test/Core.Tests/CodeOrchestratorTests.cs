@@ -25,7 +25,7 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
 
         try
         {
-            var orchestrator = Cluster.GrainFactory.GetGrain<ICodeOrchestrator>("test-orch-" + Guid.NewGuid().ToString("N")[..6]);
+            var orchestrator = (ICodeOrchestrator)Agent(UniqueId("orch"));
             var result = await orchestrator.ExecuteCodeOrchestration(
                 "INTENT: Test. STEPS: 1. Print hello", ct);
 
@@ -64,7 +64,7 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
 
         try
         {
-            var orchestrator = Cluster.GrainFactory.GetGrain<ICodeOrchestrator>("test-orch-err-" + Guid.NewGuid().ToString("N")[..6]);
+            var orchestrator = (ICodeOrchestrator)Agent(UniqueId("orch-err"));
             var result = await orchestrator.ExecuteCodeOrchestration("test plan", ct);
 
             Assert.Contains("CodeOrchestrator error:", result);
