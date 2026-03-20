@@ -9,10 +9,4 @@ namespace IAW.Agents.Models;
 public class Sonnet46Agent(
     [AgentState] AgentDurableState durableState,
     [Llm<Sonnet46>] IChatClient chatClient)
-    : LlmAgentBase(durableState, chatClient), ISonnet46
-{
-    protected override string DisplayName => "Claude Sonnet 4.6";
-
-    public static string AgentDescription => "Claude Sonnet 4.6 language model wrapper for general-purpose reasoning and text generation.";
-    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "claude", "anthropic"];
-}
+    : LlmAgentBase<ISonnet46>(durableState, chatClient), ISonnet46;

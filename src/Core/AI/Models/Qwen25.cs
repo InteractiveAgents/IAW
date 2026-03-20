@@ -10,4 +10,9 @@ public sealed class Qwen25 : LLMModel
     public override ModelCapabilities Capabilities => ModelCapabilities.ChatOnly;
 }
 
-public interface IQwen25 : IAgent { }
+public interface IQwen25 : IAgent
+{
+    static string IAgent.AgentDisplayName => "Qwen 2.5";
+    static string IAgent.AgentDescription => "Qwen 2.5 language model wrapper from Alibaba for multilingual reasoning and generation.";
+    static string[] IAgent.AgentCapabilities => ["llm", "reasoning", "generation", "qwen", "alibaba", "multilingual"];
+}

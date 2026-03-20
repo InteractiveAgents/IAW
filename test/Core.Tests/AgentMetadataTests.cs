@@ -1,4 +1,5 @@
-using System.Reflection;
+using Core.Contracts;
+using Core.Registry;
 using Xunit;
 
 namespace IAW.Core.Tests;
@@ -13,8 +14,11 @@ public class AgentMetadataTests
 
         foreach (var type in agentTypes)
         {
-            var prop = type.GetProperty("AgentDescription", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            Assert.True(prop is not null, $"Agent {type.Name} missing AgentDescription");
+            var contractInterface = GetAgentContractInterface(type);
+            if (contractInterface is null) continue;
+
+            var (_, description, _) = AgentInterfaceMetadata.ReadFrom(contractInterface);
+            Assert.True(!string.IsNullOrEmpty(description), $"Agent {type.Name} missing AgentDescription");
         }
     }
 
@@ -26,10 +30,17 @@ public class AgentMetadataTests
 
         foreach (var type in agentTypes)
         {
-            var prop = type.GetProperty("AgentCapabilities", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-            Assert.True(prop is not null, $"Agent {type.Name} missing AgentCapabilities");
+            var contractInterface = GetAgentContractInterface(type);
+            if (contractInterface is null) continue;
+
+            var (_, _, capabilities) = AgentInterfaceMetadata.ReadFrom(contractInterface);
+            Assert.True(capabilities.Length > 0, $"Agent {type.Name} missing AgentCapabilities");
         }
     }
+
+    static Type? GetAgentContractInterface(Type agentType) =>
+        agentType.GetInterfaces()
+            .FirstOrDefault(i => i != typeof(IAgent) && typeof(IAgent).IsAssignableFrom(i) && !i.IsGenericType);
 
     static IEnumerable<Type> GetProductionAgentTypes(Type agentBaseType)
     {

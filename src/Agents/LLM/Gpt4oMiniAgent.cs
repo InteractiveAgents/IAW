@@ -9,10 +9,4 @@ namespace IAW.Agents.Models;
 public class Gpt4oMiniAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<Gpt4oMini>] IChatClient chatClient)
-    : LlmAgentBase(durableState, chatClient), IGpt4oMini
-{
-    protected override string DisplayName => "GPT-4o Mini";
-
-    public static string AgentDescription => "GPT-4o Mini compact language model wrapper balancing speed and capability for everyday tasks.";
-    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "openai", "fast"];
-}
+    : LlmAgentBase<IGpt4oMini>(durableState, chatClient), IGpt4oMini;

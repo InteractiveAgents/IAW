@@ -10,4 +10,9 @@ public sealed class Gpt54Nano : LLMModel
     public override ModelCapabilities Capabilities => ModelCapabilities.ToolCapable;
 }
 
-public interface IGpt54Nano : IAgent { }
+public interface IGpt54Nano : IAgent
+{
+    static string IAgent.AgentDisplayName => "GPT-5.4 Nano";
+    static string IAgent.AgentDescription => "GPT-5.4 Nano ultra-lightweight language model wrapper for minimal-latency inference.";
+    static string[] IAgent.AgentCapabilities => ["llm", "reasoning", "generation", "openai", "fast", "nano"];
+}

@@ -30,7 +30,7 @@ public class ArchitectureGuardV2Tests
     public void LLM_agents_extend_LLM_base()
     {
         var llmAgents = AgentsAssembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(LlmAgentBase)) && !t.IsAbstract);
+            .Where(t => t.BaseType is { IsGenericType: true } bt && bt.GetGenericTypeDefinition() == typeof(LlmAgentBase<>) && !t.IsAbstract);
 
         Assert.NotEmpty(llmAgents);
     }
