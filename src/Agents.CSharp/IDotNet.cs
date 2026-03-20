@@ -6,6 +6,18 @@ namespace IAW.Agents.Coding;
 
 public interface IDotNet : IAgent, IReceiver<CodeChangedMessage>
 {
+    static string IAgent.AgentDisplayName => "DotNet";
+
+    static string IAgent.AgentDescription =>
+        "Builds, tests, and formats .NET projects; parses diagnostics and runs test suites with optional filtering.";
+
+    static string[] IAgent.AgentCapabilities =>
+        ["build", "test", "format", "diagnose", "dotnet", "csharp"];
+
+    static string IAgent.AgentInstructions =>
+        "You are DotNet, the IAW team's .NET toolchain specialist. " +
+        "You run tests, format code, and manage builds. Execute operations immediately and report results.";
+
     Task<BuildRunResult> BuildAsync(string projectPath, string configuration = "Debug", CancellationToken ct = default);
     Task<TestRunResult> TestAsync(string? filter = null, CancellationToken ct = default);
     Task<string> FormatAsync(CancellationToken ct = default);

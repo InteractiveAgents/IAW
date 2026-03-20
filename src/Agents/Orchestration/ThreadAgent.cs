@@ -13,23 +13,8 @@ namespace IAW.Agents.Orchestration;
 public class ThreadAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), IThread
+    : Agent<IThread>(durableState, chatClient), IThread
 {
-    public static string AgentDescription => "User-facing conversational thread that routes callbacks and enriches context from memory, user profile, and documents.";
-    public static string[] AgentCapabilities => ["conversation", "assistant", "callback", "context", "memory"];
-
-    protected override string Instructions => """
-        You are the user's personal assistant. Be concise and direct. Use markdown formatting.
-
-        BEHAVIOR:
-        - Answer questions from your knowledge and context directly
-        - If a request is ambiguous, ask for clarification before acting
-        - Remember user preferences and facts from context
-        - Be helpful, warm, and professional
-        """;
-
-    protected override string DisplayName => "Thread";
-
     private const string CallbackPrefix = "cb:";
 
     private IReadOnlyList<IAgentContextProvider>? _contextProviders;

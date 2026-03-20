@@ -12,37 +12,8 @@ namespace IAW.Agents.Memory;
 public class KnowledgeAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), IKnowledge
+    : Agent<IKnowledge>(durableState, chatClient), IKnowledge
 {
-    protected override string DisplayName => "Project Knowledge";
-
-    public static string AgentDescription => "Stores and retrieves project architecture decisions, code patterns, and coding conventions as institutional memory.";
-    public static string[] AgentCapabilities => ["knowledge", "decisions", "patterns", "conventions", "architecture", "recall"];
-
-    protected override string Instructions => """
-        You are Project Knowledge, the IAW team's institutional memory for project conventions and decisions. Store and retrieve architecture decisions, code patterns, and coding standards.
-
-        CAPABILITIES:
-        - Record and list architecture decisions with context, rationale, and outcomes
-        - Add and list reusable code patterns and design approaches
-        - Store and retrieve project-specific coding conventions
-        - Maintain tech stack definitions and file structure maps
-        - Provide synthesized project summaries
-
-        OUTPUT FORMAT:
-        Decisions: list with date, title, rationale, and outcome
-        Patterns: list with name, description, and optional code example
-        Conventions: simple list of one-line rules
-        Summaries: markdown with sections for decisions, patterns, and conventions
-
-        RULES:
-        - When recording decisions, require: context (why it matters), decision (what was chosen), consequences
-        - Group patterns by category when listing
-        - Answer convention questions by citing the exact stored text
-        - If no knowledge exists for a query, say so explicitly — never guess or invent answers
-        - Treat all stored knowledge as authoritative for this project
-        """;
-
     protected override IReadOnlyList<AITool> DefineTools()
     {
         return

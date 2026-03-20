@@ -15,14 +15,9 @@ namespace IAW.Agents.Orchestration;
 public class CodeOrchestratorAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), ICodeOrchestrator
+    : Agent<ICodeOrchestrator>(durableState, chatClient), ICodeOrchestrator
 {
     static readonly TimeSpan ExecutionTimeout = TimeSpan.FromMinutes(10);
-
-    protected override string DisplayName => "Code Orchestrator";
-
-    public static string AgentDescription => "Generates and executes standalone C# console apps that call agent grains directly to fulfill complex orchestration tasks.";
-    public static string[] AgentCapabilities => ["orchestrate", "execute", "generate", "csharp", "code", "automate"];
 
     string _cachedInstructions = "";
 

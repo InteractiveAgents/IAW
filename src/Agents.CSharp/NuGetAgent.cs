@@ -13,17 +13,8 @@ public class NuGetAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient,
     IHttpClientFactory httpClientFactory)
-    : Agent(durableState, chatClient), INuGet
+    : Agent<INuGet>(durableState, chatClient), INuGet
 {
-    protected override string DisplayName => "NuGet";
-
-    public static string AgentDescription => "Monitors NuGet packages for new versions via Directory.Packages.props and tracks dependency update availability.";
-    public static string[] AgentCapabilities => ["nuget", "packages", "dependencies", "versions", "update", "monitor"];
-
-    protected override string Instructions =>
-        "You are NuGet, the IAW team's package management specialist. " +
-        "You monitor packages for new versions via Directory.Packages.props and manage dependency updates.";
-
     public async Task WatchPackagesAsync(string directoryPackagesPropsPath, TimeSpan checkEvery, CancellationToken ct = default)
     {
         State["props-path"] = new StateEntry("props-path", directoryPackagesPropsPath);

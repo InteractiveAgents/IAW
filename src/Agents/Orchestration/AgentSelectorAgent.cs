@@ -11,32 +11,8 @@ namespace IAW.Agents.Orchestration;
 public class AgentSelectorAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), IAgentSelector
+    : Agent<IAgentSelector>(durableState, chatClient), IAgentSelector
 {
-    public static string AgentDescription => "Selects the best team of agents for a given user request using registry search and LLM reasoning.";
-    public static string[] AgentCapabilities => ["selection", "routing", "planning", "orchestration", "team"];
-
-    protected override string DisplayName => "Agent Selector";
-
-    protected override string Instructions => """
-        You select the best team of agents for a user request.
-        Given a list of candidate agents, pick the ones needed and produce a plan.
-        Always respond with valid JSON matching this schema:
-        {
-          "status": "Ready" | "NeedsClarification" | "CannotHandle",
-          "selectedAgents": ["agent-interface-name", ...],
-          "successCriteria": ["criterion 1", ...],
-          "plan": "step-by-step plan text",
-          "questions": [{"text": "question?", "options": ["a","b"]}]
-        }
-        Rules:
-        - If the request is clear, set status to "Ready", pick agents, define success criteria, and write a plan.
-        - If the request is ambiguous, set status to "NeedsClarification" and provide questions.
-        - If no agents can handle it, set status to "CannotHandle" with an explanation in plan.
-        - Only include "questions" when status is "NeedsClarification".
-        - Return ONLY the JSON object, no markdown fences, no extra text.
-        """;
-
     public async Task<SelectionResult> SelectAsync(string userRequest, CancellationToken ct = default)
     {
         var registry = GrainFactory.GetGrain<IAgentRegistry>("global");

@@ -18,17 +18,8 @@ namespace IAW.Agents.Coding;
 public class RoslynAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>
+    : Agent<IRoslyn>(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>
 {
-    protected override string DisplayName => "Roslyn";
-
-    public static string AgentDescription => "Parses C# projects with Roslyn to extract type maps, detect patterns, analyze architecture, and map dependencies.";
-    public static string[] AgentCapabilities => ["roslyn", "csharp", "parse", "analyze", "architecture", "refactor"];
-
-    protected override string Instructions =>
-        "You are Roslyn, the IAW team's C# code intelligence engine. " +
-        "You parse projects, extract types, analyze architecture, detect patterns, and map dependencies. " +
-        "Use your tools to perform analysis — return concrete findings, not descriptions of what could be analyzed.";
     protected override IReadOnlyList<AITool> DefineTools()
     {
         Func<string> getWorkspace = () => GetWorkspacePath() ?? Path.GetTempPath();
