@@ -15,7 +15,7 @@ namespace IAW.Agents.Orchestration;
 [GrainType(IAWConstants.GrainTypes.CodeOrchestrator)]
 public class CodeOrchestratorAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient)
+    [Llm<Opus46>] IChatClient chatClient)
     : Agent<ICodeOrchestrator>(durableState, chatClient), ICodeOrchestrator
 {
     static readonly TimeSpan ExecutionTimeout = TimeSpan.FromMinutes(10);
