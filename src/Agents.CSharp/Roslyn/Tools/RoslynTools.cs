@@ -1,12 +1,13 @@
 using System.ComponentModel;
 using System.Text;
 using Core.Tools;
+using IAW.Agents.CSharp.Roslyn.Workspace;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
 namespace IAW.Agents.Coding.Tools;
 
-public class RoslynTools(Func<string> getWorkspacePath)
+public class RoslynTools(Func<string> getWorkspacePath, SolutionWorkspaceManager? workspaceManager = null)
 {
     private string WorkspacePath => getWorkspacePath();
 
@@ -50,6 +51,24 @@ public class RoslynTools(Func<string> getWorkspacePath)
         if (!File.Exists(fullPath))
             return $"File not found: {fullPath}";
 
+        // use workspace compilation when available
+        if (workspaceManager is { IsReady: true })
+        {
+            var projectName = Path.GetFileNameWithoutExtension(projectPath);
+            var compilation = await workspaceManager.GetCompilationAsync(projectName);
+            if (compilation is not null)
+            {
+                var targetTree = compilation.SyntaxTrees.FirstOrDefault(t =>
+                    string.Equals(t.FilePath, fullPath, StringComparison.OrdinalIgnoreCase));
+                if (targetTree is not null)
+                {
+                    var semanticModel = compilation.GetSemanticModel(targetTree);
+                    return FormatDiagnostics(semanticModel.GetDiagnostics(), fullPath);
+                }
+            }
+        }
+
+        // fallback: minimal single-project compilation
         var projectDir = Directory.Exists(projectPath)
             ? projectPath
             : Path.GetDirectoryName(projectPath) ?? WorkspacePath;
@@ -63,16 +82,21 @@ public class RoslynTools(Func<string> getWorkspacePath)
             trees.Add(CSharpSyntaxTree.ParseText(src, path: csFile));
         }
 
-        var compilation = CSharpCompilation.Create("Analysis",
+        var fallbackCompilation = CSharpCompilation.Create("Analysis",
             syntaxTrees: trees,
             references: [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)]);
 
-        var targetTree = trees.FirstOrDefault(t => t.FilePath == fullPath);
-        if (targetTree is null)
+        var fallbackTree = trees.FirstOrDefault(t => t.FilePath == fullPath);
+        if (fallbackTree is null)
             return $"File {fullPath} not found in project trees";
 
-        var semanticModel = compilation.GetSemanticModel(targetTree);
-        var diagnostics = semanticModel.GetDiagnostics()
+        var fallbackModel = fallbackCompilation.GetSemanticModel(fallbackTree);
+        return FormatDiagnostics(fallbackModel.GetDiagnostics(), fullPath);
+    }
+
+    private static string FormatDiagnostics(IEnumerable<Diagnostic> allDiagnostics, string fullPath)
+    {
+        var diagnostics = allDiagnostics
             .Where(d => d.Severity >= DiagnosticSeverity.Warning)
             .ToList();
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using IAW.Core;
+using IAW.Agents.CSharp.Roslyn.Workspace;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -10,21 +11,32 @@ using Core.Tools;
 using Core.Contracts;
 using Core.Communication;
 using Core.AI;
-using Core.AI.Models;
 using Core.Communication.Messages;
+using Orleans;
+using Orleans.Concurrency;
+using Orleans.Streams;
 
 namespace IAW.Agents.Coding;
 
+[Reentrant]
 public class RoslynAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent<IRoslyn>(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>
+    : Agent<IRoslyn>(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>, IStreamConsumer<CodeChangedMessage>
 {
+    private SolutionWorkspaceManager? _workspaceManager;
+
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        await base.OnActivateAsync(cancellationToken);
+        _ = LoadWorkspaceInBackground(cancellationToken);
+    }
+
     protected override IReadOnlyList<AITool> DefineTools()
     {
         Func<string> getWorkspace = () => GetWorkspacePath() ?? Path.GetTempPath();
         var tools = new List<AITool>();
-        RegisterToolMethods(tools, new Tools.RoslynTools(getWorkspace));
+        RegisterToolMethods(tools, new Tools.RoslynTools(getWorkspace, _workspaceManager));
         return tools;
     }
 
@@ -34,29 +46,41 @@ public class RoslynAgent(
         if (workspace is null)
             return "No workspace set. Call SetWorkspaceAsync first.";
 
-        var csFiles = await WorkspaceFiles.EnumerateFilesAsync(workspace, "*.cs", ct);
+        // try workspace compilations first
+        if (_workspaceManager is { IsReady: true })
+        {
+            var types = new List<TypeEntry>();
+            foreach (var projectName in _workspaceManager.GetProjectNames())
+            {
+                var compilation = await _workspaceManager.GetCompilationAsync(projectName, ct);
+                if (compilation is null) continue;
 
-        var types = new List<TypeEntry>();
+                foreach (var tree in compilation.SyntaxTrees)
+                {
+                    var root = await tree.GetRootAsync(ct);
+                    types.AddRange(ExtractTypes(root, tree.FilePath));
+                }
+            }
+
+            CacheTypeCatalog(types);
+            await WriteStateAsync(ct);
+            return FormatTypeMap(workspace, types, "workspace compilations");
+        }
+
+        // fallback to syntax-only parsing
+        var csFiles = await WorkspaceFiles.EnumerateFilesAsync(workspace, "*.cs", ct);
+        var fallbackTypes = new List<TypeEntry>();
         foreach (var file in csFiles)
         {
             var sourceText = await File.ReadAllTextAsync(file, ct);
             var syntaxTree = CSharpSyntaxTree.ParseText(sourceText, cancellationToken: ct);
             var root = await syntaxTree.GetRootAsync(ct);
-            types.AddRange(ExtractTypes(root, file));
+            fallbackTypes.AddRange(ExtractTypes(root, file));
         }
 
-        CacheTypeCatalog(types);
+        CacheTypeCatalog(fallbackTypes);
         await WriteStateAsync(ct);
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"Type map for {workspace} ({csFiles.Length} files, {types.Count} types):");
-        foreach (var group in types.GroupBy(t => t.Namespace))
-        {
-            sb.AppendLine($"\n  {(string.IsNullOrEmpty(group.Key) ? "(global)" : group.Key)}:");
-            foreach (var t in group)
-                sb.AppendLine($"    {t.Kind} {t.Name} -- {t.Methods.Length} methods, {t.Properties.Length} properties");
-        }
-        return sb.ToString();
+        return FormatTypeMap(workspace, fallbackTypes, $"{csFiles.Length} files (syntax-only)");
     }
 
     public async Task<string> FindReferencesAsync(string symbol, CancellationToken ct = default)
@@ -65,9 +89,44 @@ public class RoslynAgent(
         if (workspace is null)
             return "No workspace set.";
 
-        var csFiles = await WorkspaceFiles.EnumerateFilesAsync(workspace, "*.cs", ct);
+        // when workspace is ready, use SymbolFinder across all projects
+        if (_workspaceManager is { IsReady: true, Solution: not null })
+        {
+            var results = new List<string>();
+            foreach (var project in _workspaceManager.Solution.Projects)
+            {
+                var compilation = await project.GetCompilationAsync(ct);
+                if (compilation is null) continue;
 
-        var results = new List<string>();
+                var matchingSymbols = compilation.GetSymbolsWithName(
+                    name => name.Contains(symbol, StringComparison.OrdinalIgnoreCase),
+                    SymbolFilter.All, ct);
+
+                foreach (var sym in matchingSymbols)
+                {
+                    var refs = await Microsoft.CodeAnalysis.FindSymbols.SymbolFinder
+                        .FindReferencesAsync(sym, _workspaceManager.Solution, ct);
+
+                    foreach (var refGroup in refs)
+                    {
+                        foreach (var loc in refGroup.Locations)
+                        {
+                            var lineSpan = loc.Location.GetLineSpan();
+                            var filePath = lineSpan.Path;
+                            var line = lineSpan.StartLinePosition.Line + 1;
+                            results.Add($"{Path.GetRelativePath(workspace, filePath)}:{line} [{sym.Kind}] {sym.Name}");
+                        }
+                    }
+                }
+            }
+
+            if (results.Count > 0)
+                return $"Found {results.Count} semantic reference(s) for '{symbol}':\n{string.Join("\n", results.Distinct())}";
+        }
+
+        // fallback to string search
+        var csFiles = await WorkspaceFiles.EnumerateFilesAsync(workspace, "*.cs", ct);
+        var fallbackResults = new List<string>();
         foreach (var file in csFiles)
         {
             var sourceText = await File.ReadAllTextAsync(file, ct);
@@ -75,13 +134,13 @@ public class RoslynAgent(
             for (var i = 0; i < lines.Length; i++)
             {
                 if (lines[i].Contains(symbol, StringComparison.Ordinal))
-                    results.Add($"{Path.GetRelativePath(workspace, file)}:{i + 1}: {lines[i].Trim()}");
+                    fallbackResults.Add($"{Path.GetRelativePath(workspace, file)}:{i + 1}: {lines[i].Trim()}");
             }
         }
 
-        return results.Count == 0
+        return fallbackResults.Count == 0
             ? $"No references found for '{symbol}'"
-            : $"Found {results.Count} reference(s) for '{symbol}':\n{string.Join("\n", results)}";
+            : $"Found {fallbackResults.Count} reference(s) for '{symbol}':\n{string.Join("\n", fallbackResults)}";
     }
 
     public async Task<string> AnalyzeArchitectureAsync(CancellationToken ct = default)
@@ -205,6 +264,235 @@ public class RoslynAgent(
         return response.Text ?? string.Empty;
     }
 
+    public Task<string> GetCallersOfAsync(string methodName, CancellationToken ct = default)
+    {
+        if (!State.TryGetValue("reverse-call-graph", out var entry))
+            return Task.FromResult("Workspace not loaded — call graph not available. Set a workspace and wait for indexing.");
+
+        var reverseGraph = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(entry.Value.ToString()!);
+        if (reverseGraph is null)
+            return Task.FromResult("Failed to deserialize reverse call graph.");
+
+        var matches = reverseGraph
+            .Where(kvp => kvp.Key.Contains(methodName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matches.Count == 0)
+            return Task.FromResult($"No callers found for '{methodName}'.");
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Callers of methods matching '{methodName}':");
+        foreach (var (method, callers) in matches)
+        {
+            sb.AppendLine($"\n  {method}:");
+            foreach (var caller in callers)
+                sb.AppendLine($"    <- {caller}");
+        }
+        return Task.FromResult(sb.ToString());
+    }
+
+    public Task<string> GetCalleesOfAsync(string methodName, CancellationToken ct = default)
+    {
+        if (!State.TryGetValue("call-graph", out var entry))
+            return Task.FromResult("Workspace not loaded — call graph not available. Set a workspace and wait for indexing.");
+
+        var callGraph = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(entry.Value.ToString()!);
+        if (callGraph is null)
+            return Task.FromResult("Failed to deserialize call graph.");
+
+        var matches = callGraph
+            .Where(kvp => kvp.Key.Contains(methodName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matches.Count == 0)
+            return Task.FromResult($"No callees found for '{methodName}'.");
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Callees of methods matching '{methodName}':");
+        foreach (var (method, callees) in matches)
+        {
+            sb.AppendLine($"\n  {method}:");
+            foreach (var callee in callees)
+                sb.AppendLine($"    -> {callee}");
+        }
+        return Task.FromResult(sb.ToString());
+    }
+
+    public Task<string> GetImplementorsAsync(string interfaceName, CancellationToken ct = default)
+    {
+        if (!State.TryGetValue("inheritance-tree", out var entry))
+            return Task.FromResult("Workspace not loaded — inheritance tree not available. Set a workspace and wait for indexing.");
+
+        var tree = JsonSerializer.Deserialize<Dictionary<string, InheritanceInfo>>(entry.Value.ToString()!);
+        if (tree is null)
+            return Task.FromResult("Failed to deserialize inheritance tree.");
+
+        var matches = tree
+            .Where(kvp => kvp.Key.Contains(interfaceName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matches.Count == 0)
+            return Task.FromResult($"No type found matching '{interfaceName}'.");
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Implementors/derived types for '{interfaceName}':");
+        foreach (var (typeName, info) in matches)
+        {
+            if (info.DerivedTypes.Count > 0)
+            {
+                sb.AppendLine($"\n  {typeName}:");
+                foreach (var derived in info.DerivedTypes)
+                    sb.AppendLine($"    - {derived}");
+            }
+            else
+            {
+                sb.AppendLine($"\n  {typeName}: (no known implementors)");
+            }
+        }
+        return Task.FromResult(sb.ToString());
+    }
+
+    public Task<string> GetBaseTypesAsync(string className, CancellationToken ct = default)
+    {
+        if (!State.TryGetValue("inheritance-tree", out var entry))
+            return Task.FromResult("Workspace not loaded — inheritance tree not available. Set a workspace and wait for indexing.");
+
+        var tree = JsonSerializer.Deserialize<Dictionary<string, InheritanceInfo>>(entry.Value.ToString()!);
+        if (tree is null)
+            return Task.FromResult("Failed to deserialize inheritance tree.");
+
+        var match = tree.FirstOrDefault(kvp =>
+            kvp.Key.Contains(className, StringComparison.OrdinalIgnoreCase));
+
+        if (match.Key is null)
+            return Task.FromResult($"No type found matching '{className}'.");
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Base type chain for '{match.Key}':");
+
+        var current = match.Key;
+        var visited = new HashSet<string>();
+        while (current is not null && visited.Add(current))
+        {
+            if (tree.TryGetValue(current, out var info))
+            {
+                if (info.Interfaces.Count > 0)
+                    sb.AppendLine($"  {current} implements: {string.Join(", ", info.Interfaces)}");
+                else
+                    sb.AppendLine($"  {current}");
+
+                current = info.BaseType;
+            }
+            else
+            {
+                sb.AppendLine($"  {current} (external)");
+                break;
+            }
+        }
+
+        return Task.FromResult(sb.ToString());
+    }
+
+    public Task<string> GetOverridesAsync(string methodName, CancellationToken ct = default)
+    {
+        var hasCallGraph = State.TryGetValue("call-graph", out var callGraphEntry);
+        var hasInheritance = State.TryGetValue("inheritance-tree", out var inheritanceEntry);
+
+        if (!hasCallGraph && !hasInheritance)
+            return Task.FromResult("Workspace not loaded — call graph and inheritance tree not available. Set a workspace and wait for indexing.");
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Override analysis for '{methodName}':");
+
+        if (hasInheritance)
+        {
+            var tree = JsonSerializer.Deserialize<Dictionary<string, InheritanceInfo>>(inheritanceEntry!.Value.ToString()!);
+            if (tree is not null)
+            {
+                // find types that have the method in their hierarchy
+                var typesWithMethod = new List<string>();
+                if (hasCallGraph)
+                {
+                    var callGraph = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(callGraphEntry!.Value.ToString()!);
+                    if (callGraph is not null)
+                    {
+                        typesWithMethod = callGraph.Keys
+                            .Where(k => k.Contains(methodName, StringComparison.OrdinalIgnoreCase))
+                            .Select(k =>
+                            {
+                                var lastDot = k.LastIndexOf('.');
+                                return lastDot > 0 ? k[..lastDot] : k;
+                            })
+                            .Distinct()
+                            .ToList();
+                    }
+                }
+
+                if (typesWithMethod.Count > 0)
+                {
+                    sb.AppendLine("\n  Types implementing this method:");
+                    foreach (var typeName in typesWithMethod)
+                    {
+                        sb.AppendLine($"    - {typeName}");
+                        if (tree.TryGetValue(typeName, out var info) && info.BaseType is not null)
+                            sb.AppendLine($"      (base: {info.BaseType})");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("  No override information found for this method.");
+                }
+            }
+        }
+
+        return Task.FromResult(sb.ToString());
+    }
+
+    public Task<string> GetWorkspaceStatusAsync(CancellationToken ct = default)
+    {
+        var workspace = GetWorkspacePath();
+        if (workspace is null)
+            return Task.FromResult("No workspace set. Workspace is not loaded.");
+
+        if (_workspaceManager is not { IsReady: true })
+        {
+            var hasCache = State.ContainsKey("call-graph");
+            return Task.FromResult(hasCache
+                ? $"Workspace: {workspace}\nSolution not loaded (cached data from previous indexing available)."
+                : $"Workspace: {workspace}\nSolution not loaded.");
+        }
+
+        var projectCount = _workspaceManager.GetProjectNames().Count();
+        var hasInheritance = State.TryGetValue("inheritance-tree", out var inheritanceEntry);
+        var typeCount = 0;
+        if (hasInheritance)
+        {
+            var tree = JsonSerializer.Deserialize<Dictionary<string, InheritanceInfo>>(inheritanceEntry!.Value.ToString()!);
+            typeCount = tree?.Count ?? 0;
+        }
+
+        var hasCallGraph = State.TryGetValue("call-graph", out var callGraphEntry);
+        var methodCount = 0;
+        if (hasCallGraph)
+        {
+            var graph = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(callGraphEntry!.Value.ToString()!);
+            methodCount = graph?.Count ?? 0;
+        }
+
+        return Task.FromResult(
+            $"Workspace: {workspace}\n" +
+            $"Solution loaded: yes\n" +
+            $"Projects: {projectCount}\n" +
+            $"Types indexed: {typeCount}\n" +
+            $"Methods in call graph: {methodCount}");
+    }
+
+    public async Task OnStreamEventAsync(CodeChangedMessage evt, StreamSequenceToken? token)
+    {
+        _ = LoadWorkspaceInBackground(AgentCancellation);
+        await Task.CompletedTask;
+    }
+
     public async Task<MessageReceipt> ReceiveAsync(TestResultMessage message, CancellationToken ct = default)
     {
         var eventName = message.Failed == 0 ? "tests.passed" : "tests.failed";
@@ -214,6 +502,73 @@ public class RoslynAgent(
     }
 
     public Task<bool> CanReceiveAsync(CancellationToken ct = default) => Task.FromResult(true);
+
+    private async Task LoadWorkspaceInBackground(CancellationToken ct)
+    {
+        try
+        {
+            var workspace = GetWorkspacePath();
+            if (workspace is null) return;
+
+            var solutionPath = FindSolution(workspace);
+            if (solutionPath is null) return;
+
+            _workspaceManager = new SolutionWorkspaceManager();
+            await _workspaceManager.LoadSolutionAsync(solutionPath, ct);
+
+            var compilations = new List<Compilation>();
+            foreach (var projectName in _workspaceManager.GetProjectNames())
+            {
+                var compilation = await _workspaceManager.GetCompilationAsync(projectName, ct);
+                if (compilation is not null)
+                    compilations.Add(compilation);
+            }
+
+            var callGraph = CallGraphBuilder.Build(compilations);
+            var reverseCallGraph = CallGraphBuilder.BuildReverseGraph(callGraph);
+            var inheritanceTree = InheritanceTreeBuilder.Build(compilations);
+
+            State["call-graph"] = new StateEntry("call-graph", JsonSerializer.Serialize(callGraph));
+            State["reverse-call-graph"] = new StateEntry("reverse-call-graph", JsonSerializer.Serialize(reverseCallGraph));
+            State["inheritance-tree"] = new StateEntry("inheritance-tree", JsonSerializer.Serialize(inheritanceTree));
+            await WriteStateAsync(ct);
+
+            await PublishAsync("workspace.reindexed", new Dictionary<string, string>
+            {
+                ["ProjectCount"] = _workspaceManager.GetProjectNames().Count().ToString(),
+                ["TypeCount"] = inheritanceTree.Count.ToString()
+            }, ct);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception) { /* workspace loading is best-effort */ }
+    }
+
+    private static string? FindSolution(string workspace)
+    {
+        var dir = workspace;
+        while (dir is not null)
+        {
+            var slnx = Directory.GetFiles(dir, "*.slnx");
+            if (slnx.Length > 0) return slnx[0];
+            var sln = Directory.GetFiles(dir, "*.sln");
+            if (sln.Length > 0) return sln[0];
+            dir = Path.GetDirectoryName(dir);
+        }
+        return null;
+    }
+
+    private static string FormatTypeMap(string workspace, List<TypeEntry> types, string source)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Type map for {workspace} ({source}, {types.Count} types):");
+        foreach (var group in types.GroupBy(t => t.Namespace))
+        {
+            sb.AppendLine($"\n  {(string.IsNullOrEmpty(group.Key) ? "(global)" : group.Key)}:");
+            foreach (var t in group)
+                sb.AppendLine($"    {t.Kind} {t.Name} -- {t.Methods.Length} methods, {t.Properties.Length} properties");
+        }
+        return sb.ToString();
+    }
 
     private static IEnumerable<TypeEntry> ExtractTypes(SyntaxNode root, string filePath)
     {
