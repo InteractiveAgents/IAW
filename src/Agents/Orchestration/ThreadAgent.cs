@@ -41,6 +41,70 @@ public class ThreadAgent(
         return _contextProviders;
     }
 
+    protected override IReadOnlyList<AITool> DefineAdditionalTools()
+    {
+        return [AIFunctionFactory.Create(DelegateAsync, "Delegate",
+            "Delegate a task to the IAW agent system. Use this for any request that requires " +
+            "code execution, system operations, builds, git, file operations, or specialized agent skills. " +
+            "Describe WHAT needs to be done.")];
+    }
+
+    private async Task<string> DelegateAsync(string request, CancellationToken ct = default)
+    {
+        try
+        {
+            var selector = GrainFactory.Get<IAgentSelector>();
+            var result = await selector.SelectAsync(request, ct);
+
+            return result.Status switch
+            {
+                SelectionStatus.NeedsClarification => FormatClarificationResponse(result),
+                SelectionStatus.CannotHandle => result.Plan ?? "The agent system cannot handle this request.",
+                SelectionStatus.Ready => await ExecuteSelection(result, request, ct),
+                _ => "Unexpected selection status."
+            };
+        }
+        catch (Exception ex)
+        {
+            return $"Delegation failed: {ex.Message}";
+        }
+    }
+
+    private async Task<string> ExecuteSelection(SelectionResult selection, string request, CancellationToken ct)
+    {
+        var threadId = this.GetPrimaryKeyString();
+
+        if (selection.SelectedAgents.Count == 1)
+        {
+            var agentInterfaceName = selection.SelectedAgents[0];
+            var interfaceType = AgentInterfaceResolver.Resolve(agentInterfaceName);
+            if (interfaceType is null)
+                return $"Could not resolve agent: {agentInterfaceName}";
+
+            var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
+            return await agent.GetResponse(request, ct);
+        }
+
+        var orchestrator = GrainFactory.Get<ICodeOrchestrator>(threadId);
+        var plan = selection.Plan ?? $"Execute: {request}\nAgents: {string.Join(", ", selection.SelectedAgents)}";
+        return await orchestrator.ExecuteCodeOrchestration(plan, ct);
+    }
+
+    private static string FormatClarificationResponse(SelectionResult result)
+    {
+        if (result.Questions is null or { Count: 0 })
+            return "I need more information to proceed. Could you clarify your request?";
+
+        var sb = new global::System.Text.StringBuilder("I need some clarification:\n\n");
+        foreach (var q in result.Questions)
+        {
+            sb.AppendLine($"- {q.Text}");
+            if (q.Options is { Count: > 0 })
+                sb.AppendLine($"  Options: {string.Join(", ", q.Options)}");
+        }
+        return sb.ToString();
+    }
+
     public async Task RegisterCallback(string callbackId, string grainType, string grainId, DateTimeOffset expiresAt, CancellationToken ct = default)
     {
         var value = $"{grainType}|{grainId}|{expiresAt:O}";
