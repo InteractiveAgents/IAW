@@ -21,10 +21,11 @@ public static class IAWHostingExtensions
             .WithMemoryStreaming(IAWConstants.StreamProvider)
             .WithMemoryReminders();
 
-        var iaw = new IAWService(orleans, builder);
-
-        iaw.GitHubTokenParam = builder.AddParameter("github-token", secret: true)
-            .WithDescription("Create at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo` scope", enableMarkdown: true);
+        var iaw = new IAWService(orleans, builder)
+        {
+            GitHubTokenParam = builder.AddParameter("github-token", secret: true)
+                .WithDescription("Create at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo` scope", enableMarkdown: true)
+        };
 
         var storage = builder.AddAzureStorage("iaw-storage");
         iaw.Blobs = storage.AddBlobs("file-storage");
