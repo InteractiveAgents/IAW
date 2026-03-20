@@ -30,16 +30,12 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
         if (agentInterface is null)
             return null;
 
-        var description = agentType.GetProperty("AgentDescription",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy)
-            ?.GetValue(null) as string ?? "";
-
-        var capabilities = agentType.GetProperty("AgentCapabilities",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy)
-            ?.GetValue(null) as string[] ?? [];
+        var meta = AgentInterfaceMetadata.ReadFrom(agentInterface);
 
         var agentNamespace = ExtractNamespace(agentType);
-        var displayName = StripAgentSuffix(agentType.Name);
+        var displayName = meta.DisplayName.Length > 0
+            ? meta.DisplayName
+            : StripAgentSuffix(agentType.Name);
 
         return new AgentRecord
         {
@@ -47,8 +43,8 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
             AgentType = agentType.Name,
             Namespace = agentNamespace,
             DisplayName = displayName,
-            Description = description,
-            Capabilities = capabilities,
+            Description = meta.Description,
+            Capabilities = meta.Capabilities,
             InterfaceName = agentInterface.Name
         };
     }
