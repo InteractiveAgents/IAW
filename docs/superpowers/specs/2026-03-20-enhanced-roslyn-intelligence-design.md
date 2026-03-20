@@ -29,7 +29,7 @@ This avoids the Orleans single-threaded deadlock: the background `OpenSolutionAs
 
 **MSBuild dependency:** `Microsoft.CodeAnalysis.MSBuild` + `Microsoft.Build.Locator` packages. `MSBuildLocator.RegisterDefaults()` called once at silo startup (in `IAW.Assistant/Program.cs`) AND in the test fixture (`AgentTestSiloConfigurator`) for test coverage.
 
-**Cache invalidation:** When files change (via `IReceiver<CodeChangedMessage>` from Git/DotNet agents), the workspace is reloaded. Type map in durable state is always the fallback.
+**Cache invalidation:** When files change (via `IStreamConsumer<CodeChangedMessage>` subscription), the workspace is reloaded. Publishers are CodeOrchestrator (after writing files) and DotNetAgent (after formatting). Type map in durable state is always the fallback.
 
 **What lives where:**
 
@@ -45,36 +45,45 @@ This avoids the Orleans single-threaded deadlock: the background `OpenSolutionAs
 
 ### 2. Agent-to-Agent Communication
 
+The key principle: **whoever writes files publishes CodeChangedMessage**. Git doesn't write code — it commits what others wrote. The publishers are CodeOrchestrator and DotNetAgent.
+
 ```
-GitAgent ──CodeChangedMessage──> RoslynAgent (IReceiver, P2P direct)
-  After commit: publishes          On receive: reload workspace,
-  changed file paths               refresh type map, persist
+CodeOrchestrator writes files to disk
+  → Publishes CodeChangedMessage to "code.changed" stream
+  → Then calls GitAgent.CommitAsync() to commit the changes
+
+DotNetAgent runs dotnet format
+  → Publishes CodeChangedMessage to "code.changed" stream
+
+RoslynAgent subscribes via IStreamConsumer<CodeChangedMessage>
+  → Receives event, reloads affected files in workspace
+  → Refreshes type map, call graph, inheritance tree
+  → Persists updated metadata to durable state
+  → Publishes "workspace.reindexed" stream event
+
+Downstream consumers subscribe to "workspace.reindexed":
+  → INuGet: re-checks if packages affect changed types
+  → IDotNet: auto-format if configured
+  → Thread: notifies user that workspace is up to date
 
 DotNetAgent ──TestResultMessage──> RoslynAgent (IReceiver, P2P direct)
-  After test: publishes            On receive: track pass/fail state
-  results
-
-DotNetAgent ──CodeChangedMessage──> RoslynAgent (IReceiver, P2P direct)
-  After format: publishes          On receive: re-index changed files
-  changed file paths
-
-RoslynAgent ──"workspace.reindexed"──> Stream (pub/sub, loose coupling)
-  After reindex completes            Consumers: INuGet (re-check packages),
-                                     IDotNet (auto-format), Thread (notify user)
-
-CodeOrchestrator ──IGit.CommitAsync()──> GitAgent (direct call)
-  After writing code                   Triggers chain: commit -> CodeChanged -> reindex
+  After test run: publishes          On receive: tracks pass/fail
+  results per test                   state in durable state
 ```
 
 **Communication patterns:**
 
 | From | To | Mechanism | Why this pattern |
 |------|----|-----------|-----------------|
-| GitAgent | RoslynAgent | `IReceiver<CodeChangedMessage>` (P2P) | Tight — Roslyn must know about changes |
-| DotNetAgent | RoslynAgent | `IReceiver<TestResultMessage>` (P2P) | Tight — Roslyn tracks test state |
-| DotNetAgent | RoslynAgent | `IReceiver<CodeChangedMessage>` (P2P) | Format changes need re-index |
-| RoslynAgent | anyone | Stream `"workspace.reindexed"` (pub/sub) | Loose — multiple consumers may react |
-| CodeOrchestrator | GitAgent | Direct call | Triggers the reindex chain |
+| CodeOrchestrator | anyone interested | Stream `"code.changed"` (pub/sub) | Loose — orchestrator doesn't know/care who listens |
+| DotNetAgent | anyone interested | Stream `"code.changed"` (pub/sub) | Loose — format changes broadcast to all |
+| DotNetAgent | RoslynAgent | `IReceiver<TestResultMessage>` (P2P) | Tight — Roslyn specifically tracks test state |
+| RoslynAgent | anyone interested | Stream `"workspace.reindexed"` (pub/sub) | Loose — multiple consumers may react |
+| CodeOrchestrator | GitAgent | Direct call `IGit.CommitAsync()` | Explicit — orchestrator controls when to commit |
+
+**What does NOT publish CodeChangedMessage:**
+- GitAgent — Git commits code, it doesn't write it. The writer (CodeOrchestrator/DotNet) already published before the commit.
+- RoslynAgent — Roslyn modifies code via Level 2/3 tools, but those tools publish CodeChangedMessage themselves (step 9 in modification flow). The agent doesn't double-publish.
 
 ### 3. Call Graph & Inheritance Tree
 
@@ -82,7 +91,7 @@ CodeOrchestrator ──IGit.CommitAsync()──> GitAgent (direct call)
 
 **Inheritance Tree** — `Dictionary<string, InheritanceInfo>` mapping type name to base type, implemented interfaces, and derived types (reverse-indexed). Built from `INamedTypeSymbol.BaseType` and `INamedTypeSymbol.Interfaces`.
 
-Both are built after workspace loads (same background task), persisted to durable state, and refreshed on `CodeChangedMessage`.
+Both are built after workspace loads (same background task), persisted to durable state, and refreshed when RoslynAgent receives `CodeChangedMessage` via its `IStreamConsumer<CodeChangedMessage>` subscription.
 
 **Query tools:**
 
@@ -119,7 +128,7 @@ Surgical Roslyn-powered operations using `SyntaxFactory` + `DocumentEditor`:
 6. Format via `Formatter.Format(node, AdhocWorkspace)` (uses AdhocWorkspace when MSBuildWorkspace not yet loaded; full workspace when available)
 7. Verify modified tree parses cleanly
 8. Write back to file
-9. Publish `CodeChangedMessage` to trigger reindex chain
+9. Publish `CodeChangedMessage` to `"code.changed"` stream — RoslynAgent's own `IStreamConsumer<CodeChangedMessage>` subscription picks this up and triggers reindex (self-notification via stream, not a direct call, so other consumers also get notified)
 
 ### 5. Semantic Refactoring Tools (Level 3)
 
@@ -203,8 +212,9 @@ src/Agents.CSharp/
 | `src/IAW.Assistant/Program.cs` | Modify | Call `MSBuildLocator.RegisterDefaults()` at startup |
 | `src/IAW.Testing/AgentTest.cs` | Modify | Call `MSBuildLocator.RegisterDefaults()` in test fixture for workspace tests |
 | `src/Core/Communication/Messages/CodeChangedMessage.cs` | Modify | Change `string FilePath` to `IReadOnlyList<string> FilePaths` for batched invalidation (Core contract change) |
-| `src/Agents/Infrastructure/GitAgent.cs` | Modify | Publish `CodeChangedMessage` to RoslynAgent after commits (send P2P via `IReceiver<CodeChangedMessage>`) |
-| `src/Agents.CSharp/DotNet/DotNetAgent.cs` | Modify | Publish `CodeChangedMessage` after `dotnet format` modifies files |
+| `src/Agents/Orchestration/CodeOrchestratorAgent.cs` | Modify | Publish `CodeChangedMessage` to `"code.changed"` stream after writing files to disk |
+| `src/Agents.CSharp/DotNet/DotNetAgent.cs` | Modify | Publish `CodeChangedMessage` to `"code.changed"` stream after `dotnet format` modifies files |
+| `src/Agents.CSharp/Roslyn/RoslynAgent.cs` | Add | Implement `IStreamConsumer<CodeChangedMessage>` to subscribe to `"code.changed"` stream |
 
 ### New NuGet Packages
 
@@ -218,9 +228,9 @@ Note: `Microsoft.CodeAnalysis.Features` is NOT used — it's not redistributable
 ### What Does NOT Change
 
 - Agent base class (no core changes)
-- ThreadAgent, AgentSelector, CodeOrchestrator (used as-is)
+- ThreadAgent, AgentSelector (used as-is)
 - Client layer (Telegram, MCP, DevUI)
-- Other agents (Shell, Memory, LLM agents)
+- Other agents (Git, Shell, Memory, LLM agents)
 
 ### Scope Boundary
 
