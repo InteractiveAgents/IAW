@@ -37,6 +37,7 @@ public class RoslynAgent(
         Func<string> getWorkspace = () => GetWorkspacePath() ?? Path.GetTempPath();
         var tools = new List<AITool>();
         RegisterToolMethods(tools, new Tools.RoslynTools(getWorkspace, _workspaceManager));
+        RegisterToolMethods(tools, new Tools.CodeModificationTools(getWorkspace));
         return tools;
     }
 
