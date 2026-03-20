@@ -23,6 +23,7 @@ public static class ScriptGenerator
               <PropertyGroup>
                 <OutputType>Exe</OutputType>
                 <TargetFramework>net11.0</TargetFramework>
+                <DisableMSBuildAssemblyCopyCheck>true</DisableMSBuildAssemblyCopyCheck>
               </PropertyGroup>
               <ItemGroup>
                 {refs}
