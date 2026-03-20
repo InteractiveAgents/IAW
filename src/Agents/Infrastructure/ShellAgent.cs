@@ -27,6 +27,10 @@ public class ShellAgent(
     ];
 
     protected override string DisplayName => "Shell";
+
+    public static string AgentDescription => "Executes shell commands and scripts with timeout enforcement, output capture, and safety validation.";
+    public static string[] AgentCapabilities => ["execute", "shell", "command", "script", "process"];
+
     protected override string Instructions => """
         You are Shell, the IAW team's command execution specialist. Execute shell and dotnet CLI commands with timeout enforcement and structured output.
 

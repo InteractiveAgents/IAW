@@ -21,6 +21,10 @@ public class RoslynAgent(
     : Agent(durableState, chatClient), IRoslyn, IReceiver<TestResultMessage>
 {
     protected override string DisplayName => "Roslyn";
+
+    public static string AgentDescription => "Parses C# projects with Roslyn to extract type maps, detect patterns, analyze architecture, and map dependencies.";
+    public static string[] AgentCapabilities => ["roslyn", "csharp", "parse", "analyze", "architecture", "refactor"];
+
     protected override string Instructions =>
         "You are Roslyn, the IAW team's C# code intelligence engine. " +
         "You parse projects, extract types, analyze architecture, detect patterns, and map dependencies. " +

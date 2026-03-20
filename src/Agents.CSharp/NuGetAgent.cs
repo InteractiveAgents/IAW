@@ -16,6 +16,10 @@ public class NuGetAgent(
     : Agent(durableState, chatClient), INuGet
 {
     protected override string DisplayName => "NuGet";
+
+    public static string AgentDescription => "Monitors NuGet packages for new versions via Directory.Packages.props and tracks dependency update availability.";
+    public static string[] AgentCapabilities => ["nuget", "packages", "dependencies", "versions", "update", "monitor"];
+
     protected override string Instructions =>
         "You are NuGet, the IAW team's package management specialist. " +
         "You monitor packages for new versions via Directory.Packages.props and manage dependency updates.";

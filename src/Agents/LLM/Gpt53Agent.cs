@@ -12,4 +12,7 @@ public class Gpt53Agent(
     : LlmAgentBase(durableState, chatClient), IGpt53
 {
     protected override string DisplayName => "GPT 5.3";
+
+    public static string AgentDescription => "GPT 5.3 language model wrapper for advanced reasoning and complex task completion.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "openai"];
 }

@@ -20,6 +20,9 @@ public class Project(
     IChatClient chatClient)
     : Agent(durableState, chatClient), IProject
 {
+    public static string AgentDescription => "User-facing project assistant that manages tasks, scheduled jobs, and delegates work to specialized agents via code orchestration.";
+    public static string[] AgentCapabilities => ["project", "tasks", "schedule", "orchestrate", "assistant", "recall"];
+
     protected override string Instructions => GetTopicSlug() switch
     {
         "general" => """

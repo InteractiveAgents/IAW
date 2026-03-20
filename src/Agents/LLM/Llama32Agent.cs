@@ -12,4 +12,7 @@ public class Llama32Agent(
     : LlmAgentBase(durableState, chatClient), ILlama32
 {
     protected override string DisplayName => "Llama 3.2";
+
+    public static string AgentDescription => "Llama 3.2 open-weight language model wrapper for local and on-premise inference.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "llama", "meta", "local"];
 }

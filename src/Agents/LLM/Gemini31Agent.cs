@@ -12,4 +12,7 @@ public class Gemini31Agent(
     : LlmAgentBase(durableState, chatClient), IGemini31
 {
     protected override string DisplayName => "Gemini 3.1";
+
+    public static string AgentDescription => "Gemini 3.1 language model wrapper from Google for multimodal reasoning and generation.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "gemini", "google", "multimodal"];
 }

@@ -16,6 +16,9 @@ public class KnowledgeAgent(
 {
     protected override string DisplayName => "Project Knowledge";
 
+    public static string AgentDescription => "Stores and retrieves project architecture decisions, code patterns, and coding conventions as institutional memory.";
+    public static string[] AgentCapabilities => ["knowledge", "decisions", "patterns", "conventions", "architecture", "recall"];
+
     protected override string Instructions => """
         You are Project Knowledge, the IAW team's institutional memory for project conventions and decisions. Store and retrieve architecture decisions, code patterns, and coding standards.
 

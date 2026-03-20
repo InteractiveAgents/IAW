@@ -12,4 +12,7 @@ public class Qwen25Agent(
     : LlmAgentBase(durableState, chatClient), IQwen25
 {
     protected override string DisplayName => "Qwen 2.5";
+
+    public static string AgentDescription => "Qwen 2.5 language model wrapper from Alibaba for multilingual reasoning and generation.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "qwen", "alibaba", "multilingual"];
 }

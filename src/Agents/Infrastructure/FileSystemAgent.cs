@@ -14,6 +14,10 @@ public class FileSystemAgent(
     : Agent(durableState, chatClient), IFileSystem
 {
     protected override string DisplayName => "FileSystem";
+
+    public static string AgentDescription => "Reads, writes, lists, and searches workspace files with boundary validation and structured output.";
+    public static string[] AgentCapabilities => ["file", "read", "write", "search", "filesystem", "workspace"];
+
     protected override string Instructions => """
         You are FileSystem, the IAW team's file operations specialist. Execute read, write, create, delete, and search operations on workspace files.
 

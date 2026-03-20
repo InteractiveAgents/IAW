@@ -19,6 +19,9 @@ public class UserMemoryAgent(
 {
     protected override string CollectionName => "iaw-user-memory";
     protected override string DisplayName => "User Memory";
+
+    public static string AgentDescription => "Stores personal facts, preferences, and corrections about users, enabling personalized long-term recall.";
+    public static string[] AgentCapabilities => ["memory", "user", "preferences", "personal", "search", "recall"];
     protected override string Instructions =>
         "You are User Memory, the IAW team's long-term store for personal facts, preferences, and corrections. " +
         "Extract personal information from conversations and store it. Search and surface relevant memories when queried.";

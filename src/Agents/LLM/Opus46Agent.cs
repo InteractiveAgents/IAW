@@ -12,4 +12,7 @@ public class Opus46Agent(
     : LlmAgentBase(durableState, chatClient), IOpus46
 {
     protected override string DisplayName => "Claude Opus 4.6";
+
+    public static string AgentDescription => "Claude Opus 4.6 most capable Anthropic model wrapper for complex reasoning and nuanced analysis.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "claude", "anthropic", "powerful"];
 }

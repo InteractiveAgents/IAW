@@ -20,6 +20,9 @@ public class CodeOrchestratorAgent(
 
     protected override string DisplayName => "Code Orchestrator";
 
+    public static string AgentDescription => "Generates and executes standalone C# console apps that call agent grains directly to fulfill complex orchestration tasks.";
+    public static string[] AgentCapabilities => ["orchestrate", "execute", "generate", "csharp", "code", "automate"];
+
     protected override string Instructions => BuildInstructions();
 
     private static string BuildInstructions()

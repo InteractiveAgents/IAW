@@ -15,6 +15,10 @@ public class GitHubAgent(
     : Agent(durableState, chatClient), IGitHub
 {
     protected override string DisplayName => "GitHub";
+
+    public static string AgentDescription => "Monitors GitHub repositories for new releases, creates issues, and tracks project activity via the GitHub API.";
+    public static string[] AgentCapabilities => ["github", "releases", "issues", "repository", "monitor", "api"];
+
     protected override string Instructions =>
         "You are GitHub, the IAW team's GitHub API specialist. " +
         "You monitor repositories for releases, manage issues, and track project activity.";

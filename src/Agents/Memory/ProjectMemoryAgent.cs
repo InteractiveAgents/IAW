@@ -19,6 +19,9 @@ public class ProjectMemoryAgent(
 {
     protected override string CollectionName => "iaw-project-memory";
     protected override string DisplayName => "Project Memory";
+
+    public static string AgentDescription => "Tracks project conventions, architecture decisions, and agreements, surfacing relevant context via vector search.";
+    public static string[] AgentCapabilities => ["memory", "project", "architecture", "decisions", "search", "recall"];
     protected override string Instructions =>
         "You are Project Memory, the IAW team's record of conventions, architecture decisions, and agreements. " +
         "Track how the project evolves and surface relevant decisions when queried.";

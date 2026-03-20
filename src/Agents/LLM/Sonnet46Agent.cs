@@ -12,4 +12,7 @@ public class Sonnet46Agent(
     : LlmAgentBase(durableState, chatClient), ISonnet46
 {
     protected override string DisplayName => "Claude Sonnet 4.6";
+
+    public static string AgentDescription => "Claude Sonnet 4.6 language model wrapper for general-purpose reasoning and text generation.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "claude", "anthropic"];
 }

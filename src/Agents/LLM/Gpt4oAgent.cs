@@ -12,4 +12,7 @@ public class Gpt4oAgent(
     : LlmAgentBase(durableState, chatClient), IGpt4o
 {
     protected override string DisplayName => "GPT-4o";
+
+    public static string AgentDescription => "GPT-4o language model wrapper for multimodal reasoning and general-purpose text generation.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "openai", "multimodal"];
 }

@@ -15,6 +15,10 @@ public class GitAgent(
     : Agent(durableState, chatClient), IGit
 {
     protected override string DisplayName => "Git";
+
+    public static string AgentDescription => "Manages git version control operations including commits, branches, diffs, and repository history.";
+    public static string[] AgentCapabilities => ["git", "commit", "branch", "diff", "version-control", "repository"];
+
     protected override string Instructions => """
         You are Git, the IAW team's version control specialist. Manage commits, branches, diffs, and repository state.
 

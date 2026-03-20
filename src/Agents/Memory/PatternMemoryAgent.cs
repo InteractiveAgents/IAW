@@ -19,6 +19,9 @@ public class PatternMemoryAgent(
 {
     protected override string CollectionName => "iaw-pattern-memory";
     protected override string DisplayName => "Pattern Memory";
+
+    public static string AgentDescription => "Stores proven code and design patterns, recommending them for similar problems via vector search.";
+    public static string[] AgentCapabilities => ["memory", "patterns", "design", "search", "recall", "vector"];
     protected override string Instructions =>
         "You are Pattern Memory, the IAW team's catalog of proven code and design patterns. " +
         "Store patterns that work well and recommend them for similar problems when queried.";

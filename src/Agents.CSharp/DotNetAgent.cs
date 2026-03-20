@@ -20,6 +20,10 @@ public partial class DotNetAgent(
         "https://raw.githubusercontent.com/dotnet/runtime/main/.editorconfig";
 
     protected override string DisplayName => "DotNet";
+
+    public static string AgentDescription => "Builds, tests, and formats .NET projects; parses diagnostics and runs test suites with optional filtering.";
+    public static string[] AgentCapabilities => ["build", "test", "format", "diagnose", "dotnet", "csharp"];
+
     protected override string Instructions =>
         "You are DotNet, the IAW team's .NET toolchain specialist. " +
         "You run tests, format code, and manage builds. Execute operations immediately and report results.";

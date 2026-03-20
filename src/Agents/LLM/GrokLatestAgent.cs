@@ -12,4 +12,7 @@ public class GrokLatestAgent(
     : LlmAgentBase(durableState, chatClient), IGrokLatest
 {
     protected override string DisplayName => "Grok Latest";
+
+    public static string AgentDescription => "Grok Latest language model wrapper from xAI for reasoning and conversational tasks.";
+    public static string[] AgentCapabilities => ["llm", "reasoning", "generation", "grok", "xai"];
 }
