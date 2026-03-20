@@ -1,17 +1,16 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
+using Core;
 using Core.Contracts;
+using IAW.Agents.Orchestration;
 using Microsoft.Extensions.AI;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using IAgent = Core.Contracts.IAgent;
 
 namespace DevUI;
 
-sealed partial class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgentChatClient> logger) : IChatClient
+sealed class OrleansAgentChatClient(IClusterClient cluster, ILogger<OrleansAgentChatClient> logger) : IChatClient
 {
-    // Cache: grain ID → grain interface type (built once from loaded assemblies)
-    private static readonly ConcurrentDictionary<string, Type> GrainInterfaceMap = BuildGrainInterfaceMap();
+    private readonly string _devuiThreadId = $"devui/{Guid.NewGuid().ToString("N")[..8]}";
 
     public ChatClientMetadata Metadata { get; } = new("OrleansAgentChatClient");
 
@@ -70,47 +69,20 @@ sealed partial class OrleansAgentChatClient(IClusterClient cluster, ILogger<Orle
 
     private IAgent ResolveAgent(string agentId)
     {
-        if (GrainInterfaceMap.TryGetValue(agentId, out var interfaceType))
+        if (IsThreadAgent(agentId))
+            return (IAgent)cluster.GetGrain(typeof(IThread), _devuiThreadId);
+
+        var interfaceType = AgentInterfaceResolver.Resolve(agentId);
+        if (interfaceType is not null)
             return (IAgent)cluster.GetGrain(interfaceType, agentId);
 
-        var known = string.Join(", ", GrainInterfaceMap.Keys);
+        var known = string.Join(", ",
+            AgentInterfaceResolver.DiscoverAgentInterfaces().Select(t => t.Name.TrimStart('I').ToLowerInvariant()));
         throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }
 
-    // Build a map of grain ID → grain interface type from loaded assemblies.
-    // Uses the same kebab-case convention as AgentDiscovery.
-    private static ConcurrentDictionary<string, Type> BuildGrainInterfaceMap()
-    {
-        var map = new ConcurrentDictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-
-        var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-            .Where(t => t.IsInterface
-                         && t != typeof(IAgent)
-                         && typeof(IAgent).IsAssignableFrom(t)
-                         && !t.IsGenericType);
-
-        foreach (var iface in agentInterfaces)
-        {
-            var name = iface.Name;
-            if (name.StartsWith('I') && name.Length > 1 && char.IsUpper(name[1]))
-                name = name[1..];
-
-            var grainId = ToKebabCase(name);
-            map.TryAdd(grainId, iface);
-        }
-
-        return map;
-    }
-
-    private static string ToKebabCase(string pascalCase)
-    {
-        var kebab = KebabRegex().Replace(pascalCase, "-$1").ToLowerInvariant();
-        return kebab.TrimStart('-');
-    }
-
-    [GeneratedRegex("(?<!^)([A-Z])")]
-    private static partial Regex KebabRegex();
+    private static bool IsThreadAgent(string agentId) =>
+        string.Equals(agentId, "thread", StringComparison.OrdinalIgnoreCase);
 
     // First line of instructions = agent grain ID for routing.
     static (string AgentId, string UserText) ExtractAgentAndMessage(
