@@ -10,6 +10,51 @@ IAW agents communicate through three distinct channels: typed pub/sub streams, p
 | Point-to-Point | `IReceiver<T>` | One-to-one | Request-reply with `MessageReceipt` | Task assignment, directed commands |
 | Broadcast | `IBroadcaster<T>` | One-to-many | Fan-out with delivery tracking | Coordinated multi-agent work |
 
+## Three-Mechanism Comparison
+
+The framework provides three distinct mechanisms for agent-to-agent and agent-to-external communication. They differ in coupling, delivery semantics, and who initiates the connection.
+
+| | `IReceiver<T>` | Streams (`IStreamConsumer<T>`) | Observers (`IGrainObserver`) |
+|---|---|---|---|
+| **Direction** | Sender → specific receiver | Publisher → any subscriber | Grain → subscribed watchers |
+| **Coupling** | Tight — sender knows receiver | Loose — publisher doesn't know subscribers | Medium — grain holds observer refs |
+| **Typing** | Strongly typed messages | Strongly typed events | Custom observer interface |
+| **Who initiates** | Sender pushes | Subscriber subscribes to stream | Watcher subscribes to grain |
+| **Delivery** | Synchronous, awaitable | Async, fire-and-forget | Direct callback, in-memory |
+| **Persistence** | No | Depends on stream provider | No |
+| **Use case** | "Hey DotNet, code changed — react" | "Code changed event happened, anyone who cares" | "Telegram client watching for real-time updates" |
+
+### How They Work Together
+
+A typical workflow combines all three mechanisms. A Git agent detects a commit, directly notifies the DotNet agent via `IReceiver<T>`, the DotNet agent publishes a build result to a stream, and a Telegram client receives real-time updates via an observer.
+
+```
+Git detects commit
+  --> GitAgent calls DotNetAgent.Receive(CodeChangedCommand)   // IReceiver<T>: tight, directed
+      --> DotNetAgent builds and publishes BuildCompletedEvent  // Stream: loose, fan-out
+          --> Any subscriber (ReviewAgent, CIAgent) reacts
+          --> TelegramClient observes DotNetAgent directly      // Observer: real-time push to external watcher
+```
+
+In code:
+
+```csharp
+// 1. Git → DotNet via IReceiver<T> (sender knows the target)
+var dotnet = GrainFactory.GetGrain<IDotNetAgent>("dotnet");
+var receipt = await dotnet.Receive(new CodeChangedCommand(commitSha, changedFiles), ct);
+
+// 2. DotNet publishes build result to stream (no knowledge of consumers)
+public class DotNetAgent : Agent, IStreamProducer<BuildCompletedEvent>
+{
+    public async Task PublishToStreamAsync(BuildCompletedEvent evt, CancellationToken ct)
+        => await PublishTypedAsync(evt, ct);
+}
+
+// 3. Telegram client observes DotNet grain for real-time updates (external watcher)
+var observer = await observerFactory.CreateObjectReference<IBuildObserver>(telegramNotifier);
+await dotnet.SubscribeObserverAsync(observer);
+```
+
 ## Typed Pub/Sub Streams
 
 Typed pub/sub uses Orleans streams under the `"agents"` provider. Agents publish typed events to a stream and other agents subscribe by implementing `IStreamConsumer<T>`. Subscriptions are auto-wired on grain activation.
