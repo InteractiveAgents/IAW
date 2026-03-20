@@ -101,7 +101,9 @@
       "Bash(do echo:*)",
       "Read(//e/IAW/**)",
       "Bash(done)",
-      "Bash(gh pr:*)"
+      "Bash(gh pr:*)",
+      "WebFetch(domain:localhost)",
+      "Bash(sort -t: -k2 -rn)"
     ]
   },
   "enabledMcpjsonServers": [
