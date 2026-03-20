@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using Core;
 using Core.Contracts;
 using Core.Registry;
 using IAW.Agents.Orchestration;
@@ -11,22 +12,12 @@ internal sealed class AgentTools(IClusterClient orleans)
 
     private IAgent ResolveAgent(string agentId)
     {
-        var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-            .Where(t => t.IsInterface && typeof(IAgent).IsAssignableFrom(t) && t != typeof(IAgent))
-            .ToList();
+        var interfaceType = AgentInterfaceResolver.Resolve(agentId);
+        if (interfaceType is not null)
+            return (IAgent)orleans.GetGrain(interfaceType, agentId);
 
-        var matchedInterface = agentInterfaces
-            .FirstOrDefault(t =>
-            {
-                var name = t.Name.TrimStart('I').ToLowerInvariant();
-                return string.Equals(name, agentId.Replace("-", ""), StringComparison.OrdinalIgnoreCase);
-            });
-
-        if (matchedInterface is not null)
-            return (IAgent)orleans.GetGrain(matchedInterface, agentId);
-
-        var known = string.Join(", ", agentInterfaces.Select(t => t.Name.TrimStart('I').ToLowerInvariant()));
+        var known = string.Join(", ",
+            AgentInterfaceResolver.DiscoverAgentInterfaces().Select(t => t.Name.TrimStart('I').ToLowerInvariant()));
         throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }
 
@@ -74,7 +65,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Thread slug (default: general)")] string threadSlug = "general",
         CancellationToken ct = default)
     {
-        var thread = orleans.GetGrain<IThread>(threadSlug);
+        var thread = orleans.GetGrain<IThread>($"mcp/{threadSlug}");
         var response = await thread.GetResponse(message, ct);
         return JsonSerializer.Serialize(new { threadSlug, response }, JsonOptions);
     }
@@ -113,7 +104,7 @@ internal sealed class AgentTools(IClusterClient orleans)
         [Description("Thread slug (default: general)")] string threadSlug = "general",
         CancellationToken ct = default)
     {
-        var thread = orleans.GetGrain<IThread>(threadSlug);
+        var thread = orleans.GetGrain<IThread>($"mcp/{threadSlug}");
         var prompt = $"[TASK] Priority: {priority}\n\n{task}";
         var response = await thread.GetResponse(prompt, ct);
         return JsonSerializer.Serialize(new { task, priority, response }, JsonOptions);
