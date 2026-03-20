@@ -15,16 +15,9 @@ public class PatternMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<PatternMemoryAgent> logger)
-    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IPatternMemory
+    : MemoryAgentBase<IPatternMemory>(durableState, chatClient, memories, embedder, logger), IPatternMemory
 {
     protected override string CollectionName => "iaw-pattern-memory";
-    protected override string DisplayName => "Pattern Memory";
-
-    public static string AgentDescription => "Stores proven code and design patterns, recommending them for similar problems via vector search.";
-    public static string[] AgentCapabilities => ["memory", "patterns", "design", "search", "recall", "vector"];
-    protected override string Instructions =>
-        "You are Pattern Memory, the IAW team's catalog of proven code and design patterns. " +
-        "Store patterns that work well and recommend them for similar problems when queried.";
 
     public override async Task OnActivateAsync(CancellationToken ct)
     {

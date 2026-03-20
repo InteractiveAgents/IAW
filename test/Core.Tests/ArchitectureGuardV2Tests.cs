@@ -39,9 +39,21 @@ public class ArchitectureGuardV2Tests
     public void Memory_agents_extend_Memory_base()
     {
         var memoryAgents = AgentsAssembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(MemoryAgentBase)) && !t.IsAbstract);
+            .Where(t => !t.IsAbstract && IsSubclassOfOpenGeneric(t, typeof(MemoryAgentBase<>)));
 
         Assert.NotEmpty(memoryAgents);
+    }
+
+    private static bool IsSubclassOfOpenGeneric(Type type, Type openGeneric)
+    {
+        var current = type.BaseType;
+        while (current is not null)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == openGeneric)
+                return true;
+            current = current.BaseType;
+        }
+        return false;
     }
 
     [Fact]

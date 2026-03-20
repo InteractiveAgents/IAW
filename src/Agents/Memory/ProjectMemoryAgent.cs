@@ -15,16 +15,9 @@ public class ProjectMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<ProjectMemoryAgent> logger)
-    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IProjectMemory
+    : MemoryAgentBase<IProjectMemory>(durableState, chatClient, memories, embedder, logger), IProjectMemory
 {
     protected override string CollectionName => "iaw-project-memory";
-    protected override string DisplayName => "Project Memory";
-
-    public static string AgentDescription => "Tracks project conventions, architecture decisions, and agreements, surfacing relevant context via vector search.";
-    public static string[] AgentCapabilities => ["memory", "project", "architecture", "decisions", "search", "recall"];
-    protected override string Instructions =>
-        "You are Project Memory, the IAW team's record of conventions, architecture decisions, and agreements. " +
-        "Track how the project evolves and surface relevant decisions when queried.";
 
     public override async Task OnActivateAsync(CancellationToken ct)
     {

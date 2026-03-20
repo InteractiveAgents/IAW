@@ -15,16 +15,9 @@ public class EpisodeMemoryAgent(
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<EpisodeMemoryAgent> logger)
-    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IEpisodeMemory
+    : MemoryAgentBase<IEpisodeMemory>(durableState, chatClient, memories, embedder, logger), IEpisodeMemory
 {
     protected override string CollectionName => "iaw-episode-memory";
-    protected override string DisplayName => "Episode Memory";
-
-    public static string AgentDescription => "Records task workflows and outcomes, enabling retrieval of past episode context via vector search.";
-    public static string[] AgentCapabilities => ["memory", "episode", "workflow", "search", "recall", "vector"];
-    protected override string Instructions =>
-        "You are Episode Memory, the IAW team's record of task workflows and outcomes. " +
-        "Store what steps were taken, their results, and how tasks completed. Surface relevant episodes when queried.";
 
     public override async Task OnActivateAsync(CancellationToken ct)
     {
