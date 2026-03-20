@@ -29,8 +29,8 @@ Every agent is an **Orleans grain** inheriting from `Agent` (abstract, `[GrainTy
 | `Agent.Lifecycle.cs` | Activation hooks, reminder management, deactivation |
 | `Agent.State.cs` | Durable state (history, key-value dict, event log) via `AgentDurableState` |
 | `Agent.Streams.cs` | Auto-subscribe to streams based on `IStreamConsumer<T>` interfaces |
-| `Agent.Tools.cs` | AI tool registration and invocation |
-| `Agent.Tracking.cs` | Periodic monitoring via Orleans reminders |
+| `Agent.Tools.cs` | AI tool registration and invocation; interface methods auto-register as AI tools |
+| `Agent.Scheduling.cs` | Periodic monitoring and scheduled work via Orleans reminders |
 | `Agent.Observers.cs` | Stream observer pattern |
 
 **Durable state** uses Orleans Journaling (`DurableGrain` + `IDurableList`/`IDurableDictionary`), not classic `[Persistent]` state.
@@ -47,7 +47,7 @@ Every agent is an **Orleans grain** inheriting from `Agent` (abstract, `[GrainTy
 | Project | Purpose | Packable |
 |---------|---------|----------|
 | `src/Core` (IAW.Core) | Agent base class, contracts, AI integration, tools, observability | Yes |
-| `src/Agents` (IAW.Agents) | 65 agent implementations (infrastructure, LLM wrappers, memory, orchestration) | Yes |
+| `src/Agents` (IAW.Agents) | Agent implementations grouped into namespaces: System, Coding, Models, Memory, Orchestration | Yes |
 | `src/Agents.CSharp` (IAW.Agents.CSharp) | Roslyn, DotNet, GitHub, NuGet agents | Yes |
 | `src/Aspire.Hosting.IAW` | AppHost integration: `AddIAW()`, `IAWService`, `WithLLM<T>()`, `WithReference(iaw)` | Yes |
 | `src/Aspire.IAW.Client` | Service integration: silo `AddIAW()`, client `AddIAWClient()`, OTel, health | Yes |
@@ -70,18 +70,16 @@ Inherit from `AgentTest<TAgent>` — it spins up a `TestCluster` with memory sto
 
 ### Code Orchestration (`src/Agents/Orchestration`)
 
-The Project agent delegates complex tasks to `CodeOrchestratorAgent` via the `Execute` tool. The orchestrator:
+The Thread agent (`IThread`) delegates complex tasks to `CodeOrchestratorAgent` via the `Execute` tool. The orchestrator:
 
 1. Receives a natural-language plan
 2. Generates a standalone C# console app that connects to the cluster as an Orleans client (`builder.AddIAWClient()`)
-3. The generated code calls agent grains directly via `client.GetGrain<IAgent>("grain-id").GetResponse()`
+3. The generated code retrieves agent grains via `client.Get<IGit>(taskId).GetResponse()` — `Get<T>()` resolves agent IDs via `AgentRegistry` keyed to the current task context
 4. Executes the project with `dotnet run`, captures output, returns `result.json`
 
-Agent grain IDs are computed from interface names by `InterfaceCatalog.ComputeGrainId()` — strips leading "I", inserts "-" at lowercase→uppercase transitions, lowercases. Example: `ISonnet46` → `sonnet46`, `IGpt4oMini` → `gpt4o-mini`.
+`AgentRegistry` maps interface types to running grain instances. The `ComputeGrainId()` helper has been removed; grain resolution is dynamic through `Get<T>(taskId)`.
 
-### LLM Model Comparison
-
-The Project agent has a `CompareModelsTool` that sends the same prompt to multiple LLM wrapper agents in parallel. Each LLM agent (e.g. `Gpt54MiniAgent`, `Sonnet46Agent`) wraps a specific model via `[Llm<TModel>]`. The tool collects response text, wall-clock duration, and token usage (`GetLastUsage()`) for side-by-side comparison. Results include a metrics table and full responses. Traces are visible in Aspire with `gen_ai.*` attributes.
+Model comparison is handled via orchestration rather than a dedicated `CompareModelsTool`. Each LLM agent (e.g. `Gpt54MiniAgent`, `Sonnet46Agent`) wraps a specific model via `[Llm<TModel>]`; the orchestrator can fan out calls and collect token usage (`GetLastUsage()`) with traces visible in Aspire under `gen_ai.*` attributes.
 
 ### Default LLM Model
 
