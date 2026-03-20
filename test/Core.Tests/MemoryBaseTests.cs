@@ -7,9 +7,9 @@ namespace IAW.Core.Tests;
 public class MemoryBaseTests
 {
     [Fact]
-    public void MemoryAgentBase_extends_Agent()
+    public void MemoryAgentBase_extends_AgentGeneric()
     {
-        Assert.True(typeof(MemoryAgentBase<>).IsSubclassOf(typeof(Agent)));
+        Assert.Equal(typeof(Agent<>), typeof(MemoryAgentBase<>).BaseType!.GetGenericTypeDefinition());
     }
 
     [Fact]

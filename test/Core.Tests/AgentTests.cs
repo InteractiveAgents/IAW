@@ -386,7 +386,14 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
-        await Task.Delay(1000, ct);
+        // Poll for delivery instead of fixed delay — stream delivery has variable latency
+        for (var attempt = 0; attempt < 15; attempt++)
+        {
+            await Task.Delay(500, ct);
+            var s1 = await agent1.GetState(ct);
+            var s2 = await agent2.GetState(ct);
+            if (s1.Entries.Count > 0 && s2.Entries.Count > 0) return;
+        }
 
         var state1 = await agent1.GetState(ct);
         var state2 = await agent2.GetState(ct);

@@ -44,13 +44,13 @@ public class AgentMetadataTests
 
     static IEnumerable<Type> GetProductionAgentTypes(Type agentBaseType)
     {
-        var testAssemblyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        var productionAssemblyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "IAW.Core.Tests", "IAW.Testing", "xunit.v3.core", "xunit.v3.runner"
+            "IAW.Agents", "IAW.Agents.CSharp"
         };
 
         return AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !testAssemblyNames.Contains(a.GetName().Name ?? ""))
+            .Where(a => productionAssemblyNames.Contains(a.GetName().Name ?? ""))
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsSubclassOf(agentBaseType) && !t.IsAbstract);
     }

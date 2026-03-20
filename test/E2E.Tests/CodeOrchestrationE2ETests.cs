@@ -14,9 +14,28 @@ namespace IAW.E2E.Tests;
 public class CodeOrchestrationE2ETests : IAsyncLifetime
 {
     private TestCluster _cluster = null!;
+    private static bool _ollamaAvailable = CheckOllama();
+
+    static bool CheckOllama()
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            var endpoint = Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "http://localhost:11434";
+            var response = http.GetAsync(endpoint).GetAwaiter().GetResult();
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
 
     public async ValueTask InitializeAsync()
     {
+        if (!_ollamaAvailable)
+        {
+            // Skip cluster setup — tests will skip via Skip.If
+            return;
+        }
+
         Environment.SetEnvironmentVariable("IAW__Workspace", "D:\\IAW-E2E-Workspace");
 
         var builder = new TestClusterBuilder();
@@ -27,6 +46,8 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        if (!_ollamaAvailable) return;
+
         await _cluster.StopAllSilosAsync();
         _cluster.Dispose();
         Environment.SetEnvironmentVariable("IAW__Workspace", null);
@@ -39,6 +60,7 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
     [Trait("Category", "E2E")]
     public async Task Execute_CreatesHelloWorldProject()
     {
+        Assert.SkipWhen(!_ollamaAvailable, "Ollama not available at localhost:11434");
         var ct = TestContext.Current.CancellationToken;
         var testId = Guid.NewGuid().ToString("N")[..8];
 
@@ -76,6 +98,7 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
     [Trait("Category", "E2E")]
     public async Task Thread_AnswersSimpleQuestionDirectly()
     {
+        Assert.SkipWhen(!_ollamaAvailable, "Ollama not available at localhost:11434");
         var ct = TestContext.Current.CancellationToken;
         var testId = Guid.NewGuid().ToString("N")[..8];
 
