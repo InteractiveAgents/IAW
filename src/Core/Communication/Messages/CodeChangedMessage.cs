@@ -11,4 +11,6 @@ public record CodeChangedMessage(
     [Id(3)] public string SourceAgentId { get; init; } = string.Empty;
     [Id(4)] public string CorrelationId { get; init; } = Guid.NewGuid().ToString();
     [Id(5)] public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
+    [Id(6)] public IReadOnlyList<string> FilePaths { get; init; } =
+        FilePath is not null ? [FilePath] : [];
 }
