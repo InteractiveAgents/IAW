@@ -80,32 +80,45 @@ public class CodeOrchestratorAgent(
         - To include it in result.json, use it as-is: `summary = result`
         - Specialized methods like `IDotNet.BuildAsync()` return typed results (e.g., `BuildRunResult`).
 
-        COMPLETE EXAMPLE (create files and build a project):
+        COMPLETE EXAMPLE (create a project with files and build it):
         ```
+        // WRITE FILES DIRECTLY — do NOT use agents to generate file content.
+        // You already know what code to write, so write it with File.WriteAllText.
+        Directory.CreateDirectory("D:/MyApp");
+
+        File.WriteAllText("D:/MyApp/MyApp.csproj", @"<Project Sdk=""Microsoft.NET.Sdk"">
+          <PropertyGroup>
+            <OutputType>Exe</OutputType>
+            <TargetFramework>net11.0</TargetFramework>
+          </PropertyGroup>
+        </Project>");
+
+        File.WriteAllText("D:/MyApp/Program.cs", @"Console.WriteLine(""Hello World"");");
+
+        // Use IShell or IDotNet only for EXECUTING commands (build, test, run)
         var shell = client.Get<IShell>(taskId);
-        var fileSystem = client.Get<IFileSystem>(taskId);
-
-        await shell.GetResponse("mkdir -p D:/MyApp", default);
-        await fileSystem.GetResponse("Write file D:/MyApp/Program.cs with content: Console.WriteLine(\"Hello\");", default);
-        await fileSystem.GetResponse("Write file D:/MyApp/MyApp.csproj with content: <Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net11.0</TargetFramework></PropertyGroup></Project>", default);
-
         var buildResult = await shell.GetResponse("cd D:/MyApp && dotnet build", default);
         Console.WriteLine(buildResult);
 
         var resultObj = new Dictionary<string, object> { ["status"] = "success", ["summary"] = buildResult, ["artifacts"] = new[] { "D:/MyApp" }, ["metrics"] = new Dictionary<string, object>() };
-        var json = JsonSerializer.Serialize(resultObj);
-        File.WriteAllText("result.json", json);
+        File.WriteAllText("result.json", JsonSerializer.Serialize(resultObj));
         ```
 
+        CRITICAL — FILE WRITING:
+        - Write files DIRECTLY with `File.WriteAllText()` and `Directory.CreateDirectory()`.
+        - Do NOT use IFileSystem, IShell, or any agent to write file content. You have full disk access.
+        - Do NOT use LLM agents (ISonnet46, IGpt4oMini, etc.) to generate code. YOU generate the code directly.
+        - Use agents ONLY for: building (IDotNet.BuildAsync), running tests (IDotNet.TestAsync),
+          executing shell commands (IShell), git operations (IGit), and analysis (IRoslyn).
+
         RULES:
-        - Get agents via `client.Get<IInterfaceName>(taskId)` — creates isolated agent instances scoped to this task.
+        - Get agents via `client.Get<IInterfaceName>(taskId)` — isolated instances per task.
         - `GetResponse()` returns `string`. Always. Never call properties on it.
         - For parallel work use `await Task.WhenAll(task1, task2)`.
         - Always write result.json with status, summary, artifacts, and metrics fields.
         - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
         - Wrap everything in try/catch, write error to result.json in catch.
-        - Pick the MOST SPECIALIZED agent for the task — don't use IShell when a domain agent exists.
-        - For result.json, use Dictionary: `new Dictionary<string, object> { ["status"] = "success", ["summary"] = result }`
+        - For result.json use Dictionary: `new Dictionary<string, object> { ["status"] = "success", ["summary"] = result }`
 
         {{agentCatalog}}
         """;
