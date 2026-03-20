@@ -23,7 +23,12 @@ public static class IAWClientExtensions
 
         var clusterId = builder.Configuration["Orleans:ClusterId"] ?? "dev";
         var serviceId = builder.Configuration["Orleans:ServiceId"] ?? "dev";
-        builder.UseOrleansClient(client => client.UseLocalhostClustering(clusterId: clusterId, serviceId: serviceId));
+        builder.UseOrleansClient(client =>
+        {
+            client.UseLocalhostClustering(clusterId: clusterId, serviceId: serviceId);
+            client.Configure<Orleans.Configuration.ClientMessagingOptions>(msg =>
+                msg.ResponseTimeout = TimeSpan.FromMinutes(5));
+        });
 
         return builder;
     }

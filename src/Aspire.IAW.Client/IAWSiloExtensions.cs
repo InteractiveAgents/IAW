@@ -27,6 +27,8 @@ public static class IAWSiloExtensions
         {
             silo.Configure<Orleans.Configuration.EndpointOptions>(ep =>
                 ep.AdvertisedIPAddress = System.Net.IPAddress.Loopback);
+            silo.Configure<Orleans.Configuration.SiloMessagingOptions>(msg =>
+                msg.ResponseTimeout = TimeSpan.FromMinutes(5));
             silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
             silo.AddStateMachineStorage();
             silo.AddDashboard();
