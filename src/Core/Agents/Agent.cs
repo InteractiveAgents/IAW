@@ -44,6 +44,7 @@ public abstract partial class Agent(
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
     protected virtual int MaxHistoryMessages => 100;
+    protected virtual int MaxOutputTokens => 4096;
     protected IChatClient ChatClient => chatClient;
     protected IDurableList<ChatMessage> History => durableState.History;
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
@@ -62,7 +63,8 @@ public abstract partial class Agent(
         _chatOptions = new ChatOptions
         {
             Instructions = Instructions,
-            Tools = GetAllTools().ToList()
+            Tools = GetAllTools().ToList(),
+            MaxOutputTokens = MaxOutputTokens
         };
         _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
