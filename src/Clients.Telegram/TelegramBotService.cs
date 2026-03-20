@@ -4,6 +4,7 @@ using Core.AI;
 using Core.Contracts;
 using Core.Contracts.UI;
 using Core.Services;
+using IAW.Agents.Orchestration;
 using Microsoft.Extensions.Options;
 using Telegram;
 using Telegram.BotAPI;
@@ -25,15 +26,11 @@ public sealed class TelegramBotService(
 {
     static readonly int ColorPurple = 0xCB86DB;
     static readonly int ColorBlue = 0x6FB9F0;
-    static readonly int ColorGreen = 0x8EEE98;
-    static readonly int ColorOrange = 0xFB6F5F;
 
     static readonly (string Slug, string Name, int Color)[] PredefinedTopics =
     [
         ("personal", "Personal", ColorPurple),
         ("iaw", "IAW", ColorBlue),
-        ("scheduled", "Scheduled", ColorGreen),
-        ("notifications", "Notifications", ColorOrange),
     ];
 
     public async Task HandleUpdateAsync(Update update, CancellationToken ct)
@@ -123,13 +120,13 @@ public sealed class TelegramBotService(
             // Future: route to UISession free-text handler
         }
 
-        var (project, _) = await ResolveProjectAsync(telegramId, topicId, ct);
+        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
         var chatMessage = BuildChatMessage(text);
 
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
+        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
     }
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -188,17 +185,6 @@ public sealed class TelegramBotService(
 
         switch (parts[1])
         {
-            case "projects" when action == "new":
-                await botClient.SendMessageAsync(chatId, "What should the project be called?");
-                var session = clusterClient.GetGrain<IUISession>(from.Id.ToString());
-                var formFields = new FormField[]
-                {
-                    new("project-name", "What should the project be called?",
-                        FormFieldType.FreeText, null)
-                };
-                await session.StartForm("new-project", formFields, $"{from.Id}/general", ct);
-                break;
-
             case "status" when action == "show":
                 await HandleStatusCommandAsync(chatId, from.Id, null, ct);
                 break;
@@ -258,10 +244,9 @@ public sealed class TelegramBotService(
         await userProfile.RegisterProject("general", "general", ct);
         await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
 
-        var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n- Scheduled \u2014 recurring jobs dashboard\n- Notifications \u2014 system alerts\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview of all active work.";
+        var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview.";
         var welcomeButtons = new InlineKeyboardMarkup([
             [
-                new InlineKeyboardButton("+ New Project") { CallbackData = "cmd:projects:new" },
                 new InlineKeyboardButton("Status") { CallbackData = "cmd:status:show" }
             ]
         ]);
@@ -270,35 +255,14 @@ public sealed class TelegramBotService(
         try { await botClient.PinChatMessageAsync(chatId, welcomeMsg.MessageId); }
         catch (Exception ex) { logger.LogWarning(ex, "Could not pin welcome message"); }
 
-        var scheduledTopicId = await userProfile.GetTopicId("scheduled", ct);
-        if (scheduledTopicId is not null)
-        {
-            var dashboardText = "Active Schedules\n\nNo active jobs yet.\n\nLast updated: " + DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm");
-            var dashMsg = await botClient.SendMessageAsync(chatId, dashboardText, messageThreadId: scheduledTopicId);
-            try { await botClient.PinChatMessageAsync(chatId, dashMsg.MessageId); }
-            catch (Exception ex) { logger.LogWarning(ex, "Could not pin scheduled dashboard"); }
-            await userProfile.SetPreference(IAWConstants.StateKeys.ScheduledDashboardMsgId, dashMsg.MessageId.ToString(), ct);
-        }
-
-        var personalTopicId = await userProfile.GetTopicId("personal", ct);
-        if (personalTopicId is not null)
-        {
-            var personalProject = clusterClient.GetGrain<IProject>($"{telegramId}/personal");
-            try
-            {
-                await personalProject.ScheduleJob("Daily Weather", TimeSpan.FromHours(24), "Check the current weather and send a brief forecast", ct);
-            }
-            catch (Exception ex) { logger.LogWarning(ex, "Could not create default weather job"); }
-        }
-
         await userProfile.SetPreference(IAWConstants.StateKeys.SetupComplete, "true", ct);
         logger.LogInformation("Setup complete for user {TelegramId}", telegramId);
     }
 
     private async Task HandleClearCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
     {
-        var (project, _) = await ResolveProjectAsync(telegramId, topicId, ct);
-        await project.ClearHistory(ct);
+        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
+        await thread.ClearHistory(ct);
         await botClient.SendMessageAsync(chatId, "Conversation cleared.", messageThreadId: topicId);
     }
 
@@ -312,26 +276,24 @@ public sealed class TelegramBotService(
 
         foreach (var proj in projects)
         {
-            if (proj.Slug is "notifications") continue;
             var grainId = $"{telegramId}/{proj.Slug}";
-            var project = clusterClient.GetGrain<IProject>(grainId);
+            var thread = clusterClient.GetGrain<IThread>(grainId);
             try
             {
-                var dashboard = await project.GetDashboard(ct);
-                var activeTasks = dashboard.Tasks.Count(t => t.Status is ProjectTaskStatus.Pending or ProjectTaskStatus.InProgress);
-                var activeJobs = dashboard.Jobs.Count(j => j.Active);
-                if (activeTasks > 0 || activeJobs > 0)
-                    sb.AppendLine($"[{proj.Slug}] Tasks: {activeTasks} active, Jobs: {activeJobs} running");
+                var meta = await thread.GetMetadata(ct);
+                var history = await thread.GetHistory(ct);
+                if (history.Count > 0)
+                    sb.AppendLine($"[{proj.Slug}] {history.Count} messages");
             }
             catch { }
         }
 
-        if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active tasks or jobs.");
+        if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active threads.");
 
         await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
     }
 
-    private async Task<(IProject Project, string Slug)> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
+    private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
     {
         var userProfileId = telegramId.ToString();
         var userProfile = clusterClient.GetGrain<IUserProfile>(userProfileId);
@@ -345,7 +307,7 @@ public sealed class TelegramBotService(
         }
 
         var grainId = $"{userProfileId}/{projectSlug}";
-        return (clusterClient.GetGrain<IProject>(grainId), projectSlug);
+        return (clusterClient.GetGrain<IThread>(grainId), projectSlug);
     }
 
     private static ChatMessage BuildChatMessage(string text) => new()
@@ -509,8 +471,8 @@ public sealed class TelegramBotService(
         {
             await using var photoStream = await DownloadTelegramFileAsync(highestResPhoto.FileId, ct);
 
-            var (project, projectSlug) = await ResolveProjectAsync(telegramId, topicId, ct);
-            var blobPath = $"{telegramId}/{projectSlug}/{Guid.NewGuid()}-photo.jpg";
+            var (thread, threadSlug) = await ResolveThreadAsync(telegramId, topicId, ct);
+            var blobPath = $"{telegramId}/{threadSlug}/{Guid.NewGuid()}-photo.jpg";
 
             var blobUri = await blobFileStorage.UploadAsync(photoStream, blobPath, "image/jpeg");
 
@@ -520,7 +482,7 @@ public sealed class TelegramBotService(
                 Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
             };
 
-            await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
+            await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -541,9 +503,9 @@ public sealed class TelegramBotService(
         {
             await using var docStream = await DownloadTelegramFileAsync(document.FileId, ct);
 
-            var (project, projectSlug) = await ResolveProjectAsync(telegramId, topicId, ct);
+            var (thread, threadSlug) = await ResolveThreadAsync(telegramId, topicId, ct);
             var safeFileName = document.FileName ?? "document";
-            var blobPath = $"{telegramId}/{projectSlug}/{Guid.NewGuid()}-{safeFileName}";
+            var blobPath = $"{telegramId}/{threadSlug}/{Guid.NewGuid()}-{safeFileName}";
             var mimeType = document.MimeType ?? "application/octet-stream";
 
             var blobUri = await blobFileStorage.UploadAsync(docStream, blobPath, mimeType);
@@ -558,7 +520,7 @@ public sealed class TelegramBotService(
             if (!string.IsNullOrEmpty(message.Caption))
                 chatMessage.Parts.Add(new TextContent(message.Caption));
 
-            await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
+            await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -568,7 +530,7 @@ public sealed class TelegramBotService(
     }
 
     private async Task StreamResponseAsync(
-        long chatId, int messageId, int? topicId, IProject project, ChatMessage chatMessage, long telegramId, CancellationToken ct)
+        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct)
     {
         const int maxChars = 4000; // leave margin below Telegram's 4096 hard limit
         var buffer = new StringBuilder();
@@ -577,7 +539,7 @@ public sealed class TelegramBotService(
 
         try
         {
-            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
+            await foreach (var chunk in thread.GetResponseStream(chatMessage, ct))
             {
                 buffer.Append(chunk);
 
@@ -601,7 +563,7 @@ public sealed class TelegramBotService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error streaming response from project for user {TelegramId}", telegramId);
+            logger.LogError(ex, "Error streaming response from thread for user {TelegramId}", telegramId);
             buffer.Append("\n\n[Error communicating with assistant]");
         }
 

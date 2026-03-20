@@ -3,6 +3,7 @@ using ModelContextProtocol.Server;
 using System.ComponentModel;
 using Core.Contracts;
 using Core.Registry;
+using IAW.Agents.Orchestration;
 
 internal sealed class AgentTools(IClusterClient orleans)
 {
@@ -67,15 +68,15 @@ internal sealed class AgentTools(IClusterClient orleans)
     }
 
     [McpServerTool(Name = "assistant_chat")]
-    [Description("Send a message to the project assistant and get a response.")]
+    [Description("Send a message to a conversational thread and get a response.")]
     public async Task<string> AssistantChat(
         [Description("The message to send")] string message,
-        [Description("Project ID (default: general)")] string projectId = "general",
+        [Description("Thread slug (default: general)")] string threadSlug = "general",
         CancellationToken ct = default)
     {
-        var agent = ResolveAgent(projectId);
-        var response = await agent.GetResponse(message, ct);
-        return JsonSerializer.Serialize(new { agentId = projectId, response }, JsonOptions);
+        var thread = orleans.GetGrain<IThread>(threadSlug);
+        var response = await thread.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { threadSlug, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_send_message")]
@@ -105,16 +106,16 @@ internal sealed class AgentTools(IClusterClient orleans)
     }
 
     [McpServerTool(Name = "agent_assign_task")]
-    [Description("Assign a task to a project assistant for handling.")]
+    [Description("Assign a task to a thread for handling.")]
     public async Task<string> AgentAssignTask(
         [Description("Task description")] string task,
         [Description("Priority: low, medium, high")] string priority = "medium",
-        [Description("Project ID (default: general)")] string projectId = "general",
+        [Description("Thread slug (default: general)")] string threadSlug = "general",
         CancellationToken ct = default)
     {
-        var agent = ResolveAgent(projectId);
+        var thread = orleans.GetGrain<IThread>(threadSlug);
         var prompt = $"[TASK] Priority: {priority}\n\n{task}";
-        var response = await agent.GetResponse(prompt, ct);
+        var response = await thread.GetResponse(prompt, ct);
         return JsonSerializer.Serialize(new { task, priority, response }, JsonOptions);
     }
 
