@@ -1,7 +1,5 @@
 # IAW — Interactive Agents Web
 
-Your personal team of AI agents that collaborate, learn, and get things done.
-
 IAW is a customizable system of specialized AI agents that work together as your personal assistant. You talk to one — it orchestrates the rest. A code agent writes, a reviewer checks, a memory agent remembers, a build agent compiles. They share context, coordinate in real-time, and adapt to how you work.
 
 ## Why IAW
