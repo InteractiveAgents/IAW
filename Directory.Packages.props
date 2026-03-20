@@ -57,6 +57,8 @@
     <PackageVersion Include="ElBruno.LocalEmbeddings" Version="1.1.4" />
     <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.Build.Locator" Version="1.11.2" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0-preview.2.26159.112" />
     <PackageVersion Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Clustering.Cosmos" Version="10.0.1" />
