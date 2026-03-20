@@ -187,11 +187,11 @@ public class ShellAgent(
         await WriteStateAsync(ct);
 
         var eventName = result.ExitCode == 0 ? "command.completed" : "command.failed";
-        await PublishAsync(eventName, new Dictionary<string, object>
+        await PublishAsync(eventName, new Dictionary<string, string>
         {
             ["Command"] = command,
-            ["ExitCode"] = result.ExitCode,
-            ["DurationMs"] = (long)result.Duration.TotalMilliseconds
+            ["ExitCode"] = result.ExitCode.ToString(),
+            ["DurationMs"] = ((long)result.Duration.TotalMilliseconds).ToString()
         }, ct);
     }
 

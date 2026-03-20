@@ -61,7 +61,7 @@ public class KnowledgeAgent(
     {
         State["project-info"] = new StateEntry("project-info", JsonSerializer.Serialize(info));
         await WriteStateAsync();
-        await PublishAsync("project.info.updated", new Dictionary<string, object>
+        await PublishAsync("project.info.updated", new Dictionary<string, string>
         {
             ["Name"] = info.Name
         });
@@ -80,7 +80,7 @@ public class KnowledgeAgent(
         decisions.Add(new ProjectDecision(title, rationale, outcome, DateTimeOffset.UtcNow));
         State["decisions"] = new StateEntry("decisions", JsonSerializer.Serialize(decisions));
         await WriteStateAsync();
-        await PublishAsync("decision.recorded", new Dictionary<string, object> { ["Title"] = title });
+        await PublishAsync("decision.recorded", new Dictionary<string, string> { ["Title"] = title });
     }
 
     public Task<IReadOnlyList<ProjectDecision>> GetDecisions()
@@ -101,7 +101,7 @@ public class KnowledgeAgent(
         patterns.Add(new ProjectPattern(name, description, example));
         State["patterns"] = new StateEntry("patterns", JsonSerializer.Serialize(patterns));
         await WriteStateAsync();
-        await PublishAsync("pattern.added", new Dictionary<string, object> { ["Name"] = name });
+        await PublishAsync("pattern.added", new Dictionary<string, string> { ["Name"] = name });
     }
 
     public Task<IReadOnlyList<ProjectPattern>> GetPatterns()

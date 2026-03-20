@@ -183,7 +183,7 @@ public sealed class StreamSubscriber(
                 logger.LogInformation("Publishing dashboard update for project {ProjectKey}", projectKey);
                 await botService.SendNotificationAsync(
                     new AgentEvent("dashboard.updated", projectKey, Guid.NewGuid().ToString(),
-                        DateTimeOffset.UtcNow, new Dictionary<string, object>
+                        DateTimeOffset.UtcNow, new Dictionary<string, string>
                         {
                             ["renderedMarkdown"] = renderedMarkdown
                         }), ct);

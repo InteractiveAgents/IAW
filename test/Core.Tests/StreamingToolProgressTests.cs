@@ -69,6 +69,6 @@ public class StreamingToolProgressTests : AgentTest<ToolProgressTestAgent>
         var log = await agent.GetEventLog(ct);
         var llmEvent = log.FirstOrDefault(e => e.EventName == "LlmCall");
         Assert.NotNull(llmEvent);
-        Assert.Equal(5, (int)llmEvent.Payload["prompt_length"]);
+        Assert.Equal("5", llmEvent.Payload["prompt_length"]);
     }
 }

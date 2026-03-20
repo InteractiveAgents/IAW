@@ -62,10 +62,10 @@ public class FileSystemAgent(
         State["last-access"] = new StateEntry("last-access", DateTimeOffset.UtcNow.ToString("O"));
         await WriteStateAsync(ct);
 
-        await PublishAsync("file.read", new Dictionary<string, object>
+        await PublishAsync("file.read", new Dictionary<string, string>
         {
             ["Path"] = path,
-            ["SizeBytes"] = content.Length
+            ["SizeBytes"] = content.Length.ToString()
         }, ct);
 
         return content;
@@ -88,10 +88,10 @@ public class FileSystemAgent(
         await WriteStateAsync(ct);
 
         var eventName = fileExisted ? "file.written" : "file.created";
-        await PublishAsync(eventName, new Dictionary<string, object>
+        await PublishAsync(eventName, new Dictionary<string, string>
         {
             ["Path"] = path,
-            ["SizeBytes"] = content.Length
+            ["SizeBytes"] = content.Length.ToString()
         }, ct);
     }
 
@@ -127,14 +127,14 @@ public class FileSystemAgent(
 
         var comparison = await WorkspaceFiles.CompareDirectoriesAsync(dirA, dirB, ct);
 
-        await PublishAsync("directories.compared", new Dictionary<string, object>
+        await PublishAsync("directories.compared", new Dictionary<string, string>
         {
             ["DirA"] = dirA,
             ["DirB"] = dirB,
-            ["OnlyInFirst"] = comparison.OnlyInFirst.Length,
-            ["OnlyInSecond"] = comparison.OnlyInSecond.Length,
-            ["Different"] = comparison.DifferentFiles.Length,
-            ["Identical"] = comparison.IdenticalFiles.Length
+            ["OnlyInFirst"] = comparison.OnlyInFirst.Length.ToString(),
+            ["OnlyInSecond"] = comparison.OnlyInSecond.Length.ToString(),
+            ["Different"] = comparison.DifferentFiles.Length.ToString(),
+            ["Identical"] = comparison.IdenticalFiles.Length.ToString()
         }, ct);
 
         return comparison;

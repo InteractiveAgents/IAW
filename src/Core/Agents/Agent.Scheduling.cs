@@ -91,7 +91,7 @@ public abstract partial class Agent : IRemindable
         var updated = job with { LastRunAt = DateTimeOffset.UtcNow, LastResult = result };
         durableState.ScheduledJobs[job.Name] = updated;
 
-        await PublishAsync(IAWConstants.Events.JobCompleted, new Dictionary<string, object>
+        await PublishAsync(IAWConstants.Events.JobCompleted, new Dictionary<string, string>
         {
             ["JobName"] = job.Name,
             ["Result"] = result

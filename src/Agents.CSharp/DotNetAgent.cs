@@ -58,13 +58,13 @@ public partial class DotNetAgent(
         var diagnostics = ExtractBuildDiagnostics(fullOutput);
         var succeeded = process.ExitCode == 0;
 
-        await PublishAsync(succeeded ? "build.succeeded" : "build.failed", new Dictionary<string, object>
+        await PublishAsync(succeeded ? "build.succeeded" : "build.failed", new Dictionary<string, string>
         {
             ["ProjectPath"] = projectPath,
             ["Configuration"] = configuration,
-            ["Warnings"] = warnings,
-            ["Errors"] = errors,
-            ["DurationMs"] = (long)sw.Elapsed.TotalMilliseconds
+            ["Warnings"] = warnings.ToString(),
+            ["Errors"] = errors.ToString(),
+            ["DurationMs"] = ((long)sw.Elapsed.TotalMilliseconds).ToString()
         }, ct);
 
         return new BuildRunResult(succeeded, fullOutput, warnings, errors, sw.Elapsed, diagnostics);
@@ -142,12 +142,12 @@ public partial class DotNetAgent(
         await WriteStateAsync(ct);
 
         var eventName = allPassed ? "tests.passed" : "tests.failed";
-        await PublishAsync(eventName, new Dictionary<string, object>
+        await PublishAsync(eventName, new Dictionary<string, string>
         {
             ["SolutionPath"] = solutionPath,
-            ["Total"] = total,
-            ["Passed"] = passed,
-            ["Failed"] = failed
+            ["Total"] = total.ToString(),
+            ["Passed"] = passed.ToString(),
+            ["Failed"] = failed.ToString()
         }, ct);
 
         return result;
@@ -168,12 +168,12 @@ public partial class DotNetAgent(
             State["editorconfig-source"] = new StateEntry("editorconfig-source", EditorConfigUrl);
         await WriteStateAsync(ct);
 
-        await PublishAsync("code.formatted", new Dictionary<string, object>
+        await PublishAsync("code.formatted", new Dictionary<string, string>
         {
             ["SolutionPath"] = solutionPath,
-            ["Success"] = success,
+            ["Success"] = success.ToString(),
             ["ChangedFiles"] = string.Join(",", changedFiles),
-            ["EditorConfigCreated"] = editorConfigCreated
+            ["EditorConfigCreated"] = editorConfigCreated.ToString()
         }, ct);
 
         var summary = editorConfigCreated

@@ -9,10 +9,10 @@ namespace IAW.Core;
 
 public abstract partial class Agent
 {
-    public Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<AgentEvent>>([.. durableState.EventLog]);
+    public Task<List<AgentEvent>> GetEventLog(CancellationToken ct = default)
+        => Task.FromResult(durableState.EventLog.ToList());
 
-    protected async Task PublishAsync(string eventName, Dictionary<string, object>? payload = null, CancellationToken ct = default)
+    protected async Task PublishAsync(string eventName, Dictionary<string, string>? payload = null, CancellationToken ct = default)
     {
         using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.publish");
         activity?.SetTag("event.name", eventName);
@@ -45,7 +45,7 @@ public abstract partial class Agent
 
         var agentEvent = new AgentEvent(
             streamName, evt.SourceAgentId, evt.CorrelationId,
-            evt.Timestamp, new Dictionary<string, object> { ["typed_payload"] = evt });
+            evt.Timestamp, new Dictionary<string, string> { ["typed_payload"] = typeof(TEvent).Name });
 
         durableState.EventLog.Add(agentEvent);
         await WriteStateAsync(ct);
@@ -76,7 +76,7 @@ public abstract partial class Agent
 
         durableState.EventLog.Add(new AgentEvent(
             typeof(TEvent).Name, evt.SourceAgentId, evt.CorrelationId,
-            evt.Timestamp, new Dictionary<string, object> { ["taskId"] = taskId }));
+            evt.Timestamp, new Dictionary<string, string> { ["taskId"] = taskId }));
         await WriteStateAsync(ct);
 
         AgentTelemetry.EventsPublished.Add(1, new TagList { { "event.name", typeof(TEvent).Name }, { "agent.type", GetType().Name } });

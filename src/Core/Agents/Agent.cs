@@ -152,7 +152,7 @@ public abstract partial class Agent(
             var correlationId = activity?.TraceId.ToString() ?? Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
             durableState.EventLog.Add(new AgentEvent(
                 "LlmCall", this.GetPrimaryKeyString(), correlationId,
-                DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
+                DateTimeOffset.UtcNow, new Dictionary<string, string> { ["prompt_length"] = prompt.Length.ToString() }));
 
             await WriteStateAsync(cancellationToken);
             completed = true;

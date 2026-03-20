@@ -65,7 +65,7 @@ public class GitAgent(
         await UpdateFileChurn(repoPath, ct);
         await WriteStateAsync(ct);
 
-        await PublishAsync("commit.created", new Dictionary<string, object>
+        await PublishAsync("commit.created", new Dictionary<string, string>
         {
             ["RepoPath"] = repoPath,
             ["Message"] = message
@@ -91,7 +91,7 @@ public class GitAgent(
         IncrementCounter("total-reverts");
         await WriteStateAsync(ct);
 
-        await PublishAsync("revert.completed", new Dictionary<string, object>
+        await PublishAsync("revert.completed", new Dictionary<string, string>
         {
             ["RepoPath"] = repoPath,
             ["CommitHash"] = commitHash

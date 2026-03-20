@@ -90,7 +90,7 @@ public class GitHubAgent(
                 State["last-tag"] = new StateEntry("last-tag", latest.TagName);
                 await WriteStateAsync();
 
-                await PublishAsync("github.release", new Dictionary<string, object>
+                await PublishAsync("github.release", new Dictionary<string, string>
                 {
                     ["Repo"] = repo,
                     ["TagName"] = latest.TagName,

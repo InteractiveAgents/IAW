@@ -24,7 +24,7 @@ public class AutoLoggingTests : AgentTest<TestAgent>
         var log = await agent.GetEventLog(ct);
         var entry = log.Single(e => e.EventName == "LlmCall");
         Assert.True(entry.Payload.ContainsKey("prompt_length"));
-        Assert.Equal(5, (int)entry.Payload["prompt_length"]);
+        Assert.Equal("5", entry.Payload["prompt_length"]);
     }
 
     [Fact]

@@ -32,7 +32,7 @@ public interface IAgent : IGrainWithStringKey
     Task<AgentCapabilities> GetCapabilities(CancellationToken ct);
 
     // Events
-    Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct);
+    Task<List<AgentEvent>> GetEventLog(CancellationToken ct);
 
     // Streams
     Task<IReadOnlyList<string>> GetActiveSubscriptions(CancellationToken ct);

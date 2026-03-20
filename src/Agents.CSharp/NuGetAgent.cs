@@ -76,7 +76,7 @@ public class NuGetAgent(
                     State[$"outdated:{packageId}"] = new StateEntry(
                         $"outdated:{packageId}", $"{currentVersion}|{latestVersion}");
 
-                    await PublishAsync("dependency.updated", new Dictionary<string, object>
+                    await PublishAsync("dependency.updated", new Dictionary<string, string>
                     {
                         ["PackageId"] = packageId,
                         ["CurrentVersion"] = currentVersion,
