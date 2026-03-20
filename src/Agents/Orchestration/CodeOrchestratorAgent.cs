@@ -196,7 +196,7 @@ public class CodeOrchestratorAgent(
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"build \"{taskDir}\" --no-restore",
+            Arguments = $"build \"{taskDir}\"",
             WorkingDirectory = taskDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
