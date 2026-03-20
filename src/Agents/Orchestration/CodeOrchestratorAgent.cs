@@ -43,7 +43,7 @@ public class CodeOrchestratorAgent(
 
     static string BuildInstructions(string agentCatalog)
     {
-        return $"""
+        return $$"""
         You generate standalone C# console apps. Output ONLY valid C# code. No markdown. No explanation.
 
         TEMPLATE (always start with this exact boilerplate):
@@ -68,25 +68,46 @@ public class CodeOrchestratorAgent(
         var client = host.Services.GetRequiredService<IClusterClient>();
         var taskId = "task-" + Guid.NewGuid().ToString("N");
 
-        // Use client.Get<IAgentInterface>(taskId) to create isolated agent instances
         // YOUR CODE HERE
 
         await host.StopAsync();
         ```
 
-        RULES:
-        - Use `builder.AddIAWClient()` from namespace `Aspire.IAW` to connect to the cluster.
-        - Add `using Core;` at the top to access the `Get<T>()` extension methods.
-        - Create a `taskId` variable at the start: `var taskId = "task-" + Guid.NewGuid().ToString("N");`
-        - Get agents via `client.Get<IInterfaceName>(taskId)` — this creates isolated agent instances scoped to this task.
-        - Call await agent.GetResponse("prompt", default) to talk to agents. Use `default` for CancellationToken.
-        - Always write result.json with status, summary, artifacts, and metrics fields
-        - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
-        - Use simple string operations, not complex LINQ chains
-        - Wrap everything in try/catch, write error to result.json in catch
-        - Pick the MOST SPECIALIZED agent for the task — don't use IShell when a domain agent exists
+        CRITICAL — RETURN TYPES:
+        - `agent.GetResponse("prompt", default)` returns `string` — plain text, NOT a structured object.
+        - Do NOT call .Summary, .Status, .Content, or ANY property on the result. It is a string.
+        - Use the string directly: `var result = await agent.GetResponse("...", default);`
+        - To include it in result.json, use it as-is: `summary = result`
+        - Specialized methods like `IDotNet.BuildAsync()` return typed results (e.g., `BuildRunResult`).
 
-        {agentCatalog}
+        COMPLETE EXAMPLE (create files and build a project):
+        ```
+        var shell = client.Get<IShell>(taskId);
+        var fileSystem = client.Get<IFileSystem>(taskId);
+
+        await shell.GetResponse("mkdir -p D:/MyApp", default);
+        await fileSystem.GetResponse("Write file D:/MyApp/Program.cs with content: Console.WriteLine(\"Hello\");", default);
+        await fileSystem.GetResponse("Write file D:/MyApp/MyApp.csproj with content: <Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net11.0</TargetFramework></PropertyGroup></Project>", default);
+
+        var buildResult = await shell.GetResponse("cd D:/MyApp && dotnet build", default);
+        Console.WriteLine(buildResult);
+
+        var resultObj = new Dictionary<string, object> { ["status"] = "success", ["summary"] = buildResult, ["artifacts"] = new[] { "D:/MyApp" }, ["metrics"] = new Dictionary<string, object>() };
+        var json = JsonSerializer.Serialize(resultObj);
+        File.WriteAllText("result.json", json);
+        ```
+
+        RULES:
+        - Get agents via `client.Get<IInterfaceName>(taskId)` — creates isolated agent instances scoped to this task.
+        - `GetResponse()` returns `string`. Always. Never call properties on it.
+        - For parallel work use `await Task.WhenAll(task1, task2)`.
+        - Always write result.json with status, summary, artifacts, and metrics fields.
+        - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
+        - Wrap everything in try/catch, write error to result.json in catch.
+        - Pick the MOST SPECIALIZED agent for the task — don't use IShell when a domain agent exists.
+        - For result.json, use Dictionary: `new Dictionary<string, object> { ["status"] = "success", ["summary"] = result }`
+
+        {{agentCatalog}}
         """;
     }
 
@@ -114,12 +135,29 @@ public class CodeOrchestratorAgent(
 
             await File.WriteAllTextAsync(Path.Combine(taskDir, "plan.md"), prompt, ct);
 
+            var csprojContent = GenerateCsproj();
+            await File.WriteAllTextAsync(Path.Combine(taskDir, "orchestration.csproj"), csprojContent, ct);
+
             var code = await GenerateCode(prompt, ct);
             var codePath = Path.Combine(taskDir, "orchestration.cs");
             await File.WriteAllTextAsync(codePath, code, ct);
 
-            var csprojContent = GenerateCsproj();
-            await File.WriteAllTextAsync(Path.Combine(taskDir, "orchestration.csproj"), csprojContent, ct);
+            // compile-retry loop: build first, if errors feed them back to LLM
+            const int maxRetries = 2;
+            for (var attempt = 0; attempt <= maxRetries; attempt++)
+            {
+                var buildErrors = await TryBuild(taskDir, ct);
+                if (buildErrors is null) break; // clean build
+
+                if (attempt == maxRetries)
+                {
+                    await File.WriteAllTextAsync(Path.Combine(taskDir, "log.txt"), buildErrors, ct);
+                    return $"Code generation failed after {maxRetries + 1} attempts.\nWorkspace: {taskDir}\nBuild errors:\n{buildErrors}";
+                }
+
+                code = await RegenerateCode(prompt, code, buildErrors, ct);
+                await File.WriteAllTextAsync(codePath, code, ct);
+            }
 
             var (exitCode, log) = await ExecuteProject(taskDir, ct);
             await File.WriteAllTextAsync(Path.Combine(taskDir, "log.txt"), log, ct);
@@ -151,6 +189,62 @@ public class CodeOrchestratorAgent(
         {
             return $"CodeOrchestrator error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}";
         }
+    }
+
+    private async Task<string?> TryBuild(string taskDir, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"build \"{taskDir}\" --no-restore",
+            WorkingDirectory = taskDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = new Process { StartInfo = psi };
+        process.Start();
+        var output = await process.StandardOutput.ReadToEndAsync(ct);
+        var error = await process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct);
+
+        if (process.ExitCode == 0) return null; // clean build
+
+        var fullOutput = output + error;
+        // extract just the error lines
+        var errorLines = fullOutput.Split('\n')
+            .Where(l => l.Contains(": error "))
+            .Take(15)
+            .ToList();
+
+        return errorLines.Count > 0
+            ? string.Join("\n", errorLines)
+            : (fullOutput.Length > 2000 ? fullOutput[^2000..] : fullOutput);
+    }
+
+    private async Task<string> RegenerateCode(string plan, string previousCode, string buildErrors, CancellationToken ct)
+    {
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
+            new(Microsoft.Extensions.AI.ChatRole.User, plan),
+            new(Microsoft.Extensions.AI.ChatRole.Assistant, previousCode),
+            new(Microsoft.Extensions.AI.ChatRole.User,
+                $"The code above has build errors. Fix them and output the COMPLETE corrected code.\n\nBuild errors:\n{buildErrors}\n\nREMEMBER: GetResponse() returns string, not a structured object. Do NOT call .Summary, .Status, or any property on it.")
+        };
+        var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = 4096 };
+        var response = await ChatClient.GetResponseAsync(messages, options, ct);
+        var code = (response.Text ?? "").Trim();
+        if (code.StartsWith("```"))
+        {
+            var firstNewline = code.IndexOf('\n');
+            code = code[(firstNewline + 1)..];
+        }
+        if (code.EndsWith("```"))
+            code = code[..^3].TrimEnd();
+        return code;
     }
 
     private async Task<string> GenerateCode(string plan, CancellationToken ct)
