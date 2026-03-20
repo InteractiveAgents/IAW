@@ -130,6 +130,169 @@ public class CodeModificationTools(Func<string> getWorkspacePath)
         return $"Added method to '{className}' in {Path.GetFileName(resolvedPath)}";
     }
 
+    [Description("Add an auto-property to an existing class, record, or struct in a C# file.")]
+    public async Task<string> AddPropertyAsync(
+        [Description("Path to the C# file")] string filePath,
+        [Description("Name of the class/record/struct to add the property to")] string className,
+        [Description("Type of the property (e.g. 'string', 'int')")] string propertyType,
+        [Description("Name of the property")] string propertyName)
+    {
+        var resolvedPath = ResolvePath(filePath);
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var source = await File.ReadAllTextAsync(resolvedPath);
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = (CompilationUnitSyntax)await tree.GetRootAsync();
+
+        var targetType = root.DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .FirstOrDefault(t => t.Identifier.Text == className);
+
+        if (targetType is null)
+            return $"Type '{className}' not found in {Path.GetFileName(resolvedPath)}";
+
+        var property = SyntaxFactory.PropertyDeclaration(
+                SyntaxFactory.ParseTypeName(propertyType), propertyName)
+            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+            .AddAccessorListAccessors(
+                SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)),
+                SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                    .WithSemicolonToken(SyntaxFactory.Token(SyntaxKind.SemicolonToken)));
+
+        var updatedType = targetType.AddMembers(property);
+        var updatedRoot = root.ReplaceNode(targetType, updatedType);
+
+        var formatted = FormatNode(updatedRoot);
+        await File.WriteAllTextAsync(resolvedPath, formatted.ToFullString());
+        return $"Added property '{propertyType} {propertyName}' to '{className}' in {Path.GetFileName(resolvedPath)}";
+    }
+
+    [Description("Remove a member (method, property, or field) from a class, record, or struct in a C# file.")]
+    public async Task<string> RemoveMemberAsync(
+        [Description("Path to the C# file")] string filePath,
+        [Description("Name of the class/record/struct")] string className,
+        [Description("Name of the member to remove")] string memberName)
+    {
+        var resolvedPath = ResolvePath(filePath);
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var source = await File.ReadAllTextAsync(resolvedPath);
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = (CompilationUnitSyntax)await tree.GetRootAsync();
+
+        var targetType = root.DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .FirstOrDefault(t => t.Identifier.Text == className);
+
+        if (targetType is null)
+            return $"Type '{className}' not found in {Path.GetFileName(resolvedPath)}";
+
+        var memberToRemove = targetType.Members.FirstOrDefault(m => m switch
+        {
+            MethodDeclarationSyntax method => method.Identifier.Text == memberName,
+            PropertyDeclarationSyntax prop => prop.Identifier.Text == memberName,
+            FieldDeclarationSyntax field => field.Declaration.Variables.Any(v => v.Identifier.Text == memberName),
+            _ => false
+        });
+
+        if (memberToRemove is null)
+            return $"Member '{memberName}' not found in '{className}'";
+
+        var updatedType = targetType.RemoveNode(memberToRemove, SyntaxRemoveOptions.KeepNoTrivia)!;
+        var updatedRoot = root.ReplaceNode(targetType, updatedType);
+
+        var formatted = FormatNode(updatedRoot);
+        await File.WriteAllTextAsync(resolvedPath, formatted.ToFullString());
+        return $"Removed member '{memberName}' from '{className}' in {Path.GetFileName(resolvedPath)}";
+    }
+
+    [Description("Replace the body of an existing method in a class, record, or struct.")]
+    public async Task<string> ModifyMethodAsync(
+        [Description("Path to the C# file")] string filePath,
+        [Description("Name of the class/record/struct")] string className,
+        [Description("Name of the method to modify")] string methodName,
+        [Description("New method body statements (without surrounding braces)")] string newBody)
+    {
+        var resolvedPath = ResolvePath(filePath);
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var source = await File.ReadAllTextAsync(resolvedPath);
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = (CompilationUnitSyntax)await tree.GetRootAsync();
+
+        var targetType = root.DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .FirstOrDefault(t => t.Identifier.Text == className);
+
+        if (targetType is null)
+            return $"Type '{className}' not found in {Path.GetFileName(resolvedPath)}";
+
+        var method = targetType.Members
+            .OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault(m => m.Identifier.Text == methodName);
+
+        if (method is null)
+            return $"Method '{methodName}' not found in '{className}'";
+
+        var bodyText = newBody.TrimStart().StartsWith('{') ? newBody : $"{{ {newBody} }}";
+        var parsedBody = SyntaxFactory.ParseStatement(bodyText) as BlockSyntax;
+
+        if (parsedBody is null)
+            return $"Failed to parse new body for method '{methodName}'";
+
+        var updatedMethod = method.WithBody(parsedBody);
+        var updatedRoot = root.ReplaceNode(method, updatedMethod);
+
+        var formatted = FormatNode(updatedRoot);
+        await File.WriteAllTextAsync(resolvedPath, formatted.ToFullString());
+        return $"Modified method '{methodName}' in '{className}' in {Path.GetFileName(resolvedPath)}";
+    }
+
+    [Description("Add a parameter to an existing method in a class, record, or struct.")]
+    public async Task<string> AddParameterAsync(
+        [Description("Path to the C# file")] string filePath,
+        [Description("Name of the class/record/struct")] string className,
+        [Description("Name of the method to add the parameter to")] string methodName,
+        [Description("Type of the parameter (e.g. 'string', 'int')")] string paramType,
+        [Description("Name of the parameter")] string paramName)
+    {
+        var resolvedPath = ResolvePath(filePath);
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var source = await File.ReadAllTextAsync(resolvedPath);
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = (CompilationUnitSyntax)await tree.GetRootAsync();
+
+        var targetType = root.DescendantNodes()
+            .OfType<TypeDeclarationSyntax>()
+            .FirstOrDefault(t => t.Identifier.Text == className);
+
+        if (targetType is null)
+            return $"Type '{className}' not found in {Path.GetFileName(resolvedPath)}";
+
+        var method = targetType.Members
+            .OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault(m => m.Identifier.Text == methodName);
+
+        if (method is null)
+            return $"Method '{methodName}' not found in '{className}'";
+
+        var newParameter = SyntaxFactory.Parameter(SyntaxFactory.Identifier(paramName))
+            .WithType(SyntaxFactory.ParseTypeName(paramType + " "));
+
+        var updatedMethod = method.AddParameterListParameters(newParameter);
+        var updatedRoot = root.ReplaceNode(method, updatedMethod);
+
+        var formatted = FormatNode(updatedRoot);
+        await File.WriteAllTextAsync(resolvedPath, formatted.ToFullString());
+        return $"Added parameter '{paramType} {paramName}' to method '{methodName}' in '{className}' in {Path.GetFileName(resolvedPath)}";
+    }
+
     static MethodDeclarationSyntax? ParseMethodFromSignatureAndBody(string signature, string body)
     {
         // wrap the signature and body into a class so Roslyn can parse it as a complete member
