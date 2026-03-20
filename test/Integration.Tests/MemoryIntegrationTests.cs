@@ -1,4 +1,3 @@
-using Core.Orchestration;
 using IAW.Agents.Memory;
 using IAW.Testing;
 using Xunit;
@@ -7,16 +6,6 @@ namespace IAW.Integration.Tests;
 
 public class MemoryIntegrationTests : AgentTest<UserMemoryAgent>
 {
-    [Fact]
-    public void InterfaceCatalog_discovers_all_Memory_agents()
-    {
-        var catalog = InterfaceCatalog.Discover();
-        var memoryInterfaces = new[] { "IUserMemory", "IProjectMemory", "IPatternMemory", "IEpisodeMemory", "ICodeMemory" };
-
-        foreach (var name in memoryInterfaces)
-            Assert.Contains(catalog, e => e.InterfaceName == name);
-    }
-
     [Fact]
     public async Task Memory_agent_responds_to_prompts()
     {

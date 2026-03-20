@@ -4,7 +4,6 @@ using Core.Contracts;
 using Core.Messages;
 using Core.Messages.Events;
 using Core.Models;
-using Core.Orchestration;
 using IAW.Agents.Orchestration;
 using Xunit;
 
@@ -71,22 +70,6 @@ public class ArchitectureGuardV2Tests
     {
         var methods = typeof(IAgent).GetMethods();
         Assert.DoesNotContain(methods, m => m.Name == "HandleEvent");
-    }
-
-    [Fact]
-    public void InterfaceCatalog_discovers_LLM_agents()
-    {
-        var catalog = InterfaceCatalog.Discover();
-        Assert.Contains(catalog, e => e.InterfaceName == "IOpus46");
-        Assert.Contains(catalog, e => e.InterfaceName == "ISonnet46");
-    }
-
-    [Fact]
-    public void InterfaceCatalog_discovers_Memory_agents()
-    {
-        var catalog = InterfaceCatalog.Discover();
-        Assert.Contains(catalog, e => e.InterfaceName == "IUserMemory");
-        Assert.Contains(catalog, e => e.InterfaceName == "IProjectMemory");
     }
 
     [Fact]

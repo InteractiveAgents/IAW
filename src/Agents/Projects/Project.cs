@@ -6,7 +6,7 @@ using Core.AI;
 using Core.AI.Models;
 using Core.Context;
 using Core.Contracts;
-using Core.Orchestration;
+using Core.Registry;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -381,14 +381,17 @@ public class Project(
         [Description("The prompt to send to all models")] string prompt,
         [Description("Model names to compare (e.g. 'gpt54mini,sonnet46,claude45haiku'). Use 'all' for all configured LLM agents.")] string models = "all")
     {
-        var catalog = InterfaceCatalog.Discover();
+        var registry = GrainFactory.GetGrain<IAgentRegistry>("global");
+        var allAgents = await registry.GetAllAsync(CancellationToken.None);
+
         var llmAgentType = typeof(LlmAgentBase);
-        var llmEntries = catalog.Where(e =>
+        var llmRecords = allAgents.Where(r =>
         {
             var implementor = AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-                .FirstOrDefault(t => t is { IsAbstract: false, IsClass: true } && e.InterfaceType.IsAssignableFrom(t));
-            return implementor is not null && llmAgentType.IsAssignableFrom(implementor);
+                .FirstOrDefault(t => t is { IsAbstract: false, IsClass: true }
+                    && t.Name == r.AgentType && llmAgentType.IsAssignableFrom(t));
+            return implementor is not null;
         }).ToList();
 
         if (!models.Equals("all", StringComparison.OrdinalIgnoreCase))
@@ -396,15 +399,23 @@ public class Project(
             var requested = models.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(m => m.ToLowerInvariant().Replace("-", "").Replace(".", "").Replace(" ", ""))
                 .ToHashSet();
-            llmEntries = llmEntries.Where(e => requested.Contains(e.GrainId.Replace("-", ""))).ToList();
+            llmRecords = llmRecords.Where(r => requested.Contains(r.AgentType.Replace("Agent", "").ToLowerInvariant())).ToList();
         }
 
-        if (llmEntries.Count == 0)
-            return $"No matching LLM agents found. Available: {string.Join(", ", catalog.Select(e => e.GrainId))}";
+        if (llmRecords.Count == 0)
+            return $"No matching LLM agents found. Available: {string.Join(", ", allAgents.Select(r => r.AgentType))}";
 
-        var tasks = llmEntries.Select(async entry =>
+        var interfaceTypeCache = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+            .Where(t => t.IsInterface && typeof(IAgent).IsAssignableFrom(t) && t != typeof(IAgent))
+            .ToDictionary(t => t.Name, t => t);
+
+        var tasks = llmRecords.Select(async record =>
         {
-            var agent = (IAgent)GrainFactory.GetGrain(entry.InterfaceType, entry.GrainId);
+            if (!interfaceTypeCache.TryGetValue(record.InterfaceName, out var interfaceType))
+                return new { Model = record.DisplayName, Response = "", DurationMs = 0L, InputTokens = 0L, OutputTokens = 0L, TotalTokens = 0L, Error = (string?)$"Interface {record.InterfaceName} not found" };
+
+            var agent = (IAgent)GrainFactory.GetGrain(interfaceType, record.InterfaceName.TrimStart('I').ToLowerInvariant());
             await agent.ClearHistory(CancellationToken.None);
             var sw = Stopwatch.StartNew();
             try
@@ -414,7 +425,7 @@ public class Project(
                 var usage = await agent.GetLastUsage(CancellationToken.None);
                 return new
                 {
-                    Model = entry.GrainId,
+                    Model = record.DisplayName,
                     Response = response,
                     DurationMs = sw.ElapsedMilliseconds,
                     InputTokens = usage?.InputTokens ?? 0,
@@ -428,7 +439,7 @@ public class Project(
                 sw.Stop();
                 return new
                 {
-                    Model = entry.GrainId,
+                    Model = record.DisplayName,
                     Response = "",
                     DurationMs = sw.ElapsedMilliseconds,
                     InputTokens = 0L,

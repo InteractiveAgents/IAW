@@ -1,6 +1,4 @@
-using Core.Communication;
 using Core.Contracts;
-using IAW.Core;
 
 namespace Core.Registry;
 
@@ -8,43 +6,60 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
 {
     public async Task Execute(CancellationToken ct)
     {
-        var registry = grainFactory.GetGrain<IAgentRegistryGrain>("global");
-        var agentTypes = DiscoverAgentTypes();
+        var registry = grainFactory.GetGrain<IAgentRegistry>("global");
 
-        foreach (var type in agentTypes)
+        foreach (var agentType in DiscoverAgentTypes())
         {
-            var registration = BuildRegistration(type);
-            await registry.RegisterAsync(registration);
+            var record = BuildRecord(agentType);
+            if (record is not null)
+                await registry.RegisterAsync(record, ct);
         }
     }
 
-    private static IEnumerable<Type> DiscoverAgentTypes() =>
+    static IEnumerable<Type> DiscoverAgentTypes() =>
         AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
-            .Where(t => t is { IsAbstract: false, IsClass: true } && t.IsSubclassOf(typeof(Agent)));
+            .Where(t => t is { IsAbstract: false, IsClass: true }
+                && t.IsSubclassOf(typeof(IAW.Core.Agent)));
 
-    private static AgentRegistration BuildRegistration(Type type)
+    static AgentRecord? BuildRecord(Type agentType)
     {
-        var pubs = type.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IStreamProducer<>))
-            .Select(i => i.GetGenericArguments()[0].Name)
-            .Distinct().ToArray();
-        var subs = type.GetInterfaces()
-            .Where(i => i.IsGenericType && (i.GetGenericTypeDefinition() == typeof(IReceiver<>) || i.GetGenericTypeDefinition() == typeof(IStreamConsumer<>)))
-            .Select(i => i.GetGenericArguments()[0].Name)
-            .Distinct().ToArray();
+        var agentInterface = agentType.GetInterfaces()
+            .FirstOrDefault(i => i != typeof(IAgent) && typeof(IAgent).IsAssignableFrom(i) && !i.IsGenericType);
 
-        return new AgentRegistration(
-            type.Name,
-            GetAgentShortName(type.Name),
-            "",
-            pubs, subs);
+        if (agentInterface is null)
+            return null;
+
+        var description = agentType.GetProperty("AgentDescription",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy)
+            ?.GetValue(null) as string ?? "";
+
+        var capabilities = agentType.GetProperty("AgentCapabilities",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.FlattenHierarchy)
+            ?.GetValue(null) as string[] ?? [];
+
+        var agentNamespace = ExtractNamespace(agentType);
+        var displayName = StripAgentSuffix(agentType.Name);
+
+        return new AgentRecord
+        {
+            Id = Guid.NewGuid(),
+            AgentType = agentType.Name,
+            Namespace = agentNamespace,
+            DisplayName = displayName,
+            Description = description,
+            Capabilities = capabilities,
+            InterfaceName = agentInterface.Name
+        };
     }
 
-    private static string GetAgentShortName(string typeName)
+    static string ExtractNamespace(Type type)
     {
-        var name = typeName;
-        if (name.EndsWith("Agent")) name = name[..^5];
-        return name;
+        var ns = type.Namespace ?? "unknown";
+        var lastDot = ns.LastIndexOf('.');
+        return lastDot >= 0 ? ns[(lastDot + 1)..].ToLowerInvariant() : ns.ToLowerInvariant();
     }
+
+    static string StripAgentSuffix(string typeName)
+        => typeName.EndsWith("Agent") ? typeName[..^5] : typeName;
 }

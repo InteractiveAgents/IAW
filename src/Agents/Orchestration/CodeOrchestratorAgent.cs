@@ -5,6 +5,7 @@ using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
 using Core.Orchestration;
+using Core.Registry;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
@@ -23,34 +24,29 @@ public class CodeOrchestratorAgent(
     public static string AgentDescription => "Generates and executes standalone C# console apps that call agent grains directly to fulfill complex orchestration tasks.";
     public static string[] AgentCapabilities => ["orchestrate", "execute", "generate", "csharp", "code", "automate"];
 
-    protected override string Instructions => BuildInstructions();
+    string _cachedInstructions = "";
 
-    private static string BuildInstructions()
+    protected override string Instructions => _cachedInstructions.Length > 0 ? _cachedInstructions : BuildFallbackInstructions();
+
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        var catalog = InterfaceCatalog.Discover();
-        var agentsByNamespace = catalog
-            .GroupBy(e => e.InterfaceType.Namespace ?? "Unknown")
-            .OrderBy(g => g.Key);
-
-        var agentSection = new StringBuilder();
-        agentSection.AppendLine("        Available agents (auto-discovered):");
-        agentSection.AppendLine("        Pick the most specialized agent for the task. Prefer domain-specific agents over general ones.");
-        agentSection.AppendLine();
-
-        foreach (var group in agentsByNamespace)
+        try
         {
-            var domain = group.Key.Split('.').LastOrDefault() ?? group.Key;
-            agentSection.AppendLine($"        [{domain}]");
-            foreach (var entry in group.OrderBy(e => e.GrainId))
-            {
-                agentSection.Append($"        - {entry.InterfaceName} (\"{entry.GrainId}\"): client.GetGrain<{entry.InterfaceName}>(\"{entry.GrainId}\")");
-                if (entry.Produces.Count > 0)
-                    agentSection.Append($" — publishes: {string.Join(", ", entry.Produces)}");
-                agentSection.AppendLine();
-            }
-            agentSection.AppendLine();
+            var registry = GrainFactory.GetGrain<IAgentRegistry>("global");
+            var catalogPrompt = await registry.ToPromptStringAsync(cancellationToken);
+            _cachedInstructions = BuildInstructions(catalogPrompt);
         }
+        catch
+        {
+            _cachedInstructions = BuildInstructions("");
+        }
+        await base.OnActivateAsync(cancellationToken);
+    }
 
+    static string BuildFallbackInstructions() => BuildInstructions("");
+
+    static string BuildInstructions(string agentCatalog)
+    {
         return $"""
         You generate standalone C# console apps. Output ONLY valid C# code. No markdown. No explanation.
 
@@ -81,14 +77,16 @@ public class CodeOrchestratorAgent(
 
         RULES:
         - Use `builder.AddIAWClient()` from namespace `Aspire.IAW` to connect to the cluster.
-        - Get agents via client.GetGrain<IInterfaceName>("grain-id") — see catalog below for IDs.
+        - Get agents via client.GetGrain<IInterfaceName>("grain-id") — see catalog below for available agents.
         - Call await agent.GetResponse("prompt", default) to talk to agents. Use `default` for CancellationToken.
         - Always write result.json with status, summary, artifacts, and metrics fields
         - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
         - Use simple string operations, not complex LINQ chains
         - Wrap everything in try/catch, write error to result.json in catch
         - Pick the MOST SPECIALIZED agent for the task — don't use IShell when a domain agent exists
-        """ + "\n" + agentSection.ToString();
+
+        {agentCatalog}
+        """;
     }
 
     protected override IReadOnlyList<AITool> DefineTools() => [];
@@ -185,7 +183,6 @@ public class CodeOrchestratorAgent(
             CreateNoWindow = true
         };
 
-        // Remove silo-specific Orleans env vars but keep ClusterId/ServiceId for client connection
         var keepVars = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "Orleans__ClusterId", "Orleans__ServiceId", "Orleans__EnableDistributedTracing" };
         foreach (var key in Environment.GetEnvironmentVariables().Keys.Cast<string>()

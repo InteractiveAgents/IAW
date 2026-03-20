@@ -2,7 +2,7 @@ using System.Text.Json;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using Core.Contracts;
-using Core.Orchestration;
+using Core.Registry;
 
 internal sealed class AgentTools(IClusterClient orleans)
 {
@@ -10,13 +10,22 @@ internal sealed class AgentTools(IClusterClient orleans)
 
     private IAgent ResolveAgent(string agentId)
     {
-        var entry = InterfaceCatalog.Discover()
-            .FirstOrDefault(e => string.Equals(e.GrainId, agentId, StringComparison.OrdinalIgnoreCase));
+        var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+            .Where(t => t.IsInterface && typeof(IAgent).IsAssignableFrom(t) && t != typeof(IAgent))
+            .ToList();
 
-        if (entry is not null)
-            return (IAgent)orleans.GetGrain(entry.InterfaceType, agentId);
+        var matchedInterface = agentInterfaces
+            .FirstOrDefault(t =>
+            {
+                var name = t.Name.TrimStart('I').ToLowerInvariant();
+                return string.Equals(name, agentId.Replace("-", ""), StringComparison.OrdinalIgnoreCase);
+            });
 
-        var known = string.Join(", ", InterfaceCatalog.Discover().Select(e => e.GrainId));
+        if (matchedInterface is not null)
+            return (IAgent)orleans.GetGrain(matchedInterface, agentId);
+
+        var known = string.Join(", ", agentInterfaces.Select(t => t.Name.TrimStart('I').ToLowerInvariant()));
         throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }
 
@@ -24,22 +33,23 @@ internal sealed class AgentTools(IClusterClient orleans)
     [Description("List all registered agents with their metadata and capabilities.")]
     public async Task<string> AgentListAll(CancellationToken ct)
     {
-        var catalog = InterfaceCatalog.Discover();
+        var registry = orleans.GetGrain<IAgentRegistry>("global");
+        var allAgents = await registry.GetAllAsync(ct);
         var results = new List<object>();
-        foreach (var entry in catalog)
+
+        foreach (var record in allAgents)
         {
             try
             {
-                var agent = ResolveAgent(entry.GrainId);
+                var agent = ResolveAgent(record.InterfaceName.TrimStart('I').ToLowerInvariant());
                 var metadata = await agent.GetMetadata(ct);
                 var capabilities = await agent.GetCapabilities(ct);
                 results.Add(new
                 {
-                    id = entry.GrainId,
-                    interfaceName = entry.InterfaceName,
-                    produces = entry.Produces,
-                    consumes = entry.Consumes,
-                    receives = entry.Receives,
+                    agentType = record.AgentType,
+                    interfaceName = record.InterfaceName,
+                    ns = record.Namespace,
+                    description = record.Description,
                     metadata,
                     capabilities
                 });
@@ -50,7 +60,7 @@ internal sealed class AgentTools(IClusterClient orleans)
             }
             catch (Exception)
             {
-                results.Add(new { id = entry.GrainId, error = "Agent not available" });
+                results.Add(new { agentType = record.AgentType, error = "Agent not available" });
             }
         }
         return JsonSerializer.Serialize(results, JsonOptions);
