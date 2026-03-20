@@ -38,6 +38,7 @@ public class RoslynAgent(
         var tools = new List<AITool>();
         RegisterToolMethods(tools, new Tools.RoslynTools(getWorkspace, _workspaceManager));
         RegisterToolMethods(tools, new Tools.CodeModificationTools(getWorkspace));
+        RegisterToolMethods(tools, new Tools.RefactoringTools(getWorkspace, _workspaceManager));
         return tools;
     }
 
@@ -486,6 +487,140 @@ public class RoslynAgent(
             $"Projects: {projectCount}\n" +
             $"Types indexed: {typeCount}\n" +
             $"Methods in call graph: {methodCount}");
+    }
+
+    public async Task<string> ImplementInterfaceAsync(string filePath, string className, string interfaceName, CancellationToken ct = default)
+    {
+        var workspace = GetWorkspacePath();
+        if (workspace is null)
+            return "No workspace set.";
+
+        if (_workspaceManager is not { IsReady: true })
+            return "Workspace not loaded — load workspace first for ImplementInterface.";
+
+        var resolvedPath = Path.IsPathRooted(filePath)
+            ? Path.GetFullPath(filePath)
+            : Path.GetFullPath(Path.Combine(workspace, filePath));
+
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var document = _workspaceManager.Solution?.Projects
+            .SelectMany(p => p.Documents)
+            .FirstOrDefault(d => string.Equals(d.FilePath, resolvedPath, StringComparison.OrdinalIgnoreCase));
+
+        if (document is null)
+            return $"File not found in loaded solution: {resolvedPath}";
+
+        var semanticModel = await document.GetSemanticModelAsync(ct);
+        if (semanticModel is null)
+            return "Could not get semantic model for file.";
+
+        var syntaxRoot = await document.GetSyntaxRootAsync(ct);
+        if (syntaxRoot is not CompilationUnitSyntax root)
+            return "Could not get syntax root for file.";
+
+        var classDecl = root.DescendantNodes()
+            .OfType<ClassDeclarationSyntax>()
+            .FirstOrDefault(c => c.Identifier.Text == className);
+
+        if (classDecl is null)
+            return $"Class '{className}' not found in {Path.GetFileName(resolvedPath)}";
+
+        var classSymbol = semanticModel.GetDeclaredSymbol(classDecl, ct) as INamedTypeSymbol;
+        if (classSymbol is null)
+            return $"Could not resolve symbol for class '{className}'";
+
+        var interfaceSymbol = classSymbol.AllInterfaces
+            .FirstOrDefault(i => i.Name == interfaceName || i.ToDisplayString().Contains(interfaceName));
+
+        if (interfaceSymbol is null)
+        {
+            // try to find the interface in the compilation
+            var compilation = semanticModel.Compilation;
+            interfaceSymbol = compilation.GetSymbolsWithName(
+                    n => n == interfaceName || n.Contains(interfaceName),
+                    SymbolFilter.Type, ct)
+                .OfType<INamedTypeSymbol>()
+                .FirstOrDefault(t => t.TypeKind == TypeKind.Interface);
+        }
+
+        if (interfaceSymbol is null)
+            return $"Interface '{interfaceName}' not found in compilation. Make sure the interface is in scope.";
+
+        var implementedMembers = classSymbol.GetMembers()
+            .Select(m => m.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var unimplemented = interfaceSymbol.GetMembers()
+            .Where(m => m is IMethodSymbol or IPropertySymbol)
+            .Where(m => !implementedMembers.Contains(m.Name))
+            .ToList();
+
+        if (unimplemented.Count == 0)
+            return $"Class '{className}' already implements all members of '{interfaceName}'.";
+
+        var stubs = new List<MemberDeclarationSyntax>();
+        foreach (var member in unimplemented)
+        {
+            switch (member)
+            {
+                case IMethodSymbol method when method.MethodKind == MethodKind.Ordinary:
+                {
+                    var returnType = SyntaxFactory.ParseTypeName(method.ReturnType.ToDisplayString());
+                    var parameters = method.Parameters.Select(p =>
+                        SyntaxFactory.Parameter(SyntaxFactory.Identifier(p.Name))
+                            .WithType(SyntaxFactory.ParseTypeName(p.Type.ToDisplayString())));
+
+                    var isAsync = method.ReturnType.ToDisplayString().StartsWith("System.Threading.Tasks.Task", StringComparison.Ordinal);
+                    var bodyStatement = method.ReturnsVoid || method.ReturnType.ToDisplayString() == "System.Threading.Tasks.Task"
+                        ? SyntaxFactory.ParseStatement("throw new System.NotImplementedException();")
+                        : SyntaxFactory.ParseStatement("throw new System.NotImplementedException();");
+
+                    var methodDecl = SyntaxFactory.MethodDeclaration(returnType, method.Name)
+                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                        .WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(parameters)))
+                        .WithBody(SyntaxFactory.Block(bodyStatement));
+
+                    if (isAsync)
+                        methodDecl = methodDecl.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
+
+                    stubs.Add(methodDecl);
+                    break;
+                }
+                case IPropertySymbol property:
+                {
+                    var propType = SyntaxFactory.ParseTypeName(property.Type.ToDisplayString());
+                    var accessors = new List<AccessorDeclarationSyntax>();
+
+                    if (!property.IsWriteOnly)
+                        accessors.Add(SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                            .WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement("throw new System.NotImplementedException();"))));
+
+                    if (!property.IsReadOnly)
+                        accessors.Add(SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                            .WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement("throw new System.NotImplementedException();"))));
+
+                    var propDecl = SyntaxFactory.PropertyDeclaration(propType, property.Name)
+                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                        .WithAccessorList(SyntaxFactory.AccessorList(SyntaxFactory.List(accessors)));
+
+                    stubs.Add(propDecl);
+                    break;
+                }
+            }
+        }
+
+        var updatedClass = classDecl.AddMembers([.. stubs]);
+        var updatedRoot = root.ReplaceNode(classDecl, updatedClass).NormalizeWhitespace();
+
+        using var adhocWorkspace = new Microsoft.CodeAnalysis.AdhocWorkspace();
+#pragma warning disable RS0030
+        var formatted = Microsoft.CodeAnalysis.Formatting.Formatter.Format(updatedRoot, adhocWorkspace);
+#pragma warning restore RS0030
+
+        await File.WriteAllTextAsync(resolvedPath, formatted.ToFullString(), ct);
+        return $"Added {stubs.Count} stub(s) for interface '{interfaceName}' to class '{className}' in {Path.GetFileName(resolvedPath)}";
     }
 
     public async Task OnStreamEventAsync(CodeChangedMessage evt, StreamSequenceToken? token)

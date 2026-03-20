@@ -36,4 +36,5 @@ public interface IRoslyn : IAgent
     Task<string> GetBaseTypesAsync(string className, CancellationToken ct = default);
     Task<string> GetOverridesAsync(string methodName, CancellationToken ct = default);
     Task<string> GetWorkspaceStatusAsync(CancellationToken ct = default);
+    Task<string> ImplementInterfaceAsync(string filePath, string className, string interfaceName, CancellationToken ct = default);
 }
