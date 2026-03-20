@@ -4,6 +4,11 @@ namespace Core.Contracts;
 
 public interface IAgent : IGrainWithStringKey
 {
+    static virtual string AgentDisplayName => "";
+    static virtual string AgentDescription => "";
+    static virtual string[] AgentCapabilities => [];
+    static virtual string AgentInstructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
+
     // Conversation
     IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
     IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
