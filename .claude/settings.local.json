@@ -112,7 +112,9 @@
       "Read(//e/IAW/$d/**)",
       "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw Orleans__Clustering__ProviderType=Localhost Orleans__EnableDistributedTracing=true dotnet run --project test-e2e-calc)",
       "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-calc)",
-      "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-sim)"
+      "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-sim)",
+      "Bash(SESSION=\"vMPJe15336FQGzfiVc6MxQ\")",
+      "Bash(SESSION=\"PtrgZj56o8iGVCVq7XbDLA\")"
     ]
   },
   "enabledMcpjsonServers": [
