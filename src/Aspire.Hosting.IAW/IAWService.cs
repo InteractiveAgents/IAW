@@ -26,6 +26,8 @@ public class IAWService(OrleansService orleans, IDistributedApplicationBuilder a
     internal IResourceBuilder<ParameterResource>? OpenAiKeyParam { get; set; }
     internal IResourceBuilder<ParameterResource> GitHubTokenParam { get; set; } = null!;
 
+    internal Dictionary<string, string> TierMappings { get; } = [];
+
     internal bool InfrastructureApplied { get; set; }
     internal string? WorkspacePath { get; set; }
 

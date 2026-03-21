@@ -35,7 +35,7 @@ public static class IAWHostingExtensions
         return iaw;
     }
 
-    public static IAWService WithLLM<TModel>(this IAWService iaw)
+    public static LLMModelBuilder WithLLM<TModel>(this IAWService iaw)
         where TModel : LLMModel
     {
         LLMModel.EnsureAllModelsLoaded();
@@ -59,7 +59,7 @@ public static class IAWHostingExtensions
             iaw.OpenAiKeyParam ??= iaw.AppBuilder.AddParameter("openai-api-key", secret: true)
                 .WithDescription("Get your key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)", enableMarkdown: true);
 
-        return iaw;
+        return new LLMModelBuilder(iaw, model);
     }
 
     public static IAWService WithOllama(
@@ -135,6 +135,12 @@ public static class IAWHostingExtensions
             builder.WithEnvironment($"{prefix}__Id", model.Id);
             builder.WithEnvironment($"{prefix}__Provider", model.Provider);
             builder.WithEnvironment($"{prefix}__ServiceKey", model.ServiceKey);
+        }
+
+        foreach (var (tierKey, concreteKey) in iaw.TierMappings)
+        {
+            var tierName = tierKey.Replace("tier-tier-", "");
+            builder.WithEnvironment($"AI__LLM__Tiers__{tierName}", concreteKey);
         }
 
         if (iaw.AnthropicKeyParam is not null)
