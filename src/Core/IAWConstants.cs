@@ -3,11 +3,12 @@ namespace Core;
 public static class IAWConstants
 {
     public const string StreamProvider = "agents";
+    public const string DelegationPrefix = "[DELEGATE]";
 
     public static class Events
     {
         public const string ApprovalRequested = "approval.requested";
-public const string DashboardChanged = "dashboard.changed";
+        public const string DashboardChanged = "dashboard.changed";
         public const string JobCompleted = "job.completed";
         public const string OrchestrationProgress = "orchestration.progress";
         public const string OrchestrationCompleted = "orchestration.completed";
@@ -28,5 +29,12 @@ public const string DashboardChanged = "dashboard.changed";
         public const string SetupComplete = "setup-complete";
         public const string GroupChatId = "group-chat-id";
         public const string ScheduledDashboardMsgId = "scheduled-dashboard-msgid";
+    }
+
+    public static class PayloadKeys
+    {
+        public const string ProjectKey = "projectKey";
+        public const string JobName = "jobName";
+        public const string Result = "result";
     }
 }
