@@ -62,3 +62,13 @@ public enum TextStyle { Normal, Success, Warning, Error, Muted }
 
 [GenerateSerializer]
 public enum FormFieldType { Text, SingleChoice, MultiChoice, Date, Number }
+
+[GenerateSerializer]
+public record SuggestionPart(
+    [property: Id(0)] string CallbackId,
+    [property: Id(1)] IReadOnlyList<SuggestedAction> Actions) : UIPart;
+
+[GenerateSerializer]
+public record SuggestedAction(
+    [property: Id(0)] string Label,
+    [property: Id(1)] string ActionText);
