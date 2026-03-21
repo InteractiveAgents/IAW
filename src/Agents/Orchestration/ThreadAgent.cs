@@ -4,6 +4,7 @@ using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 using AgentResponse = global::Core.UI.AgentResponse;
 
@@ -12,7 +13,8 @@ namespace IAW.Agents.Orchestration;
 [GrainType(IAWConstants.GrainTypes.Thread)]
 public class ThreadAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient)
+    IChatClient chatClient,
+    ILogger<ThreadAgent> logger)
     : Agent<IThread>(durableState, chatClient), IThread
 {
     private const string CallbackPrefix = "cb:";
@@ -53,20 +55,32 @@ public class ThreadAgent(
     {
         try
         {
+            logger.LogInformation("Delegate: calling AgentSelector for: {Request}", request[..Math.Min(80, request.Length)]);
+
             var selector = GrainFactory.Get<IAgentSelector>();
             var result = await selector.SelectAsync(request, ct);
 
-            return result.Status switch
+            logger.LogInformation("Delegate: AgentSelector returned Status={Status}, Agents=[{Agents}], PlanLength={PlanLength}",
+                result.Status, string.Join(",", result.SelectedAgents), result.Plan?.Length ?? 0);
+
+            switch (result.Status)
             {
-                SelectionStatus.NeedsClarification => FormatClarificationResponse(result),
-                SelectionStatus.CannotHandle => result.Plan ?? "The agent system cannot handle this request.",
-                SelectionStatus.Ready => await ExecuteSelection(result, request, ct),
-                _ => "Unexpected selection status."
-            };
+                case SelectionStatus.NeedsClarification:
+                    return FormatClarificationResponse(result);
+                case SelectionStatus.CannotHandle:
+                    logger.LogWarning("Delegate: CannotHandle — {Plan}", result.Plan?[..Math.Min(200, result.Plan?.Length ?? 0)]);
+                    return result.Plan ?? "The agent system cannot handle this request.";
+                case SelectionStatus.Ready:
+                    logger.LogInformation("Delegate: Ready — executing with {Count} agent(s)", result.SelectedAgents.Count);
+                    return await ExecuteSelection(result, request, ct);
+                default:
+                    return "Unexpected selection status.";
+            }
         }
         catch (Exception ex)
         {
-            return $"Delegation failed: {ex.Message}";
+            logger.LogError(ex, "Delegate: FAILED for request: {Request}", request[..Math.Min(80, request.Length)]);
+            return $"Delegation failed: {ex.GetType().Name}: {ex.Message}";
         }
     }
 
