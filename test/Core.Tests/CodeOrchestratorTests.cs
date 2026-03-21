@@ -27,7 +27,7 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
         {
             var orchestrator = (ICodeOrchestrator)Agent(UniqueId("orch"));
             var result = await orchestrator.ExecuteCodeOrchestration(
-                "INTENT: Test. STEPS: 1. Print hello", ["IShell"], ct);
+                "INTENT: Test. STEPS: 1. Print hello", new List<string> { "IShell" }, ct);
 
             Assert.NotNull(result);
             Assert.NotEmpty(result);
@@ -65,7 +65,7 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
         try
         {
             var orchestrator = (ICodeOrchestrator)Agent(UniqueId("orch-err"));
-            var result = await orchestrator.ExecuteCodeOrchestration("test plan", ["IShell"], ct);
+            var result = await orchestrator.ExecuteCodeOrchestration("test plan", new List<string> { "IShell" }, ct);
 
             Assert.Contains("CodeOrchestrator error:", result);
         }
