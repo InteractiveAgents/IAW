@@ -96,6 +96,59 @@ public class ThreadAgent(
         return sb.ToString();
     }
 
+    protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
+    {
+        if (!job.Prompt.StartsWith(IAWConstants.DelegationPrefix))
+        {
+            await base.OnScheduledJobDueAsync(job, ct);
+            return;
+        }
+
+        var request = job.Prompt[IAWConstants.DelegationPrefix.Length..];
+        logger.LogInformation("DelegateJob: executing {JobName} for: {Request}",
+            job.Name, request[..Math.Min(80, request.Length)]);
+
+        string delegationResult;
+        try
+        {
+            var selector = GrainFactory.Get<IAgentSelector>();
+            var selection = await selector.SelectAsync(request, CancellationToken.None);
+
+            logger.LogInformation("DelegateJob: selector returned Status={Status}, Agents=[{Agents}]",
+                selection.Status, string.Join(",", selection.SelectedAgents));
+
+            delegationResult = selection.Status switch
+            {
+                SelectionStatus.Ready => await ExecuteSelection(selection, request, CancellationToken.None),
+                SelectionStatus.CannotHandle => selection.Plan ?? "The agent system cannot handle this request.",
+                SelectionStatus.NeedsClarification => FormatClarificationResponse(selection),
+                _ => "Unexpected selection status."
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DelegateJob: FAILED {JobName}", job.Name);
+            delegationResult = $"Delegation failed: {ex.GetType().Name}: {ex.Message}";
+        }
+
+        var updated = job with { LastRunAt = DateTimeOffset.UtcNow, LastResult = delegationResult };
+        ScheduledJobs[job.Name] = updated;
+
+        logger.LogInformation("DelegateJob: completed {JobName}, result length: {Length}",
+            job.Name, delegationResult.Length);
+
+        var truncatedResult = delegationResult.Length > 4000
+            ? delegationResult[..4000] + "\n...(truncated)"
+            : delegationResult;
+
+        await PublishAsync(IAWConstants.Events.JobCompleted, new Dictionary<string, string>
+        {
+            [IAWConstants.PayloadKeys.ProjectKey] = this.GetPrimaryKeyString(),
+            [IAWConstants.PayloadKeys.JobName] = job.Name,
+            [IAWConstants.PayloadKeys.Result] = truncatedResult
+        }, CancellationToken.None);
+    }
+
     public async Task RegisterCallback(string callbackId, string grainType, string grainId, DateTimeOffset expiresAt, CancellationToken ct = default)
     {
         var value = $"{grainType}|{grainId}|{expiresAt:O}";
