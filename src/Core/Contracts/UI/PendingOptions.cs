@@ -11,3 +11,11 @@ public sealed record PendingOptions(
 public sealed record PendingOption(
     [property: Id(0)] string Label,
     [property: Id(1)] string Value);
+
+[GenerateSerializer]
+public sealed record PendingOptionSet(
+    [property: Id(0)] string Id,
+    [property: Id(1)] string Prompt,
+    [property: Id(2)] IReadOnlyList<PendingOption> Options,
+    [property: Id(3)] string ProjectSlug,
+    [property: Id(4)] DateTimeOffset CreatedAt);

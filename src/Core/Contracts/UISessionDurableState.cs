@@ -9,7 +9,8 @@ public sealed class UISessionDurableState(
     IDurableDictionary<string, string> pendingFreeText,
     IDurableDictionary<string, PaginatorState> paginators,
     IDurableDictionary<string, MenuState> menus,
-    IDurableDictionary<string, FormState> forms)
+    IDurableDictionary<string, FormState> forms,
+    IDurableDictionary<string, PendingOptionSet> pendingOptionSets)
 {
     public IDurableDictionary<string, PendingApproval> PendingApprovals => pendingApprovals;
     public IDurableDictionary<string, WizardState> Wizards => wizards;
@@ -17,4 +18,5 @@ public sealed class UISessionDurableState(
     public IDurableDictionary<string, PaginatorState> Paginators => paginators;
     public IDurableDictionary<string, MenuState> Menus => menus;
     public IDurableDictionary<string, FormState> Forms => forms;
+    public IDurableDictionary<string, PendingOptionSet> PendingOptionSets => pendingOptionSets;
 }
