@@ -11,7 +11,6 @@ public static class IAWConstants
         public const string DashboardChanged = "dashboard.changed";
         public const string JobCompleted = "job.completed";
         public const string OrchestrationProgress = "orchestration.progress";
-        public const string OrchestrationCompleted = "orchestration.completed";
     }
 
     public static class GrainTypes
@@ -36,5 +35,8 @@ public static class IAWConstants
         public const string ProjectKey = "projectKey";
         public const string JobName = "jobName";
         public const string Result = "result";
+        public const string TaskId = "taskId";
+        public const string Phase = "phase";
+        public const string Message = "message";
     }
 }
