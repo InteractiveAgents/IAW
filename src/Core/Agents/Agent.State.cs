@@ -25,22 +25,20 @@ public abstract partial class Agent
             ? entry.Value.ToString()
             : null;
 
-    protected void ValidatePathWithinWorkspace(string path)
+    protected string ResolvePathAgainstWorkspace(string path)
     {
         if (string.IsNullOrEmpty(path))
             throw new ArgumentException("Path cannot be null or empty.", nameof(path));
 
+        if (Path.IsPathRooted(path))
+            return Path.GetFullPath(path);
+
         var workspace = GetWorkspacePath();
-        if (workspace is null) return;
-
-        var fullPath = Path.GetFullPath(path);
-        var fullWorkspace = Path.GetFullPath(workspace);
-        var workspaceWithSeparator = fullWorkspace.EndsWith(Path.DirectorySeparatorChar.ToString())
-            ? fullWorkspace
-            : fullWorkspace + Path.DirectorySeparatorChar;
-
-        if (!fullPath.StartsWith(workspaceWithSeparator, StringComparison.OrdinalIgnoreCase) &&
-            !fullPath.Equals(fullWorkspace, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Path '{path}' is outside the workspace '{workspace}'.");
+        return workspace is not null
+            ? Path.GetFullPath(Path.Combine(workspace, path))
+            : Path.GetFullPath(path);
     }
+
+    [Obsolete("Workspace is no longer a hard boundary. Use ResolvePathAgainstWorkspace for path resolution.")]
+    protected void ValidatePathWithinWorkspace(string path) { }
 }
