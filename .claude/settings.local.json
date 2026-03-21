@@ -103,7 +103,8 @@
       "Bash(done)",
       "Bash(gh pr:*)",
       "WebFetch(domain:localhost)",
-      "Bash(sort -t: -k2 -rn)"
+      "Bash(sort -t: -k2 -rn)",
+      "Read(//d/IAW-Workspace/tasks/**)"
     ]
   },
   "enabledMcpjsonServers": [
