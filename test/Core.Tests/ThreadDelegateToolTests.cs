@@ -29,4 +29,21 @@ public class ThreadDelegateToolTests : AgentTest<ThreadAgent>
         var capabilities = await thread.GetCapabilities(ct);
         Assert.NotNull(capabilities);
     }
+
+    [Fact]
+    public async Task Delegate_SchedulesJobAndReturnsImmediately()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var thread = Agent(UniqueId("dlg-async"));
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var response = await thread.GetResponse("check git status", ct);
+        sw.Stop();
+
+        Assert.NotNull(response);
+        Assert.NotEmpty(response);
+        // Should complete in seconds, not minutes (proves no blocking)
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(30),
+            $"Response took {sw.Elapsed} — should be fast since delegation is async");
+    }
 }
