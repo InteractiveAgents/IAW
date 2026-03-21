@@ -27,13 +27,14 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
         {
             var orchestrator = (ICodeOrchestrator)Agent(UniqueId("orch"));
             var result = await orchestrator.ExecuteCodeOrchestration(
-                "INTENT: Test. STEPS: 1. Print hello", new List<string> { "IShell" }, ct);
+                "INTENT: Test. STEPS: 1. Print hello", new List<string> { "IShell" }, "", ct);
 
             Assert.NotNull(result);
-            Assert.NotEmpty(result);
+            Assert.NotNull(result.WorkspacePath);
+            Assert.NotEmpty(result.WorkspacePath);
 
             var tasksDir = Path.Combine(testWorkspace, "tasks");
-            Assert.True(Directory.Exists(tasksDir), $"Tasks dir should exist at {tasksDir}. Result was: {result[..Math.Min(500, result.Length)]}");
+            Assert.True(Directory.Exists(tasksDir), $"Tasks dir should exist at {tasksDir}. Summary: {result.Summary[..Math.Min(500, result.Summary.Length)]}");
 
             var taskDirs = Directory.GetDirectories(tasksDir);
             Assert.Single(taskDirs);
@@ -44,9 +45,9 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
             Assert.True(File.Exists(Path.Combine(taskDir, "orchestration.csproj")), "orchestration.csproj should exist");
             Assert.True(File.Exists(Path.Combine(taskDir, "log.txt")), "log.txt should exist");
 
-            // MockChatClient returns "mock-response" which isn't valid C# — dotnet run fails
-            // Result should contain workspace path
-            Assert.Contains("Workspace:", result);
+            // MockChatClient returns "mock-response" which isn't valid C# — build/run fails
+            Assert.NotNull(result.TaskId);
+            Assert.Contains(testWorkspace, result.WorkspacePath);
         }
         finally
         {
@@ -65,9 +66,10 @@ public class CodeOrchestratorTests : AgentTest<CodeOrchestratorAgent>
         try
         {
             var orchestrator = (ICodeOrchestrator)Agent(UniqueId("orch-err"));
-            var result = await orchestrator.ExecuteCodeOrchestration("test plan", new List<string> { "IShell" }, ct);
+            var result = await orchestrator.ExecuteCodeOrchestration("test plan", new List<string> { "IShell" }, "", ct);
 
-            Assert.Contains("CodeOrchestrator error:", result);
+            Assert.False(result.Success);
+            Assert.Contains("error", result.Summary, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

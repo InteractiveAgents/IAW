@@ -81,7 +81,10 @@ public class ThreadAgent(
         var orchestrator = GrainFactory.Get<ICodeOrchestrator>(threadId);
         var selectorPlan = selection.Plan ?? $"Agents: {string.Join(", ", selection.SelectedAgents)}";
         var plan = $"USER REQUEST: {request}\n\nPLAN:\n{selectorPlan}";
-        return await orchestrator.ExecuteCodeOrchestration(plan, selection.SelectedAgents, ct);
+        var orchestrationResult = await orchestrator.ExecuteCodeOrchestration(plan, selection.SelectedAgents, threadId, ct);
+        return orchestrationResult.Success
+            ? $"Completed. Workspace: {orchestrationResult.WorkspacePath}\nSummary: {orchestrationResult.Summary}"
+            : $"Failed. {orchestrationResult.ErrorDetail ?? orchestrationResult.Summary}";
     }
 
     private static string FormatClarificationResponse(SelectionResult result)

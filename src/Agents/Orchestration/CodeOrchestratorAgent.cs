@@ -182,11 +182,16 @@ public class CodeOrchestratorAgent(
     public override async Task<string> GetResponse(string prompt, CancellationToken ct = default)
     {
         if (prompt.StartsWith("[EXECUTE_CODE]"))
-            return await ExecuteCodeOrchestration(prompt["[EXECUTE_CODE]\n".Length..], [], ct);
+        {
+            var result = await ExecuteCodeOrchestration(prompt["[EXECUTE_CODE]\n".Length..], [], "", ct);
+            return result.Success
+                ? $"Completed. Workspace: {result.WorkspacePath}\nSummary: {result.Summary}"
+                : $"Failed. {result.ErrorDetail ?? result.Summary}";
+        }
         return await base.GetResponse(prompt, ct);
     }
 
-    public async Task<string> ExecuteCodeOrchestration(string prompt, IReadOnlyList<string> selectedAgents, CancellationToken ct = default)
+    public async Task<OrchestrationResult> ExecuteCodeOrchestration(string prompt, IReadOnlyList<string> selectedAgents, string projectKey, CancellationToken ct = default)
     {
         try
         {
@@ -220,7 +225,7 @@ public class CodeOrchestratorAgent(
                 if (attempt == maxRetries)
                 {
                     await File.WriteAllTextAsync(Path.Combine(taskDir, "log.txt"), buildErrors, ct);
-                    return $"Code generation failed after {maxRetries + 1} attempts.\nWorkspace: {taskDir}\nBuild errors:\n{buildErrors}";
+                    return new OrchestrationResult(false, $"Code generation failed after {maxRetries + 1} attempts", taskDir, [], null, buildErrors, taskId);
                 }
 
                 code = await RegenerateCode(prompt, code, buildErrors, ct);
@@ -233,7 +238,7 @@ public class CodeOrchestratorAgent(
             if (exitCode != 0)
             {
                 var errorSummary = log.Length > 2000 ? log[^2000..] : log;
-                return $"Code execution failed (exit code {exitCode}).\nWorkspace: {taskDir}\nLast output:\n{errorSummary}";
+                return new OrchestrationResult(false, $"Code execution failed (exit code {exitCode})", taskDir, [], null, errorSummary, taskId);
             }
 
             await PublishToStream(new CodeChangedMessage(
@@ -247,15 +252,23 @@ public class CodeOrchestratorAgent(
             if (File.Exists(resultPath))
             {
                 var resultJson = await File.ReadAllTextAsync(resultPath, ct);
-                return $"Completed. Workspace: {taskDir}\nResult: {resultJson}";
+                var parsed = ParseResultJson(resultJson);
+                return new OrchestrationResult(
+                    parsed.GetValueOrDefault("status")?.ToString() != "failed",
+                    parsed.GetValueOrDefault("summary")?.ToString() ?? "Completed",
+                    taskDir,
+                    ParseArtifacts(parsed),
+                    ParseMetrics(parsed),
+                    null,
+                    taskId);
             }
 
             var lastOutput = log.Length > 1000 ? log[^1000..] : log;
-            return $"Completed (no result.json). Workspace: {taskDir}\nOutput:\n{lastOutput}";
+            return new OrchestrationResult(true, lastOutput, taskDir, [], null, null, taskId);
         }
         catch (Exception ex)
         {
-            return $"CodeOrchestrator error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}";
+            return new OrchestrationResult(false, $"CodeOrchestrator error: {ex.GetType().Name}", "", [], null, $"{ex.Message}\n{ex.StackTrace}");
         }
     }
 
@@ -432,5 +445,28 @@ public class CodeOrchestratorAgent(
         if (code.EndsWith("```"))
             code = code[..^3].TrimEnd();
         return code;
+    }
+
+    private static Dictionary<string, object?> ParseResultJson(string json)
+    {
+        try { return global::System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(json) ?? []; }
+        catch { return []; }
+    }
+
+    private static List<string> ParseArtifacts(Dictionary<string, object?> parsed)
+    {
+        if (!parsed.TryGetValue("artifacts", out var val) || val is not global::System.Text.Json.JsonElement el) return [];
+        if (el.ValueKind != global::System.Text.Json.JsonValueKind.Array) return [];
+        return [.. el.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => s.Length > 0)];
+    }
+
+    private static Dictionary<string, string>? ParseMetrics(Dictionary<string, object?> parsed)
+    {
+        if (!parsed.TryGetValue("metrics", out var val) || val is not global::System.Text.Json.JsonElement el) return null;
+        if (el.ValueKind != global::System.Text.Json.JsonValueKind.Object) return null;
+        var dict = new Dictionary<string, string>();
+        foreach (var prop in el.EnumerateObject())
+            dict[prop.Name] = prop.Value.ToString();
+        return dict.Count > 0 ? dict : null;
     }
 }
