@@ -67,9 +67,6 @@ await PublishToStream(new CodeChangedEvent(
 
 The stream name is derived automatically from the type name: `CodeChangedEvent` publishes to stream `code.changed`.
 
-::: tip
-`PublishTypedAsync` is a back-compat alias that delegates to `PublishToStream<T>`. New code should use `PublishToStream<T>` directly.
-:::
 
 ### PublishToTaskStream
 

@@ -1,95 +1,36 @@
 # Orchestration
 
-IAW includes an orchestration subsystem for multi-step task execution. The `PlanningAgent` generates execution plans, the `ScriptGenerator` produces typed Orleans client scripts, the `OrchestrationCompiler` validates them with Roslyn, and the `ScriptExecutor` runs them. This page covers each component and how they work together.
+IAW includes an orchestration subsystem for multi-step task execution. The `CodeOrchestratorAgent` generates and executes standalone C# console apps that connect to the Orleans cluster as clients, calling agent grains directly. The `ScriptGenerator` produces the project scaffold, the `OrchestrationCompiler` validates the generated code with Roslyn, and `dotnet run` executes it. This page covers each component and how they work together.
 
-## PlanningAgent
+## CodeOrchestratorAgent
 
-The `PlanningAgent` is the orchestration engine. It discovers available agents, generates execution plans, and runs them as standalone C# scripts that connect to the Orleans cluster.
+The `CodeOrchestratorAgent` is the orchestration engine. It discovers available agents, generates a standalone C# console app, compiles it, and runs it with `dotnet run`. The generated app connects to the cluster via `builder.AddIAWClient()` and calls agent grains to accomplish the task.
 
 ```csharp
-var planning = GrainFactory.GetGrain<IPlanning>("planning");
+var orchestrator = GrainFactory.GetGrain<ICodeOrchestrator>("orchestrator");
 ```
 
 The agent's interface:
 
 ```csharp
-public interface IPlanning : IAgent;
+public interface ICodeOrchestrator : IAgent;
 ```
-
-It operates through three LLM tools:
-
-| Tool | Purpose |
-|---|---|
-| `QueryAgentsAsync` | Queries the agent registry for available agents and capabilities |
-| `GeneratePlanAsync` | Creates an `OrchestrationPlan` from a summary and JSON steps |
-| `ExecutePlanAsync` | Generates a C# script from the plan and executes it |
 
 ### Workflow
 
-1. The user describes what they want done
-2. PlanningAgent queries the agent registry to discover capabilities
-3. PlanningAgent generates a plan with ordered steps
-4. PlanningAgent generates a C# script and executes it
-
-```csharp
-// The PersonalAssistant delegates planning work to PlanningAgent
-var message = new ChatMessage(
-    "Plan and execute: run tests, review code, then deploy", ChatRole.User);
-
-await foreach (var response in planning.SendMessage(message, ct))
-{
-    if (response.Kind == AgentResponseKind.Text)
-        Console.Write(response.Content);
-}
-```
-
-## OrchestrationPlan
-
-An `OrchestrationPlan` is a serializable record containing a summary and an ordered list of steps:
-
-```csharp
-[GenerateSerializer]
-public record OrchestrationPlan(
-    [property: Id(0)] string Summary,
-    [property: Id(1)] IReadOnlyList<PlanStep> Steps,
-    [property: Id(2)] string? TaskId = null,
-    [property: Id(3)] string? ProjectId = null,
-    [property: Id(4)] Dictionary<string, string>? GlobalParameters = null);
-
-[GenerateSerializer]
-public record PlanStep(
-    [property: Id(0)] int Order,
-    [property: Id(1)] string AgentType,
-    [property: Id(2)] string Action,
-    [property: Id(3)] Dictionary<string, string> Parameters,
-    [property: Id(4)] bool Critical = false);
-```
-
-The `TaskId` and `ProjectId` fields link the plan back to the originating task and project for tracking. `GlobalParameters` are merged into every step's parameters at execution time. The `Critical` flag on a step indicates that failure should abort the entire plan rather than continuing to subsequent steps.
-
-Each `PlanStep` specifies which agent to invoke, what action to take, and a parameter dictionary. Parameters typically include `workspace` (the project path) and `message` (the instruction to send to the agent).
-
-### Creating a Plan Manually
-
-```csharp
-var plan = new OrchestrationPlan(
-    "Build, test, and deploy the project",
-    [
-        new PlanStep(1, "DotNet", "Build the solution",
-            new() { ["workspace"] = "/src/project", ["message"] = "Build the solution" }),
-        new PlanStep(2, "DotNet", "Run all tests",
-            new() { ["workspace"] = "/src/project", ["message"] = "Run all tests" }),
-        new PlanStep(3, "Deployer", "Deploy to staging",
-            new() { ["message"] = "Deploy the latest build to staging" })
-    ]);
-```
+1. The Thread agent receives a user request and calls the `Delegate` tool
+2. `AgentSelectorAgent` picks the appropriate agents for the task
+3. `CodeOrchestratorAgent` receives the plan and selected agents
+4. It generates a standalone C# console app using the cluster connection helpers
+5. The app is executed with `dotnet run`; stdout is captured for the result
+6. An `OrchestrationResult` is returned and published to the `job.completed` stream
 
 ## Agent Registry Integration
 
-The orchestration system discovers available agents through the `AgentRegistryGrain`. Every concrete `Agent` subclass is automatically registered at silo startup by `AgentRegistrationStartupTask`.
+The orchestration system discovers available agents through `IAgentRegistry`. Every concrete `Agent` subclass is automatically registered at silo startup by `AgentRegistrationStartupTask`.
 
 ```csharp
-var registry = GrainFactory.GetGrain<IAgentRegistryGrain>("global");
+var registry = GrainFactory.GetGrain<IAgentRegistry>("global");
 
 // Get all registered agents
 var allAgents = await registry.GetAllAsync();
@@ -97,102 +38,36 @@ var allAgents = await registry.GetAllAsync();
 // Query by capabilities
 var codeAgents = await registry.QueryAsync(new AgentQuery(
     Capabilities: ["code-review"]));
-
-// Query by subscriptions
-var buildWatchers = await registry.QueryAsync(new AgentQuery(
-    Subscribes: ["build.completed"]));
 ```
 
-Each `AgentRegistration` includes:
+Each `AgentRecord` includes:
 
 ```csharp
 [GenerateSerializer]
-public record AgentRegistration(
+public record AgentRecord(
     string AgentType,
     string DisplayName,
     string Description,
     AgentKind Kind,
-    string[] Capabilities,
-    string[] Publishes,
-    string[] Subscribes);
+    AgentInterfaceMetadata[] Interfaces);
 ```
 
-The PlanningAgent uses this registry to match user requests to the most appropriate agent for each step.
+`AgentInterfaceMetadata` carries the interface type name, capabilities, published streams, and subscribed streams for each interface the agent implements. The `CodeOrchestratorAgent` uses this registry to match the task to the right agents.
 
 ## ScriptGenerator
 
-`ScriptGenerator` converts an `OrchestrationPlan` into a standalone C# program that connects to the Orleans cluster and executes each step sequentially. The generated script uses a structured event protocol for reporting progress back to the orchestrator.
+`ScriptGenerator` converts the orchestration plan and selected agents into a standalone C# console project. The generated project:
 
-### Event Protocol
-
-Generated scripts emit structured markers on stdout so the orchestrator can parse progress:
-
-| Marker | Format | Purpose |
-|--------|--------|---------|
-| `[PROGRESS]` | `[PROGRESS] Step {n}: {description}` | Reports that a step has started |
-| `[ERROR]` | `[ERROR] Step {n}: {message}` | Reports a step failure |
-| `[COMPLETED]` | `[COMPLETED] {summary}` | Reports successful orchestration completion |
-
-These markers are parsed by the `ScriptExecutor` and translated into Orleans stream events.
+- Creates an Orleans client connecting to the cluster via `builder.AddIAWClient()`
+- Calls agent grains using `client.Get<TAgent>(taskId)` (resolved via `AgentRegistry` keyed to the task context)
+- Calls methods like `shell.RunDotnetAsync()`, `fs.WriteFileAsync()`, etc.
+- Writes a `result.json` file on completion
 
 ```csharp
-using IAW.Core.Orchestration;
-
-var plan = new OrchestrationPlan("Run tests", [
-    new PlanStep(1, "DotNet", "Test the solution",
-        new() { ["workspace"] = "/src/project", ["message"] = "Run all tests" })
-]);
-
-var script = ScriptGenerator.Generate(plan, "localhost", 30000);
+var script = ScriptGenerator.Generate(plan, selectedAgents, taskId);
 ```
 
-The generated script:
-- Creates an Orleans client connecting to the specified cluster endpoint and gateway port
-- For each step, resolves the agent grain by type name
-- Sets the workspace if the `workspace` parameter is provided
-- Sends the `message` parameter to the agent and streams the response
-
-Example generated output:
-
-```csharp
-using Orleans;
-using Orleans.Hosting;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using System.Net;
-using IAW.Core;
-
-// Plan: Run tests
-// Steps: 1
-
-var builder = Host.CreateApplicationBuilder(args);
-builder.UseOrleansClient(client =>
-{
-    client.UseStaticClustering(options =>
-        options.Gateways.Add(new IPEndPoint(
-            IPAddress.Parse("localhost"), 30000).ToGatewayUri()));
-});
-
-using var host = builder.Build();
-await host.StartAsync();
-var client = host.Services.GetRequiredService<IClusterClient>();
-Console.WriteLine("Connected to cluster.");
-
-// Step 1: Test the solution via DotNet
-Console.WriteLine("Step 1: Test the solution");
-var agent1 = client.GetGrain<IAgent>("orchestrated-dotnet");
-await agent1.SetWorkspaceAsync("/src/project");
-await foreach (var response in agent1.SendMessageAsync(
-    new ChatMessage("Run all tests")))
-{
-    if (response.Kind == AgentResponseKind.Text)
-        Console.Write(response.Content);
-}
-Console.WriteLine();
-
-await host.StopAsync();
-Console.WriteLine("Orchestration complete.");
-```
+The generated script targets a console application and uses the full IAW client SDK, so generated code has access to all agent interfaces.
 
 ## OrchestrationCompiler
 
@@ -229,182 +104,63 @@ The compiler:
 5. If compilation fails, throws with the error diagnostics
 6. If compilation succeeds, loads the assembly into a collectible `AssemblyLoadContext`
 
-This validation step is critical for catching type mismatches, missing references, or syntax errors in LLM-generated orchestration scripts.
+This validation step is critical for catching type mismatches, missing references, or syntax errors in LLM-generated orchestration code.
 
-## ScriptExecutor
+## OrchestrationResult
 
-`ScriptExecutor` runs a generated script as a standalone .NET process:
-
-```csharp
-using IAW.Core.Orchestration;
-
-var executor = new ScriptExecutor();
-var result = await executor.ExecuteScriptAsync(
-    programSource: script,
-    workingDirectory: "/tmp/orchestration",
-    ct: cancellationToken);
-
-if (result.Success)
-    Console.WriteLine($"Output: {result.Output}");
-else
-    Console.WriteLine($"Failed (exit {result.ExitCode}): {result.Output}");
-```
-
-The execution process:
-1. Creates a timestamped directory under the working directory
-2. Scaffolds a new console project with `dotnet new console`
-3. Replaces `Program.cs` with the generated script
-4. Runs the project with `dotnet run`
-5. Captures stdout and stderr
-
-The result is a `ScriptResult`:
+The `OrchestrationResult` record is the structured return type for every orchestration run:
 
 ```csharp
 [GenerateSerializer]
-public record ScriptResult(
-    [property: Id(0)] int ExitCode,
-    [property: Id(1)] string Output)
-{
-    public bool Success => ExitCode == 0;
-}
+public record OrchestrationResult(
+    [property: Id(0)] bool Success,
+    [property: Id(1)] string Summary,
+    [property: Id(2)] string[] Artifacts,
+    [property: Id(3)] string? ErrorDetails = null);
 ```
 
-### Streaming Overload
+`Success` indicates whether the run completed without errors. `Summary` is a human-readable description. `Artifacts` lists file paths or resource identifiers produced during execution. `ErrorDetails` is populated on failure.
 
-`ScriptExecutor` also provides a streaming overload that yields output lines as they are produced, rather than waiting for the process to complete:
+The result is:
+- Returned directly from the `CodeOrchestratorAgent` grain call
+- Published to the `job.completed` Orleans stream for Telegram delivery
+- Formatted as a structured card with follow-up buttons by `TelegramUIAgent`
 
-```csharp
-await foreach (var line in executor.ExecuteScriptStreamingAsync(
-    programSource: script,
-    workingDirectory: "/tmp/orchestration",
-    ct: cancellationToken))
-{
-    // Parse [PROGRESS], [ERROR], [COMPLETED] markers in real-time
-    Console.WriteLine(line);
-}
-```
+## Progress Events
 
-This is used by the orchestration system to publish `orchestration.progress` stream events in real-time.
+During execution, `CodeOrchestratorAgent` publishes `orchestration.progress` events at each phase:
 
-## CheckpointStore
+| Phase | Event payload |
+|-------|--------------|
+| Planning | "Analyzing task and selecting agents..." |
+| Building | "Generating orchestration code..." |
+| Executing | "Running agents: {agentList}" |
+| Completed | Final summary or error message |
 
-The `CheckpointStore` provides blob-based persistence for orchestration state, allowing long-running plans to resume after failures:
-
-```csharp
-var store = new CheckpointStore(blobContainerClient);
-
-// Save checkpoint after each step completes
-await store.SaveAsync(planId, checkpoint);
-
-// Restore checkpoint on restart
-var checkpoint = await store.LoadAsync(planId);
-```
-
-Checkpoints record which steps have completed, their outputs, and any accumulated state. When a plan resumes, already-completed steps are skipped.
-
-## CodeOrchestratorAgent
-
-The `CodeOrchestratorAgent` is a supervisor that wraps the PlanningAgent with self-healing capabilities. When a step fails, the orchestrator:
-
-1. Captures the error output
-2. Sends it back to the LLM for diagnosis
-3. Generates a corrective step or modified plan
-4. Retries the failed step with the fix applied
-
-This self-healing loop runs up to a configurable retry limit per step. If all retries are exhausted, the step is marked as failed and the orchestrator either aborts (if the step is `Critical`) or continues to the next step.
-
-## Orchestration Event Types
-
-The orchestration system publishes typed events to Orleans streams for real-time monitoring:
-
-| Event Type | Stream | Purpose |
-|-----------|--------|---------|
-| `OrchestrationProgressEvent` | `orchestration.progress` | Step started or completed with output |
-| `OrchestrationErrorEvent` | `orchestration.progress` | Step failure with error details |
-| `OrchestrationCompletedEvent` | `orchestration.completed` | Entire plan finished (success or partial failure) |
-
-These events are consumed by the Telegram `StreamSubscriber` and the DevUI to show real-time orchestration status.
-
-## PersonalAssistant as Coordinator
-
-The `PersonalAssistantAgent` sits above the orchestration system as the entry point for user requests. It delegates planning work to `PlanningAgent` and direct tasks to specific agents.
-
-```csharp
-public class PersonalAssistantAgent : Agent,
-    IPersonalAssistant,
-    IReceiver<TaskCompletedMessage>,
-    IReceiver<TaskFailedMessage>,
-    IReceiver<ReviewCompletedMessage>,
-    IReceiver<DeploySucceededMessage>
-{
-    // Tools available to the LLM:
-    // - AssignTaskToAgent: send a task to a specific agent by grain key
-    // - GetTeamStatusTool: query the registry for all agents and their state
-    // - SpawnDynamicAgent: create a new dynamic agent for parallel work
-}
-```
-
-The PersonalAssistant resolves agents by grain key. It maintains a mapping of well-known agent keys to their specific grain interfaces:
-
-| Key | Interface | Agent |
-|---|---|---|
-| `reviewer` | `IReviewer` | Code review |
-| `self-improvement` | `ISelfImprovement` | Metrics analysis and code improvement |
-| `deployer` | `IDeployer` | Release builds and deployment |
-| `planning` | `IPlanning` | Orchestration plan generation |
-| `roslyn` | `IRoslyn` | C# code intelligence |
-| `dot-net` | `IDotNet` | .NET toolchain |
-| `nu-get` | `INuGet` | Package management |
-| `git-hub` | `IGitHub` | GitHub API |
-
-The Project agent's `DelegateToAssistant` tool connects Telegram users to the PersonalAssistant. When a user's request requires multi-agent coordination, the Project agent calls `DelegateToAssistant`, which forwards the task to PersonalAssistant for decomposition and delegation to the appropriate specialized agents.
+These events are published via `PublishToStream<T>` and consumed by the Telegram `StreamSubscriber`, which edits a single progress message in-place rather than sending a new message per event.
 
 ## Full Orchestration Flow
 
 ```
-User: "Run tests, review the results, then deploy if green"
+User: "Create a calculator app at D:\IAW\Calc"
   |
   v
-Project agent → DelegateToAssistant (if from Telegram)
+Thread agent → Delegate tool (schedules async job)
   |
   v
-PersonalAssistant --> PlanningAgent.SendMessage(...)
+AgentSelectorAgent → picks IFileSystem, IDotNet, IRoslyn
   |
   v
-PlanningAgent:
-  1. QueryAgentsAsync() --> discovers DotNet, Reviewer, Deployer
-  2. GeneratePlanAsync("Test, review, deploy", [...steps...])
-  3. ExecutePlanAsync("localhost", 30000)
-     |
-     v
-  ScriptGenerator.Generate(plan, "localhost", 30000)
-     |
-     v
-  OrchestrationCompiler.Compile(script, references)  // optional validation
-     |
-     v
-  ScriptExecutor.ExecuteScriptStreamingAsync(script, workingDir)
-     |
-     v
-  [dotnet new console] --> [replace Program.cs] --> [dotnet run]
-     |
-     v
-  Script connects to cluster, invokes agents in order:
-    Step 1: DotNet.SendMessage("Run all tests")       → [PROGRESS] Step 1: ...
-    Step 2: Reviewer.SendMessage("Review test results") → [PROGRESS] Step 2: ...
-    Step 3: Deployer.SendMessage("Deploy to staging")   → [COMPLETED] ...
-     |
-     v                          (on failure)
-  CodeOrchestratorAgent:        ←──────────┐
-    - Captures [ERROR] output              |
-    - Sends to LLM for diagnosis           |
-    - Generates corrective step            |
-    - Retries (self-healing loop) ─────────┘
-     |
-     v
-  OrchestrationProgressEvent → orchestration.progress stream
-  OrchestrationCompletedEvent → orchestration.completed stream
-     |
-     v
-  StreamSubscriber (Telegram) delivers real-time updates to user
+CodeOrchestratorAgent:
+  1. Generates standalone C# console app
+  2. App connects to cluster via AddIAWClient()
+  3. Calls agent grains: shell.RunDotnetAsync(), fs.WriteFileAsync(), etc.
+  4. Executes with dotnet run, captures output
+  5. Returns OrchestrationResult (success/failure, artifacts, metrics)
+  |
+  v
+Progress events → orchestration.progress stream → Telegram live updates
+  |
+  v
+OrchestrationResult → job.completed stream → structured card + buttons
 ```

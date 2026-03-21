@@ -18,7 +18,7 @@ Bot sends: 🔔 Deploy v2.1 to production?
 The approval flow:
 
 1. Agent calls `RequestApprovalTool(question, options)` during an LLM conversation
-2. `Project.PublishAsync("approval.requested", ...)` sends the event to the Orleans `"agents"` stream
+2. `Thread.PublishAsync("approval.requested", ...)` sends the event to the Orleans `"agents"` stream
 3. `StreamSubscriber` receives the event and calls `TelegramBotService.SendApprovalAsync()`
 4. The bot registers the approval with `IUISession` and sends an `InlineKeyboardMarkup` message
 5. When the user clicks a button, `HandleCallbackQueryAsync` routes it to `IUISession.HandleCallback()`
@@ -96,17 +96,33 @@ These methods are invoked by agents when they need to deliver generated files, r
 
 ## Task Delegation
 
-The Project agent's `DelegateToAssistant` tool forwards complex tasks to the `PersonalAssistantAgent`, who decomposes them and assigns subtasks to specialized agents:
+The Thread agent's `Delegate` tool forwards complex tasks through the agent selection pipeline:
 
 ```
-User message → Project agent → DelegateToAssistant tool
-                                       ↓
-                               PersonalAssistant
-                                       ↓
-                         FileSystem / Shell / Build / etc.
+User message → Thread agent → Delegate tool
+                                    ↓
+                            AgentSelectorAgent (picks agents)
+                                    ↓
+                ┌───────────────────┴───────────────┐
+                │ Single agent                      │ Multi-agent
+                │ agent.GetResponse()               │ CodeOrchestrator
+                │                                   │ → generates C# → runs agents
+                └───────────────────┬───────────────┘
+                                    ↓
+                            Result → Telegram (structured card + buttons)
 ```
 
 This allows the Telegram bot to handle multi-step engineering workflows without the user needing to interact with individual agents directly.
+
+## Structured Results
+
+Delegated task results are delivered as structured cards via `OrchestrationResult`:
+
+- Success/failure icon with summary
+- Artifact file paths produced during execution
+- Follow-up suggestion buttons rendered via `TelegramUIAgent`
+
+Single-agent responses that cannot be parsed as `OrchestrationResult` fall back to the standard `TelegramUIAgent` formatting pipeline.
 
 ## Document Ingestion
 
@@ -123,24 +139,21 @@ This enables users to upload reference documents and ask questions about them wi
 
 Agent responses stream to Telegram in real-time:
 
-- Chunks are buffered and sent via `editMessageText` with 500ms throttling to avoid Telegram rate limits
+- Chunks are buffered and sent via `editMessageText` with 1500ms throttling to avoid Telegram rate limits
 - Messages exceeding 4000 characters automatically split into continuation messages
 - The `editMessageText` calls handle "message is not modified" errors gracefully during streaming
 
 ## Event Streams
 
-The `StreamSubscriber` is a `BackgroundService` that subscribes to six Orleans streams:
+The `StreamSubscriber` is a `BackgroundService` that subscribes to Orleans streams:
 
 | Stream | Event Type | Action |
 |--------|-----------|--------|
 | `notification.sent` | `AgentEvent` | Sends markdown notification to the configured chat |
-| `approval.requested` | `AgentEvent` | Renders inline keyboard buttons for user approval |
-| `dashboard.changed` | `AgentEvent` | Debounced dashboard markdown update (2s delay) |
-| `wizard.started` | `AgentEvent` | Renders wizard step options as inline buttons |
-| `orchestration.progress` | `AgentEvent` | Sends real-time orchestration step progress to chat |
-| `orchestration.completed` | `AgentEvent` | Sends orchestration completion summary to chat |
+| `job.completed` | `AgentEvent` | Formats OrchestrationResult → TelegramUIAgent → RichOutput with buttons |
+| `orchestration.progress` | `AgentEvent` | Live progress edits during CodeOrchestrator execution |
 
-All events flow through the Orleans `"agents"` memory stream provider and are published by agents using `Agent.PublishAsync()`.
+All events flow through the Orleans `"agents"` memory stream provider and are published by agents using `Agent.PublishToStream<T>()`.
 
 ## Configuration
 
