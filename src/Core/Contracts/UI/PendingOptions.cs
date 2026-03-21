@@ -18,4 +18,5 @@ public sealed record PendingOptionSet(
     [property: Id(1)] string Prompt,
     [property: Id(2)] IReadOnlyList<PendingOption> Options,
     [property: Id(3)] string ProjectSlug,
-    [property: Id(4)] DateTimeOffset CreatedAt);
+    [property: Id(4)] DateTimeOffset CreatedAt,
+    [property: Id(5)] string Type = "option");

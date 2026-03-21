@@ -57,10 +57,10 @@ public class UISession(
                 state.PendingOptionSets.Remove(key);
 
     }
-    public Task RegisterOptions(string optionsId, string prompt, PendingOption[] options, string projectSlug, CancellationToken ct)
+    public Task RegisterOptions(string optionsId, string prompt, PendingOption[] options, string projectSlug, string type, CancellationToken ct)
     {
         state.PendingOptionSets[optionsId] = new PendingOptionSet(
-            optionsId, prompt, options, projectSlug, DateTimeOffset.UtcNow);
+            optionsId, prompt, options, projectSlug, DateTimeOffset.UtcNow, type);
         return Task.CompletedTask;
     }
 
@@ -143,8 +143,13 @@ public class UISession(
             var selectedOption = optionSet.Options.FirstOrDefault(o => o.Value == action);
             var label = selectedOption?.Label ?? action;
             state.PendingOptionSets.Remove(id);
+
+            var actionValue = optionSet.Type == "suggestion"
+                ? $"suggestion:{action}"
+                : action;
+
             return new CallbackResult(
-                $"\u2705 {optionSet.Prompt} \u2014 {label}", action, null);
+                $"\u2705 {optionSet.Prompt} \u2014 {label}", actionValue, null);
         }
 
         return new CallbackResult(null, null, "Unknown callback");

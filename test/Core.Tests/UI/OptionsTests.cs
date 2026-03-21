@@ -50,7 +50,7 @@ public class OptionsTests : IAsyncLifetime
             new PendingOption("Joke B", "b"),
             new PendingOption("Joke C", "c")
         };
-        await session.RegisterOptions("opt-abc123", "Which joke?", options, "proj/slug", ct);
+        await session.RegisterOptions("opt-abc123", "Which joke?", options, "proj/slug", "option", ct);
 
         var result = await session.HandleCallback("opt-abc123", "opt:opt-abc123:b", ct);
 
@@ -79,8 +79,8 @@ public class OptionsTests : IAsyncLifetime
         var first = new[] { new PendingOption("A", "a") };
         var second = new[] { new PendingOption("X", "x"), new PendingOption("Y", "y") };
 
-        await session.RegisterOptions("opt-1", "First?", first, "proj", ct);
-        await session.RegisterOptions("opt-1", "Second?", second, "proj", ct);
+        await session.RegisterOptions("opt-1", "First?", first, "proj", "option", ct);
+        await session.RegisterOptions("opt-1", "Second?", second, "proj", "option", ct);
 
         var result = await session.HandleCallback("opt-1", "opt:opt-1:y", ct);
         Assert.Contains("Y", result.NewText);

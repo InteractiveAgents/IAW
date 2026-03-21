@@ -79,7 +79,7 @@ public class ThreadAgent(
         var threadId = this.GetPrimaryKeyString();
         var userId = threadId.Contains('/') ? threadId.Split('/')[0] : threadId;
         var session = GrainFactory.GetGrain<IUISession>(userId);
-        await session.RegisterOptions(callbackId, prompt, pendingOptions, threadId, ct);
+        await session.RegisterOptions(callbackId, prompt, pendingOptions, threadId, "option", ct);
 
         return "Options presented to user. Waiting for selection.";
     }
