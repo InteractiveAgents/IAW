@@ -105,7 +105,14 @@
       "WebFetch(domain:localhost)",
       "Bash(sort -t: -k2 -rn)",
       "Read(//d/IAW-Workspace/tasks/**)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Read(//d/IAW/Calc/**)",
+      "Read(//d//**)",
+      "Bash(for d:*)",
+      "Read(//e/IAW/$d/**)",
+      "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw Orleans__Clustering__ProviderType=Localhost Orleans__EnableDistributedTracing=true dotnet run --project test-e2e-calc)",
+      "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-calc)",
+      "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-sim)"
     ]
   },
   "enabledMcpjsonServers": [
