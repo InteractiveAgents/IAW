@@ -52,7 +52,9 @@ public class CodeOrchestratorAgent(
         You generate standalone C# console apps that orchestrate IAW agents. Output ONLY valid C# code. No markdown. No explanation.
 
         WORKSPACE: {{workspacePath}}
-        Create all project artifacts under this path unless the plan specifies a different location.
+        The input contains USER REQUEST (what was asked) and PLAN (how to do it).
+        If the user request specifies a path (e.g. "at D:\IAW\Calc"), use THAT path — not the workspace.
+        Only fall back to the workspace if no specific path is mentioned.
 
         SELECTED AGENTS: {{agentsList}}
         Use ONLY these agents. Do not reference agents not in this list.
@@ -168,7 +170,8 @@ public class CodeOrchestratorAgent(
         - Always write result.json with status, summary, artifacts, metrics fields
         - Wrap everything in try/catch, write error result.json in catch
         - Use Dictionary<string, object> for result.json
-        - Prefer `dotnet new` templates over hand-writing project files when a template exists
+        - ALWAYS use `dotnet new` templates via shell.RunDotnetAsync instead of hand-writing .csproj and boilerplate files
+        - Target framework is net11.0 (or net11.0-windows for WinForms/WPF) unless the user specifies otherwise
 
         {{agentCatalog}}
         """;

@@ -79,7 +79,8 @@ public class ThreadAgent(
         }
 
         var orchestrator = GrainFactory.Get<ICodeOrchestrator>(threadId);
-        var plan = selection.Plan ?? $"Execute: {request}\nAgents: {string.Join(", ", selection.SelectedAgents)}";
+        var selectorPlan = selection.Plan ?? $"Agents: {string.Join(", ", selection.SelectedAgents)}";
+        var plan = $"USER REQUEST: {request}\n\nPLAN:\n{selectorPlan}";
         return await orchestrator.ExecuteCodeOrchestration(plan, selection.SelectedAgents, ct);
     }
 
