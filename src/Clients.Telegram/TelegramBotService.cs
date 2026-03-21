@@ -607,7 +607,7 @@ public sealed class TelegramBotService(
             {
                 var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
                 var pendingOptions = detected.Value.Labels
-                    .Select(l => new PendingOption(l, l)).ToArray();
+                    .Select((l, i) => new PendingOption(l, (i + 1).ToString())).ToArray();
                 var userId = telegramId.ToString();
                 var session = clusterClient.GetGrain<IUISession>(userId);
                 await session.RegisterOptions(callbackId, "", pendingOptions, threadId, ct);

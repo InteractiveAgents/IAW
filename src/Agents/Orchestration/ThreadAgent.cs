@@ -71,7 +71,7 @@ public class ThreadAgent(
     private async Task<string> PresentOptionsAsync(string prompt, string[] options, CancellationToken ct = default)
     {
         var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
-        var pendingOptions = options.Select(o => new PendingOption(o, o)).ToArray();
+        var pendingOptions = options.Select((o, i) => new PendingOption(o, (i + 1).ToString())).ToArray();
 
         _pendingOptions = new PendingOptions(
             callbackId, prompt, pendingOptions, DateTimeOffset.UtcNow.AddMinutes(30));
