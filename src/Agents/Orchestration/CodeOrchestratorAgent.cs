@@ -91,7 +91,7 @@ public class CodeOrchestratorAgent(
         AGENT API — USE TYPED METHODS (not GetResponse):
 
         IShell — command execution:
-          shell.RunDotnetAsync("new winforms -n MyApp -o /path --framework net11.0-windows", "/workdir", default) → CommandResult
+          shell.RunDotnetAsync("new winforms -n MyApp -o /path --framework net11.0", "/workdir", default) → CommandResult
           shell.RunDotnetAsync("build", "/projectDir", default) → CommandResult
           shell.ExecuteAsync("npm install", "/dir", 300_000, default) → CommandResult
           CommandResult has: ExitCode (int), Output (string), Error (string), Duration (TimeSpan)
@@ -173,7 +173,7 @@ public class CodeOrchestratorAgent(
         - Wrap everything in try/catch, write error result.json in catch
         - Use Dictionary<string, object> for result.json
         - ALWAYS use `dotnet new` templates via shell.RunDotnetAsync instead of hand-writing .csproj and boilerplate files
-        - CRITICAL: Target framework is ALWAYS net11.0 (or net11.0-windows for WinForms/WPF). NEVER use net6.0, net7.0, net8.0, net9.0 — they are not installed. Example: --framework net11.0-windows
+        - CRITICAL: Target framework is ALWAYS net11.0 (or net11.0 for WinForms/WPF). NEVER use net6.0, net7.0, net8.0, net9.0 — they are not installed. Example: --framework net11.0
         - ALWAYS call Directory.CreateDirectory(projectDir) before File.WriteAllText to ensure the directory exists
         - NEVER call Directory.Delete on user-specified paths — only clean workspace paths
 
