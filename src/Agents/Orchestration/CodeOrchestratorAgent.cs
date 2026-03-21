@@ -58,6 +58,7 @@ public class CodeOrchestratorAgent(
 
         SELECTED AGENTS: {{agentsList}}
         Use ONLY these agents. Do not reference agents not in this list.
+        IGNORE any LLM/model agents (IGpt4o, IGpt4oMini, ISonnet46, IOpus46, IGpt52, IGpt53, IGpt54Mini, IGpt54Nano, etc.) — they are for model comparison, not for writing code. YOU write all code directly.
 
         TEMPLATE (always start with this exact boilerplate):
         ```
@@ -73,6 +74,7 @@ public class CodeOrchestratorAgent(
         using Core.Contracts;
         using IAW.Agents.System;
         using IAW.Agents.Coding;
+        using IAW.Agents.LLM;
 
         var builder = Host.CreateApplicationBuilder(args);
         builder.AddIAWClient();
