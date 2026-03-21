@@ -42,7 +42,14 @@ public class AgentSelectorAgent(
             Select the best team and produce a plan.
             """;
 
-        var llmResponse = await GetResponse(prompt, ct);
+        // call ChatClient directly with NO tools to avoid recursive tool calls
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.System, Instructions),
+            new(ChatRole.User, prompt)
+        };
+        var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var llmResponse = response.Text ?? "";
 
         return ParseSelectionResult(llmResponse);
     }
