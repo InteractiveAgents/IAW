@@ -20,6 +20,8 @@ public class ThreadAgent(
 {
     private const string CallbackPrefix = "cb:";
 
+    protected override int MaxHistoryMessages => 20;
+
     private IReadOnlyList<IAgentContextProvider>? _contextProviders;
 
     protected override IReadOnlyList<IAgentContextProvider> GetContextProviders()

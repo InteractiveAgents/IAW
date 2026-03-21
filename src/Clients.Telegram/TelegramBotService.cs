@@ -427,19 +427,22 @@ public sealed class TelegramBotService(
             messageId = sent.MessageId;
         }
 
-        try
+        if (NeedsRichFormatting(formattedText))
         {
-            var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
-            var richOutput = await uiAgent.FormatResponse(formattedText, ct);
+            try
+            {
+                var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
+                var richOutput = await uiAgent.FormatResponse(formattedText, ct);
 
-            if (richOutput.Parts.Count > 0)
-                await RenderRichOutput(chatId, messageId, topicId, richOutput, telegramId, ct);
-            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
-                await EditWithMarkdown(chatId, messageId, richOutput.FormattedText);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "TelegramUI formatting failed for job result, keeping plain text");
+                if (richOutput.Parts.Count > 0)
+                    await RenderRichOutput(chatId, messageId, topicId, richOutput, telegramId, ct);
+                else if (!string.IsNullOrEmpty(richOutput.FormattedText))
+                    await EditWithMarkdown(chatId, messageId, richOutput.FormattedText);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "TelegramUI formatting failed for job result, keeping plain text");
+            }
         }
     }
 
@@ -720,8 +723,7 @@ public sealed class TelegramBotService(
         var finalText = buffer.ToString();
 
         // skip TelegramUIAgent for short/simple responses -- not worth an LLM call
-        const int richFormattingThreshold = 200;
-        if (finalText.Length < richFormattingThreshold)
+        if (finalText.Length < 200 || !NeedsRichFormatting(finalText))
         {
             if (finalText.Length > 0)
                 await EditSafe(chatId, currentMessageId, finalText);
@@ -875,6 +877,28 @@ public sealed class TelegramBotService(
             ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
         {
         }
+    }
+
+    static bool NeedsRichFormatting(string text)
+    {
+        // numbered list: "1." or "1)" at line start
+        if (System.Text.RegularExpressions.Regex.IsMatch(text, @"(?m)^\s*\d+[\.\)]\s"))
+            return true;
+
+        // 3+ bullet items
+        if (System.Text.RegularExpressions.Regex.Matches(text, @"(?m)^\s*[-*\u2022]\s").Count >= 3)
+            return true;
+
+        // markdown headers
+        if (text.Contains("\n##"))
+            return true;
+
+        // explicit option/choice language (at least 2 options)
+        if (text.Contains("Option 1", StringComparison.OrdinalIgnoreCase) &&
+            text.Contains("Option 2", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     private static string EscapeMarkdown(string text) =>

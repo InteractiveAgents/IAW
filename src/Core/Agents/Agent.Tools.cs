@@ -58,6 +58,11 @@ public abstract partial class Agent
             if (method.IsSpecialName)
                 continue;
 
+            // skip methods returning complex domain types — they aren't useful as LLM tools
+            // and can cause recursive loops (e.g., FormatResponse returning RichOutput)
+            if (!IsToolSafeReturnType(method.ReturnType))
+                continue;
+
             try
             {
                 tools.Add(AIFunctionFactory.Create(method, this));
@@ -110,6 +115,21 @@ public abstract partial class Agent
 
         return excluded;
     }
+
+    private static bool IsToolSafeReturnType(Type returnType)
+    {
+        if (returnType == typeof(Task) || returnType == typeof(void))
+            return true;
+
+        if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+            returnType = returnType.GetGenericArguments()[0];
+
+        return IsSimpleType(returnType)
+            || (returnType.IsArray && IsSimpleType(returnType.GetElementType()!));
+    }
+
+    private static bool IsSimpleType(Type type) =>
+        type == typeof(string) || type.IsPrimitive || type == typeof(decimal) || type.IsEnum;
 
     protected static void RegisterToolMethods(List<AITool> tools, object toolSource)
     {

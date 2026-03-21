@@ -3,12 +3,12 @@ using Core.AI.Models;
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    .WithLLM<Gpt54Mini>()
-    .WithLLM<Claude45Haiku>().AsFast()
-    .WithLLM<Gpt54Nano>()
-    .WithLLM<Sonnet46>().AsBalanced()
+    .WithLLM<Gpt54Mini>().AsBalanced()
+    .WithLLM<Claude45Haiku>()
+    .WithLLM<Gpt54Nano>().AsFast()
+    .WithLLM<Sonnet46>()
     .WithLLM<Opus46>().AsReasoning()
-    .WithLLM<Qwen25>()
+    //.WithLLM<Qwen25>()
     .WithLLM<GitHubGpt4oMini>()
     .WithVoice2Text<WhisperLargeV3Turbo>()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI())

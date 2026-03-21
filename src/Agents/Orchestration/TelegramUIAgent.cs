@@ -16,6 +16,11 @@ public class TelegramUIAgent(
     ILogger<TelegramUIAgent> logger)
     : Agent<ITelegramUI>(durableState, chatClient), ITelegramUI
 {
+    // no tools, no history — pure formatting agent
+    protected override int MaxHistoryMessages => 0;
+    protected override IReadOnlyList<AITool> DefineTools() => [];
+    protected override IReadOnlyList<AITool> DefineAdditionalTools() => [];
+
     public async Task<RichOutput> FormatResponse(string rawText, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(rawText))
@@ -23,10 +28,21 @@ public class TelegramUIAgent(
 
         try
         {
-            var response = await GetResponse(
-                $"Format this response for Telegram. Return ONLY valid JSON.\n\nRESPONSE TEXT:\n{rawText}", ct);
+            // bypass Agent pipeline (GetResponse) to avoid tool-calling loop:
+            // DiscoverInterfaceTools registers FormatResponse itself as an LLM tool,
+            // causing recursive calls and massive token waste
+            var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+            {
+                new(ChatRole.System, Instructions),
+                new(ChatRole.User, $"Format this response for Telegram. Return ONLY valid JSON.\n\nRESPONSE TEXT:\n{rawText}")
+            };
 
-            return ParseRichOutput(response, rawText);
+            var response = await ChatClient.GetResponseAsync(messages, new ChatOptions
+            {
+                MaxOutputTokens = 2048
+            }, ct);
+
+            return ParseRichOutput(response.Text ?? "", rawText);
         }
         catch (Exception ex)
         {
