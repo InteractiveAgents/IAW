@@ -206,6 +206,8 @@ public class CodeOrchestratorAgent(
             Directory.CreateDirectory(taskDir);
             Directory.CreateDirectory(Path.Combine(taskDir, "output"));
 
+            await PublishProgress(projectKey, taskId, "planning", "Generating orchestration code...", ct);
+
             await File.WriteAllTextAsync(Path.Combine(taskDir, "plan.md"), prompt, ct);
 
             var csprojContent = GenerateCsproj();
@@ -219,6 +221,7 @@ public class CodeOrchestratorAgent(
             const int maxRetries = 2;
             for (var attempt = 0; attempt <= maxRetries; attempt++)
             {
+                await PublishProgress(projectKey, taskId, "building", $"Building (attempt {attempt + 1})...", ct);
                 var buildErrors = await TryBuild(taskDir, ct);
                 if (buildErrors is null) break; // clean build
 
@@ -228,10 +231,12 @@ public class CodeOrchestratorAgent(
                     return new OrchestrationResult(false, $"Code generation failed after {maxRetries + 1} attempts", taskDir, [], null, buildErrors, taskId);
                 }
 
+                await PublishProgress(projectKey, taskId, "retrying", $"Fixing build errors (attempt {attempt + 1})...", ct);
                 code = await RegenerateCode(prompt, code, buildErrors, ct);
                 await File.WriteAllTextAsync(codePath, code, ct);
             }
 
+            await PublishProgress(projectKey, taskId, "executing", "Running orchestration...", ct);
             var (exitCode, log) = await ExecuteProject(taskDir, ct);
             await File.WriteAllTextAsync(Path.Combine(taskDir, "log.txt"), log, ct);
 
@@ -468,5 +473,17 @@ public class CodeOrchestratorAgent(
         foreach (var prop in el.EnumerateObject())
             dict[prop.Name] = prop.Value.ToString();
         return dict.Count > 0 ? dict : null;
+    }
+
+    private async Task PublishProgress(string projectKey, string taskId, string phase, string message, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(projectKey)) return;
+        await PublishAsync(IAWConstants.Events.OrchestrationProgress, new Dictionary<string, string>
+        {
+            [IAWConstants.PayloadKeys.ProjectKey] = projectKey,
+            [IAWConstants.PayloadKeys.TaskId] = taskId,
+            [IAWConstants.PayloadKeys.Phase] = phase,
+            [IAWConstants.PayloadKeys.Message] = message
+        }, ct);
     }
 }
