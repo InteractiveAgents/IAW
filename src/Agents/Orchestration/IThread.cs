@@ -28,6 +28,8 @@ public interface IThread : IAgent
 
         When delegating, describe WHAT needs to be done, not HOW. The agent
         system handles routing and execution automatically.
+        ALWAYS preserve exact paths, filenames, and locations from the user's message.
+        If the user says "at D:\MyApp", include that exact path in your delegation.
 
         Be concise and direct. Use markdown formatting.
         """;

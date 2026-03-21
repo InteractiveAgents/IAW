@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Core;
 using Core.Context;
 using Core.Contracts;
@@ -66,6 +67,8 @@ public class ThreadAgent(
     private async Task<string> ExecuteSelection(SelectionResult selection, string request, CancellationToken ct)
     {
         var threadId = this.GetPrimaryKeyString();
+        var lastUserMsg = History.LastOrDefault(m => m.Role == "user");
+        var userMessage = lastUserMsg?.Text ?? request;
 
         if (selection.SelectedAgents.Count == 1)
         {
@@ -80,11 +83,9 @@ public class ThreadAgent(
 
         var orchestrator = GrainFactory.Get<ICodeOrchestrator>(threadId);
         var selectorPlan = selection.Plan ?? $"Agents: {string.Join(", ", selection.SelectedAgents)}";
-        var plan = $"USER REQUEST: {request}\n\nPLAN:\n{selectorPlan}";
-        var orchestrationResult = await orchestrator.ExecuteCodeOrchestration(plan, selection.SelectedAgents, threadId, ct);
-        return orchestrationResult.Success
-            ? $"Completed. Workspace: {orchestrationResult.WorkspacePath}\nSummary: {orchestrationResult.Summary}"
-            : $"Failed. {orchestrationResult.ErrorDetail ?? orchestrationResult.Summary}";
+        var plan = $"USER REQUEST: {userMessage}\n\nPLAN:\n{selectorPlan}";
+        var result = await orchestrator.ExecuteCodeOrchestration(plan, selection.SelectedAgents, threadId, ct);
+        return JsonSerializer.Serialize(result);
     }
 
     private static string FormatClarificationResponse(SelectionResult result)

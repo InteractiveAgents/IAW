@@ -52,4 +52,18 @@ public class ThreadTests : AgentTest<ThreadAgent>
         var history = await thread.GetHistory(ct);
         Assert.Empty(history);
     }
+
+    [Fact]
+    public async Task GetHistory_PreservesVerbatimUserMessage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var thread = Agent(UniqueId("verbatim"));
+
+        await thread.GetResponse(@"Create a calculator at D:\IAW\Calc", ct);
+        var history = await thread.GetHistory(ct);
+
+        var lastUserMsg = history.LastOrDefault(m => m.Role == "user");
+        Assert.NotNull(lastUserMsg);
+        Assert.Contains(@"D:\IAW\Calc", lastUserMsg.Text);
+    }
 }
