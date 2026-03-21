@@ -20,6 +20,7 @@ public class CodeOrchestratorAgent(
 {
     static readonly TimeSpan ExecutionTimeout = TimeSpan.FromMinutes(10);
 
+    string _cachedAgentCatalog = "";
     string _cachedInstructions = "";
 
     protected override string Instructions => _cachedInstructions.Length > 0 ? _cachedInstructions : BuildFallbackInstructions();
@@ -29,22 +30,32 @@ public class CodeOrchestratorAgent(
         try
         {
             var registry = GrainFactory.GetGrain<IAgentRegistry>("global");
-            var catalogPrompt = await registry.ToPromptStringAsync(cancellationToken);
-            _cachedInstructions = BuildInstructions(catalogPrompt);
+            _cachedAgentCatalog = await registry.ToPromptStringAsync(cancellationToken);
         }
         catch
         {
-            _cachedInstructions = BuildInstructions("");
+            _cachedAgentCatalog = "";
         }
+        _cachedInstructions = BuildInstructions(_cachedAgentCatalog, "", []);
         await base.OnActivateAsync(cancellationToken);
     }
 
-    static string BuildFallbackInstructions() => BuildInstructions("");
+    static string BuildFallbackInstructions() => BuildInstructions("", "", []);
 
-    static string BuildInstructions(string agentCatalog)
+    static string BuildInstructions(string agentCatalog, string workspacePath, IReadOnlyList<string> selectedAgents)
     {
+        var agentsList = selectedAgents.Count > 0
+            ? string.Join(", ", selectedAgents)
+            : "any available agents";
+
         return $$"""
-        You generate standalone C# console apps. Output ONLY valid C# code. No markdown. No explanation.
+        You generate standalone C# console apps that orchestrate IAW agents. Output ONLY valid C# code. No markdown. No explanation.
+
+        WORKSPACE: {{workspacePath}}
+        Create all project artifacts under this path unless the plan specifies a different location.
+
+        SELECTED AGENTS: {{agentsList}}
+        Use ONLY these agents. Do not reference agents not in this list.
 
         TEMPLATE (always start with this exact boilerplate):
         ```
@@ -73,52 +84,91 @@ public class CodeOrchestratorAgent(
         await host.StopAsync();
         ```
 
-        CRITICAL — RETURN TYPES:
-        - `agent.GetResponse("prompt", default)` returns `string` — plain text, NOT a structured object.
-        - Do NOT call .Summary, .Status, .Content, or ANY property on the result. It is a string.
-        - Use the string directly: `var result = await agent.GetResponse("...", default);`
-        - To include it in result.json, use it as-is: `summary = result`
-        - Specialized methods like `IDotNet.BuildAsync()` return typed results (e.g., `BuildRunResult`).
+        AGENT API — USE TYPED METHODS (not GetResponse):
 
-        COMPLETE EXAMPLE (create a project with files and build it):
+        IShell — command execution:
+          shell.RunDotnetAsync("new winforms -n MyApp -o /path", "/workdir", default) → CommandResult
+          shell.RunDotnetAsync("build", "/projectDir", default) → CommandResult
+          shell.ExecuteAsync("npm install", "/dir", 300_000, default) → CommandResult
+          CommandResult has: ExitCode (int), Output (string), Error (string), Duration (TimeSpan)
+          Use RunDotnetAsync for all dotnet CLI commands. Use ExecuteAsync for other shell commands.
+
+        IDotNet — build and test:
+          dotnet.BuildAsync("/path/to/project.csproj", "Debug", default) → BuildRunResult
+          dotnet.TestAsync("ClassName.MethodName", default) → TestRunResult
+          BuildRunResult has: Success (bool), Output (string), Warnings (int), Errors (int), Duration (TimeSpan), Diagnostics (string[])
+          Use build.Diagnostics for error messages (string[]), NOT build.Errors (which is int count).
+          TestRunResult has: AllPassed (bool), Total (int), Passed (int), Failed (int), Output (string)
+
+        IRoslyn — code intelligence:
+          roslyn.AnalyzeBuildErrorsAsync(buildOutput, default) → string (analysis with fix suggestions)
+          roslyn.GetTypeMapAsync(default) → string (all types in workspace)
+          roslyn.FindReferencesAsync("MethodName", default) → string
+          roslyn.GetWorkspaceStatusAsync(default) → string
+
+        IFileSystem — file operations:
+          fs.ReadFileAsync("/path/to/file.cs", default) → string
+          await fs.WriteFileAsync("/path/to/file.cs", content, default) → Task (always await)
+          fs.ListFilesAsync("/dir", "*.cs", default) → string[]
+          fs.SearchCodeAsync("pattern", "/dir", "*.cs", default) → string[]
+
+        IGit — version control:
+          git.StatusAsync("/repoPath", default) → string
+          git.CommitAsync("/repoPath", "message", default) → string
+          git.DiffAsync("/repoPath", default) → string
+
+        WHEN TO USE WHAT:
+        - Project scaffolding: shell.RunDotnetAsync("new winforms ...", dir, default)
+        - Building: dotnet.BuildAsync(projectPath, default) — returns typed BuildRunResult
+        - Fixing build errors: roslyn.AnalyzeBuildErrorsAsync(errors, default)
+        - Writing NEW file content you generate: File.WriteAllText() — direct, no agent needed
+        - Reading/modifying EXISTING files: fs.ReadFileAsync / fs.WriteFileAsync
+        - Running non-dotnet commands: shell.ExecuteAsync(cmd, dir, timeoutMs, default)
+        - Do NOT use LLM agents (ISonnet46, IGpt4oMini, etc.) to generate code — YOU write the code.
+        - Do NOT use shell.GetResponse() or dotnet.GetResponse() — these waste an LLM roundtrip. Use typed methods.
+
+        COMPLETE EXAMPLE (scaffold a project, modify files, build, verify):
         ```
-        // WRITE FILES DIRECTLY — do NOT use agents to generate file content.
-        // You already know what code to write, so write it with File.WriteAllText.
-        Directory.CreateDirectory("D:/MyApp");
-
-        File.WriteAllText("D:/MyApp/MyApp.csproj", @"<Project Sdk=""Microsoft.NET.Sdk"">
-          <PropertyGroup>
-            <OutputType>Exe</OutputType>
-            <TargetFramework>net11.0</TargetFramework>
-          </PropertyGroup>
-        </Project>");
-
-        File.WriteAllText("D:/MyApp/Program.cs", @"Console.WriteLine(""Hello World"");");
-
-        // Use IShell or IDotNet only for EXECUTING commands (build, test, run)
         var shell = client.Get<IShell>(taskId);
-        var buildResult = await shell.GetResponse("cd D:/MyApp && dotnet build", default);
-        Console.WriteLine(buildResult);
+        var dotnet = client.Get<IDotNet>(taskId);
+        var roslyn = client.Get<IRoslyn>(taskId);
 
-        var resultObj = new Dictionary<string, object> { ["status"] = "success", ["summary"] = buildResult, ["artifacts"] = new[] { "D:/MyApp" }, ["metrics"] = new Dictionary<string, object>() };
+        // Step 1: Scaffold
+        var scaffold = await shell.RunDotnetAsync("new console -n MyApp -o {{workspacePath}}/MyApp", null, default);
+        Console.WriteLine("Scaffold exit: " + scaffold.ExitCode);
+
+        // Step 2: Modify generated files
+        var programPath = Path.Combine("{{workspacePath}}", "MyApp", "Program.cs");
+        File.WriteAllText(programPath, @"Console.WriteLine(""Hello from IAW!"");");
+
+        // Step 3: Build
+        var build = await dotnet.BuildAsync("{{workspacePath}}/MyApp/MyApp.csproj", "Debug", default);
+        Console.WriteLine("Build success: " + build.Success);
+
+        // Step 4: If errors, analyze with Roslyn
+        if (!build.Success)
+        {
+            var analysis = await roslyn.AnalyzeBuildErrorsAsync(string.Join("\n", build.Diagnostics), default);
+            Console.WriteLine("Roslyn analysis: " + analysis);
+        }
+
+        // Step 5: Write result
+        var resultObj = new Dictionary<string, object>
+        {
+            ["status"] = build.Success ? "success" : "failed",
+            ["summary"] = build.Success ? "Project built successfully" : string.Join("\n", build.Diagnostics),
+            ["artifacts"] = new[] { "{{workspacePath}}/MyApp" },
+            ["metrics"] = new Dictionary<string, object>()
+        };
         File.WriteAllText("result.json", JsonSerializer.Serialize(resultObj));
         ```
 
-        CRITICAL — FILE WRITING:
-        - Write files DIRECTLY with `File.WriteAllText()` and `Directory.CreateDirectory()`.
-        - Do NOT use IFileSystem, IShell, or any agent to write file content. You have full disk access.
-        - Do NOT use LLM agents (ISonnet46, IGpt4oMini, etc.) to generate code. YOU generate the code directly.
-        - Use agents ONLY for: building (IDotNet.BuildAsync), running tests (IDotNet.TestAsync),
-          executing shell commands (IShell), git operations (IGit), and analysis (IRoslyn).
-
         RULES:
-        - Get agents via `client.Get<IInterfaceName>(taskId)` — isolated instances per task.
-        - `GetResponse()` returns `string`. Always. Never call properties on it.
-        - For parallel work use `await Task.WhenAll(task1, task2)`.
-        - Always write result.json with status, summary, artifacts, and metrics fields.
-        - Keep code SHORT. Under 80 lines. No unnecessary abstractions.
-        - Wrap everything in try/catch, write error to result.json in catch.
-        - For result.json use Dictionary: `new Dictionary<string, object> { ["status"] = "success", ["summary"] = result }`
+        - Get agents: `client.Get<IInterfaceName>(taskId)` — one instance per task
+        - Always write result.json with status, summary, artifacts, metrics fields
+        - Wrap everything in try/catch, write error result.json in catch
+        - Use Dictionary<string, object> for result.json
+        - Prefer `dotnet new` templates over hand-writing project files when a template exists
 
         {{agentCatalog}}
         """;
@@ -129,16 +179,18 @@ public class CodeOrchestratorAgent(
     public override async Task<string> GetResponse(string prompt, CancellationToken ct = default)
     {
         if (prompt.StartsWith("[EXECUTE_CODE]"))
-            return await ExecuteCodeOrchestration(prompt["[EXECUTE_CODE]\n".Length..], ct);
+            return await ExecuteCodeOrchestration(prompt["[EXECUTE_CODE]\n".Length..], [], ct);
         return await base.GetResponse(prompt, ct);
     }
 
-    public async Task<string> ExecuteCodeOrchestration(string prompt, CancellationToken ct = default)
+    public async Task<string> ExecuteCodeOrchestration(string prompt, IReadOnlyList<string> selectedAgents, CancellationToken ct = default)
     {
         try
         {
             var workspacePath = Environment.GetEnvironmentVariable("IAW__Workspace")
                 ?? Path.Combine(Path.GetTempPath(), "iaw-workspace");
+
+            _cachedInstructions = BuildInstructions(_cachedAgentCatalog, workspacePath, selectedAgents);
 
             var slug = GenerateSlug(prompt);
             var taskId = $"{DateTime.UtcNow:yyyy-MM-dd}-{slug}-{Guid.NewGuid().ToString("N")[..6]}";
@@ -239,45 +291,64 @@ public class CodeOrchestratorAgent(
 
     private async Task<string> RegenerateCode(string plan, string previousCode, string buildErrors, CancellationToken ct)
     {
-        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        var maxTokens = DefaultMaxTokens;
+        string lastCode = "";
+
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
-            new(Microsoft.Extensions.AI.ChatRole.User, plan),
-            new(Microsoft.Extensions.AI.ChatRole.Assistant, previousCode),
-            new(Microsoft.Extensions.AI.ChatRole.User,
-                $"The code above has build errors. Fix them and output the COMPLETE corrected code.\n\nBuild errors:\n{buildErrors}\n\nREMEMBER: GetResponse() returns string, not a structured object. Do NOT call .Summary, .Status, or any property on it.")
-        };
-        var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = 4096 };
-        var response = await ChatClient.GetResponseAsync(messages, options, ct);
-        var code = (response.Text ?? "").Trim();
-        if (code.StartsWith("```"))
-        {
-            var firstNewline = code.IndexOf('\n');
-            code = code[(firstNewline + 1)..];
+            var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+            {
+                new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
+                new(Microsoft.Extensions.AI.ChatRole.User, plan),
+                new(Microsoft.Extensions.AI.ChatRole.Assistant, previousCode),
+                new(Microsoft.Extensions.AI.ChatRole.User,
+                    $"The code above has build errors. Fix them and output the COMPLETE corrected code.\n\nBuild errors:\n{buildErrors}")
+            };
+            var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = maxTokens };
+            var response = await ChatClient.GetResponseAsync(messages, options, ct);
+            lastCode = StripMarkdownFences(response.Text ?? "");
+
+            if (response.FinishReason == ChatFinishReason.Length && maxTokens < MaxTokensCap)
+            {
+                maxTokens = Math.Min(maxTokens * 2, MaxTokensCap);
+                continue;
+            }
+
+            return lastCode;
         }
-        if (code.EndsWith("```"))
-            code = code[..^3].TrimEnd();
-        return code;
+
+        return lastCode;
     }
+
+    const int DefaultMaxTokens = 16384;
+    const int MaxTokensCap = 32768;
 
     private async Task<string> GenerateCode(string plan, CancellationToken ct)
     {
-        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        var maxTokens = DefaultMaxTokens;
+        string lastCode = "";
+
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
-            new(Microsoft.Extensions.AI.ChatRole.User, plan)
-        };
-        var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = 4096 };
-        var response = await ChatClient.GetResponseAsync(messages, options, ct);
-        var code = (response.Text ?? "").Trim();
-        if (code.StartsWith("```"))
-        {
-            var firstNewline = code.IndexOf('\n');
-            code = code[(firstNewline + 1)..];
+            var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+            {
+                new(Microsoft.Extensions.AI.ChatRole.System, Instructions),
+                new(Microsoft.Extensions.AI.ChatRole.User, plan)
+            };
+            var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = maxTokens };
+            var response = await ChatClient.GetResponseAsync(messages, options, ct);
+            lastCode = StripMarkdownFences(response.Text ?? "");
+
+            if (response.FinishReason == ChatFinishReason.Length && maxTokens < MaxTokensCap)
+            {
+                maxTokens = Math.Min(maxTokens * 2, MaxTokensCap);
+                continue;
+            }
+
+            return lastCode;
         }
-        if (code.EndsWith("```"))
-            code = code[..^3].TrimEnd();
-        return code;
+
+        return lastCode;
     }
 
     private static string GenerateCsproj() => ScriptGenerator.GenerateCsproj();
@@ -345,5 +416,18 @@ public class CodeOrchestratorAgent(
             .Where(w => w.Length > 0);
         var slug = string.Join("-", words);
         return slug.Length > 30 ? slug[..30] : slug;
+    }
+
+    private static string StripMarkdownFences(string code)
+    {
+        code = code.Trim();
+        if (code.StartsWith("```"))
+        {
+            var firstNewline = code.IndexOf('\n');
+            if (firstNewline >= 0) code = code[(firstNewline + 1)..];
+        }
+        if (code.EndsWith("```"))
+            code = code[..^3].TrimEnd();
+        return code;
     }
 }

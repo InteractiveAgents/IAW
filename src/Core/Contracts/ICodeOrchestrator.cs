@@ -11,5 +11,5 @@ public interface ICodeOrchestrator : IAgent
         ["orchestrate", "execute", "generate", "csharp", "code", "automate"];
 
     [ResponseTimeout("00:15:00")]
-    Task<string> ExecuteCodeOrchestration(string plan, CancellationToken ct = default);
+    Task<string> ExecuteCodeOrchestration(string plan, IReadOnlyList<string> selectedAgents, CancellationToken ct = default);
 }
