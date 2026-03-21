@@ -4,6 +4,7 @@ using Core.AI;
 using Core.Contracts;
 using Core.Contracts.UI;
 using Core.Services;
+using Core.UI;
 using IAW.Agents.Orchestration;
 using Microsoft.Extensions.Options;
 using Telegram;
@@ -172,24 +173,40 @@ public sealed class TelegramBotService(
 
         if (callbackQuery.Data?.StartsWith("opt:") == true && result.Action is not null)
         {
-            var optParts = callbackQuery.Data.Split(':', 3);
-            if (optParts.Length >= 3)
+            if (result.Action.StartsWith("suggestion:"))
             {
-                var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
-                var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
-
                 var selectedLabel = result.NewText?.Contains('\u2014') == true
                     ? result.NewText.Split('\u2014', 2).Last().Trim()
-                    : result.Action;
-                var originalPrompt = result.NewText?.Contains('\u2014') == true
-                    ? result.NewText.Split('\u2014', 2).First().Replace("\u2705", "").Trim()
-                    : "";
-                var contextPrefix = !string.IsNullOrEmpty(originalPrompt)
-                    ? $"Re: '{originalPrompt}' -- " : "";
-                var selectionMessage = BuildChatMessage($"{contextPrefix}I choose: {selectedLabel}");
+                    : result.Action.Replace("suggestion:", "");
+
+                var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
+                var selectionMessage = BuildChatMessage(selectedLabel);
 
                 var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
                 await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
+            }
+            else
+            {
+                var optParts = callbackQuery.Data.Split(':', 3);
+                if (optParts.Length >= 3)
+                {
+                    var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                    var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
+
+                    var selectedLabel = result.NewText?.Contains('\u2014') == true
+                        ? result.NewText.Split('\u2014', 2).Last().Trim()
+                        : result.Action;
+                    var originalPrompt = result.NewText?.Contains('\u2014') == true
+                        ? result.NewText.Split('\u2014', 2).First().Replace("\u2705", "").Trim()
+                        : "";
+                    var contextPrefix = !string.IsNullOrEmpty(originalPrompt)
+                        ? $"Re: '{originalPrompt}' -- " : "";
+                    var selectionMessage = BuildChatMessage($"{contextPrefix}I choose: {selectedLabel}");
+
+                    var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
+                    await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
+                }
             }
         }
     }
@@ -592,61 +609,97 @@ public sealed class TelegramBotService(
 
         var finalText = buffer.ToString();
 
-        var threadId = thread.GetPrimaryKeyString();
-        var threadUI = clusterClient.GetGrain<IThreadUI>(threadId);
-        var pending = await threadUI.ConsumePendingOptions(ct);
+        try
+        {
+            var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
+            var richOutput = await uiAgent.FormatResponse(finalText, ct);
 
-        if (pending is not null)
-        {
-            await AttachOptionsButtons(chatId, currentMessageId, finalText, pending);
-        }
-        else
-        {
-            var detected = OptionsFallbackDetector.TryDetect(finalText);
-            if (detected is not null)
+            if (richOutput.Parts.Count > 0)
             {
-                var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
-                var pendingOptions = detected.Value.Labels
-                    .Select((l, i) => new PendingOption(l, (i + 1).ToString())).ToArray();
-                var userId = telegramId.ToString();
-                var session = clusterClient.GetGrain<IUISession>(userId);
-                await session.RegisterOptions(callbackId, "", pendingOptions, threadId, "option", ct);
-
-                var fallbackPending = new PendingOptions(callbackId, "", pendingOptions,
-                    DateTimeOffset.UtcNow.AddMinutes(30));
-                await AttachOptionsButtons(chatId, currentMessageId, finalText, fallbackPending);
+                await RenderRichOutput(chatId, currentMessageId, topicId, richOutput, telegramId, ct);
+            }
+            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
+            {
+                await EditWithMarkdown(chatId, currentMessageId, richOutput.FormattedText);
             }
             else if (finalText.Length > 0)
             {
                 await EditSafe(chatId, currentMessageId, finalText);
             }
         }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "TelegramUI formatting failed for user {TelegramId}, falling back to plain text", telegramId);
+            if (finalText.Length > 0)
+                await EditSafe(chatId, currentMessageId, finalText);
+        }
     }
 
-    private async Task AttachOptionsButtons(long chatId, int messageId, string text, PendingOptions pending)
+    private async Task RenderRichOutput(long chatId, int messageId, int? topicId, RichOutput richOutput, long telegramId, CancellationToken ct)
     {
-        var buttons = pending.Options.Select(o =>
-            new InlineKeyboardButton(o.Label) { CallbackData = $"opt:{pending.CallbackId}:{o.Value}" }
-        ).ToArray();
-        var keyboard = new InlineKeyboardMarkup([buttons]);
+        var userId = telegramId.ToString();
+        var session = clusterClient.GetGrain<IUISession>(userId);
 
-        var displayText = !string.IsNullOrEmpty(pending.Prompt) && !text.Contains(pending.Prompt)
-            ? $"{text}\n\n{pending.Prompt}"
-            : text;
+        var rows = new List<InlineKeyboardButton[]>();
 
-        if (string.IsNullOrWhiteSpace(displayText))
-            displayText = pending.Prompt;
+        foreach (var part in richOutput.Parts)
+        {
+            if (part is OptionsPart optionsPart && optionsPart.Options.Count >= 2)
+            {
+                var pendingOpts = optionsPart.Options.Select(o => new PendingOption(o.Label, o.Value)).ToArray();
+                var threadId = $"{telegramId}/{topicId?.ToString() ?? "general"}";
+                await session.RegisterOptions(optionsPart.CallbackId, optionsPart.Prompt, pendingOpts, threadId, "option", ct);
+                rows.Add(optionsPart.Options.Select(o =>
+                    new InlineKeyboardButton(o.Label) { CallbackData = $"opt:{optionsPart.CallbackId}:{o.Value}" }
+                ).ToArray());
+            }
 
+            if (part is SuggestionPart suggestionPart && suggestionPart.Actions.Count > 0)
+            {
+                var pendingOpts = suggestionPart.Actions.Select((a, i) => new PendingOption(a.Label, (i + 1).ToString())).ToArray();
+                var threadId = $"{telegramId}/{topicId?.ToString() ?? "general"}";
+                await session.RegisterOptions(suggestionPart.CallbackId, "", pendingOpts, threadId, "suggestion", ct);
+                rows.Add(suggestionPart.Actions.Select((a, i) =>
+                    new InlineKeyboardButton(a.Label) { CallbackData = $"opt:{suggestionPart.CallbackId}:{i + 1}" }
+                ).ToArray());
+            }
+        }
+
+        var keyboard = rows.Count > 0 ? new InlineKeyboardMarkup([.. rows]) : null;
+        await EditWithMarkdown(chatId, messageId, richOutput.FormattedText, keyboard);
+
+        foreach (var part in richOutput.Parts.OfType<MediaPart>())
+        {
+            try
+            {
+                if (part.MimeType.StartsWith("image/"))
+                    await botClient.SendPhotoAsync(chatId, part.Url,
+                        messageThreadId: topicId, caption: part.Caption);
+                else
+                    await botClient.SendDocumentAsync(chatId, part.Url,
+                        messageThreadId: topicId, caption: part.Caption);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to send media {FileName}", part.FileName);
+            }
+        }
+    }
+
+    private async Task EditWithMarkdown(long chatId, int messageId, string markdownText, InlineKeyboardMarkup? keyboard = null)
+    {
+        if (string.IsNullOrWhiteSpace(markdownText)) return;
         try
         {
-            await botClient.EditMessageTextAsync(chatId, messageId, displayText, replyMarkup: keyboard);
+            await botClient.EditMessageTextAsync(chatId, messageId, markdownText,
+                parseMode: FormatStyles.MarkdownV2, replyMarkup: keyboard);
         }
         catch (BotRequestException)
         {
             try
             {
-                await botClient.EditMessageTextAsync(chatId, messageId, displayText,
-                    replyMarkup: keyboard, parseMode: null);
+                await botClient.EditMessageTextAsync(chatId, messageId, markdownText,
+                    replyMarkup: keyboard);
             }
             catch (BotRequestException ex) when (
                 ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase))
