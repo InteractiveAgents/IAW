@@ -380,28 +380,60 @@ public sealed class TelegramBotService(
     public async Task SendJobResultAsync(string projectKey, string jobName, string result, CancellationToken ct)
     {
         var parts = projectKey.Split('/');
-        if (parts.Length < 2 || !long.TryParse(parts[0], out _)) return;
+        if (parts.Length < 2 || !long.TryParse(parts[0], out _))
+        {
+            logger.LogWarning("SendJobResult: invalid projectKey format '{ProjectKey}'", projectKey);
+            return;
+        }
 
         var userId = parts[0];
         var slug = parts[1];
         var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
         var prefs = await userProfile.GetPreferences(ct);
         if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        {
+            logger.LogWarning("SendJobResult: no GroupChatId for user {UserId}, slug {Slug}", userId, slug);
             return;
+        }
 
         var topicId = await userProfile.GetTopicId(slug, ct);
-        var text = $"*{EscapeMarkdown(jobName)}*\n\n{EscapeMarkdown(result)}";
+        var header = $"*{EscapeMarkdown(jobName)}*\n\n";
+        var escapedResult = EscapeMarkdown(result);
 
-        try
+        foreach (var chunk in SplitForTelegram(header, escapedResult))
         {
-            await botClient.SendMessageAsync(chatId, text,
-                messageThreadId: topicId, parseMode: FormatStyles.MarkdownV2);
+            try
+            {
+                await botClient.SendMessageAsync(chatId, chunk,
+                    messageThreadId: topicId, parseMode: FormatStyles.MarkdownV2);
+            }
+            catch (BotRequestException)
+            {
+                var plain = chunk.Replace("\\", "");
+                await botClient.SendMessageAsync(chatId, plain, messageThreadId: topicId);
+            }
         }
-        catch (BotRequestException)
+    }
+
+    private static List<string> SplitForTelegram(string header, string body, int maxLength = 4000)
+    {
+        var full = header + body;
+        if (full.Length <= maxLength)
+            return [full];
+
+        var chunks = new List<string>();
+        var remaining = body;
+        chunks.Add(header + remaining[..Math.Min(maxLength - header.Length, remaining.Length)]);
+        remaining = remaining[(maxLength - header.Length)..];
+
+        while (remaining.Length > 0)
         {
-            // fallback without markdown if escaping still fails
-            await botClient.SendMessageAsync(chatId, $"{jobName}\n\n{result}", messageThreadId: topicId);
+            var take = Math.Min(maxLength, remaining.Length);
+            chunks.Add(remaining[..take]);
+            remaining = remaining[take..];
         }
+
+        return chunks;
     }
 
     public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)
