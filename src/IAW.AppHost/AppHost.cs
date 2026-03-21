@@ -3,10 +3,11 @@ using Core.AI.Models;
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    .WithLLM<Claude45Haiku>()
     .WithLLM<Gpt54Mini>()
+    .WithLLM<Claude45Haiku>()
     .WithLLM<Gpt54Nano>()
     .WithLLM<Sonnet46>()
+    .WithLLM<Opus46>()
     .WithLLM<Qwen25>()
     .WithLLM<GitHubGpt4oMini>()
     .WithVoice2Text<WhisperLargeV3Turbo>()
