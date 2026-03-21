@@ -1,6 +1,7 @@
 using Core;
 using Core.Context;
 using Core.Contracts;
+using Core.Contracts.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,11 +16,12 @@ public class ThreadAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient,
     ILogger<ThreadAgent> logger)
-    : Agent<IThread>(durableState, chatClient), IThread
+    : Agent<IThread>(durableState, chatClient), IThread, IThreadUI
 {
     private const string CallbackPrefix = "cb:";
 
     private IReadOnlyList<IAgentContextProvider>? _contextProviders;
+    private PendingOptions? _pendingOptions;
 
     protected override IReadOnlyList<IAgentContextProvider> GetContextProviders()
     {
@@ -45,10 +47,15 @@ public class ThreadAgent(
 
     protected override IReadOnlyList<AITool> DefineAdditionalTools()
     {
-        return [AIFunctionFactory.Create(DelegateAsync, "Delegate",
-            "Delegate a task to the IAW agent system. Use this for any request that requires " +
-            "code execution, system operations, builds, git, file operations, or specialized agent skills. " +
-            "Describe WHAT needs to be done.")];
+        return [
+            AIFunctionFactory.Create(DelegateAsync, "Delegate",
+                "Delegate a task to the IAW agent system. Use this for any request that requires " +
+                "code execution, system operations, builds, git, file operations, or specialized agent skills. " +
+                "Describe WHAT needs to be done."),
+            AIFunctionFactory.Create(PresentOptionsAsync, "PresentOptions",
+                "Present interactive options to the user as clickable buttons. " +
+                "Use when offering choices, comparisons, votes, or any pick-one scenario.")
+        ];
     }
 
     private async Task<string> DelegateAsync(string request, CancellationToken ct = default)
@@ -59,6 +66,22 @@ public class ThreadAgent(
 
         await ScheduleJob(taskId, TimeSpan.Zero, $"{IAWConstants.DelegationPrefix}{request}", ct);
         return $"Task {taskId} submitted. I'm working on your request and will deliver results shortly.";
+    }
+
+    private async Task<string> PresentOptionsAsync(string prompt, string[] options, CancellationToken ct = default)
+    {
+        var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
+        var pendingOptions = options.Select(o => new PendingOption(o, o)).ToArray();
+
+        _pendingOptions = new PendingOptions(
+            callbackId, prompt, pendingOptions, DateTimeOffset.UtcNow.AddMinutes(30));
+
+        var threadId = this.GetPrimaryKeyString();
+        var userId = threadId.Contains('/') ? threadId.Split('/')[0] : threadId;
+        var session = GrainFactory.GetGrain<IUISession>(userId);
+        await session.RegisterOptions(callbackId, prompt, pendingOptions, threadId, ct);
+
+        return "Options presented to user. Waiting for selection.";
     }
 
     private async Task<string> ExecuteSelection(SelectionResult selection, string request, CancellationToken ct)
@@ -109,21 +132,28 @@ public class ThreadAgent(
             job.Name, request[..Math.Min(80, request.Length)]);
 
         string delegationResult;
+        using var selectorTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        using var selectorLinked = CancellationTokenSource.CreateLinkedTokenSource(ct, selectorTimeout.Token);
         try
         {
             var selector = GrainFactory.Get<IAgentSelector>();
-            var selection = await selector.SelectAsync(request, CancellationToken.None);
+            var selection = await selector.SelectAsync(request, selectorLinked.Token);
 
             logger.LogInformation("DelegateJob: selector returned Status={Status}, Agents=[{Agents}]",
                 selection.Status, string.Join(",", selection.SelectedAgents));
 
             delegationResult = selection.Status switch
             {
-                SelectionStatus.Ready => await ExecuteSelection(selection, request, CancellationToken.None),
+                SelectionStatus.Ready => await ExecuteSelection(selection, request, ct),
                 SelectionStatus.CannotHandle => selection.Plan ?? "The agent system cannot handle this request.",
                 SelectionStatus.NeedsClarification => FormatClarificationResponse(selection),
                 _ => "Unexpected selection status."
             };
+        }
+        catch (OperationCanceledException) when (selectorTimeout.IsCancellationRequested)
+        {
+            logger.LogWarning("DelegateJob: selector timed out for {JobName}", job.Name);
+            delegationResult = "Delegation timed out during agent selection. Please try again.";
         }
         catch (Exception ex)
         {
@@ -180,5 +210,12 @@ public class ThreadAgent(
         var targetGrainId = Orleans.Runtime.GrainId.Create(grainType, grainId);
         var targetAgent = GrainFactory.GetGrain<IAgent>(targetGrainId);
         return await targetAgent.HandleCallback(callbackId, value, ct);
+    }
+
+    public Task<PendingOptions?> ConsumePendingOptions(CancellationToken ct)
+    {
+        var result = _pendingOptions;
+        _pendingOptions = null;
+        return Task.FromResult(result);
     }
 }

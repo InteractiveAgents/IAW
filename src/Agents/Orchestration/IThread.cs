@@ -25,6 +25,9 @@ public interface IThread : IAgent
         - Use the Delegate tool when: the request involves code execution,
           system operations, agent capabilities, builds, git, file operations,
           or anything requiring specialized agent skills
+        - Use the PresentOptions tool when: offering choices, comparisons,
+          votes, polls, or any scenario where the user should pick from a list.
+          The user's environment will render these as clickable buttons.
 
         When delegating, describe WHAT needs to be done, not HOW. The agent
         system handles routing and execution automatically.
