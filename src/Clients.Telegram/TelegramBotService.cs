@@ -609,6 +609,15 @@ public sealed class TelegramBotService(
 
         var finalText = buffer.ToString();
 
+        // skip TelegramUIAgent for short/simple responses -- not worth an LLM call
+        const int richFormattingThreshold = 200;
+        if (finalText.Length < richFormattingThreshold)
+        {
+            if (finalText.Length > 0)
+                await EditSafe(chatId, currentMessageId, finalText);
+            return;
+        }
+
         try
         {
             var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
