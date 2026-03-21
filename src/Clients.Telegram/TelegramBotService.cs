@@ -169,6 +169,29 @@ public sealed class TelegramBotService(
                 await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
             }
         }
+
+        if (callbackQuery.Data?.StartsWith("opt:") == true && result.Action is not null)
+        {
+            var optParts = callbackQuery.Data.Split(':', 3);
+            if (optParts.Length >= 3)
+            {
+                var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
+
+                var selectedLabel = result.NewText?.Contains('\u2014') == true
+                    ? result.NewText.Split('\u2014', 2).Last().Trim()
+                    : result.Action;
+                var originalPrompt = result.NewText?.Contains('\u2014') == true
+                    ? result.NewText.Split('\u2014', 2).First().Replace("\u2705", "").Trim()
+                    : "";
+                var contextPrefix = !string.IsNullOrEmpty(originalPrompt)
+                    ? $"Re: '{originalPrompt}' -- " : "";
+                var selectionMessage = BuildChatMessage($"{contextPrefix}I choose: {selectedLabel}");
+
+                var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
+                await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
+            }
+        }
     }
 
     private async Task HandleCommandCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -532,7 +555,7 @@ public sealed class TelegramBotService(
     private async Task StreamResponseAsync(
         long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct)
     {
-        const int maxChars = 4000; // leave margin below Telegram's 4096 hard limit
+        const int maxChars = 4000;
         var buffer = new StringBuilder();
         var currentMessageId = messageId;
         var lastEditAt = DateTimeOffset.MinValue;
@@ -567,8 +590,69 @@ public sealed class TelegramBotService(
             buffer.Append("\n\n[Error communicating with assistant]");
         }
 
-        if (buffer.Length > 0)
-            await EditSafe(chatId, currentMessageId, buffer.ToString());
+        var finalText = buffer.ToString();
+
+        var threadId = thread.GetPrimaryKeyString();
+        var threadUI = clusterClient.GetGrain<IThreadUI>(threadId);
+        var pending = await threadUI.ConsumePendingOptions(ct);
+
+        if (pending is not null)
+        {
+            await AttachOptionsButtons(chatId, currentMessageId, finalText, pending);
+        }
+        else
+        {
+            var detected = OptionsFallbackDetector.TryDetect(finalText);
+            if (detected is not null)
+            {
+                var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
+                var pendingOptions = detected.Value.Labels
+                    .Select(l => new PendingOption(l, l)).ToArray();
+                var userId = telegramId.ToString();
+                var session = clusterClient.GetGrain<IUISession>(userId);
+                await session.RegisterOptions(callbackId, "", pendingOptions, threadId, ct);
+
+                var fallbackPending = new PendingOptions(callbackId, "", pendingOptions,
+                    DateTimeOffset.UtcNow.AddMinutes(30));
+                await AttachOptionsButtons(chatId, currentMessageId, finalText, fallbackPending);
+            }
+            else if (finalText.Length > 0)
+            {
+                await EditSafe(chatId, currentMessageId, finalText);
+            }
+        }
+    }
+
+    private async Task AttachOptionsButtons(long chatId, int messageId, string text, PendingOptions pending)
+    {
+        var buttons = pending.Options.Select(o =>
+            new InlineKeyboardButton(o.Label) { CallbackData = $"opt:{pending.CallbackId}:{o.Value}" }
+        ).ToArray();
+        var keyboard = new InlineKeyboardMarkup([buttons]);
+
+        var displayText = !string.IsNullOrEmpty(pending.Prompt) && !text.Contains(pending.Prompt)
+            ? $"{text}\n\n{pending.Prompt}"
+            : text;
+
+        if (string.IsNullOrWhiteSpace(displayText))
+            displayText = pending.Prompt;
+
+        try
+        {
+            await botClient.EditMessageTextAsync(chatId, messageId, displayText, replyMarkup: keyboard);
+        }
+        catch (BotRequestException)
+        {
+            try
+            {
+                await botClient.EditMessageTextAsync(chatId, messageId, displayText,
+                    replyMarkup: keyboard, parseMode: null);
+            }
+            catch (BotRequestException ex) when (
+                ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase))
+            {
+            }
+        }
     }
 
     private async Task<Stream> DownloadTelegramFileAsync(string fileId, CancellationToken ct)
