@@ -9,25 +9,22 @@ public class LLMModelBuilder(IAWService iaw, LLMModel lastModel)
     internal IAWService IAW { get; } = iaw;
     internal LLMModel LastModel { get; } = lastModel;
 
-    public LLMModelBuilder AsFast()
+    public IAWService AsFast()
     {
-        var tierKey = LLMModel.All.OfType<Fast>().First().ServiceKey;
-        IAW.TierMappings[tierKey] = LastModel.ServiceKey;
-        return this;
+        IAW.TierMappings[LLMModel.All.OfType<Fast>().First().ServiceKey] = LastModel.ServiceKey;
+        return IAW;
     }
 
-    public LLMModelBuilder AsBalanced()
+    public IAWService AsBalanced()
     {
-        var tierKey = LLMModel.All.OfType<Balanced>().First().ServiceKey;
-        IAW.TierMappings[tierKey] = LastModel.ServiceKey;
-        return this;
+        IAW.TierMappings[LLMModel.All.OfType<Balanced>().First().ServiceKey] = LastModel.ServiceKey;
+        return IAW;
     }
 
-    public LLMModelBuilder AsReasoning()
+    public IAWService AsReasoning()
     {
-        var tierKey = LLMModel.All.OfType<Reasoning>().First().ServiceKey;
-        IAW.TierMappings[tierKey] = LastModel.ServiceKey;
-        return this;
+        IAW.TierMappings[LLMModel.All.OfType<Reasoning>().First().ServiceKey] = LastModel.ServiceKey;
+        return IAW;
     }
 
     public LLMModelBuilder WithLLM<TModel>() where TModel : LLMModel

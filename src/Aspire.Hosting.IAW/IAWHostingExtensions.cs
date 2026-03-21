@@ -41,6 +41,10 @@ public static class IAWHostingExtensions
         LLMModel.EnsureAllModelsLoaded();
         var model = LLMModel.All.OfType<TModel>().First();
 
+        if (model.Provider == "tier")
+            throw new InvalidOperationException(
+                $"Cannot add tier type '{typeof(TModel).Name}' via WithLLM. Use .AsFast(), .AsBalanced(), or .AsReasoning() after WithLLM<ConcreteModel>().");
+
         iaw.DeclaredModels.Add(model);
         iaw.DeclaredProviders.Add(model.Provider);
 
