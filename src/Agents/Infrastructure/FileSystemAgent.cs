@@ -24,18 +24,18 @@ public class FileSystemAgent(
 
     public async Task<string> ReadFileAsync(string path, CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(path);
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
 
-        var content = await File.ReadAllTextAsync(path, ct);
+        var content = await File.ReadAllTextAsync(resolvedPath, ct);
 
-        IncrementFileAccessCount(path);
+        IncrementFileAccessCount(resolvedPath);
         IncrementCounter("total-reads");
         State["last-access"] = new StateEntry("last-access", DateTimeOffset.UtcNow.ToString("O"));
         await WriteStateAsync(ct);
 
         await PublishAsync("file.read", new Dictionary<string, string>
         {
-            ["Path"] = path,
+            ["Path"] = resolvedPath,
             ["SizeBytes"] = content.Length.ToString()
         }, ct);
 
@@ -44,16 +44,16 @@ public class FileSystemAgent(
 
     public async Task WriteFileAsync(string path, string content, CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(path);
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
 
-        var fileExisted = File.Exists(path);
-        var directory = Path.GetDirectoryName(path);
+        var fileExisted = File.Exists(resolvedPath);
+        var directory = Path.GetDirectoryName(resolvedPath);
         if (directory is not null && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllTextAsync(path, content, ct);
+        await File.WriteAllTextAsync(resolvedPath, content, ct);
 
-        IncrementFileAccessCount(path);
+        IncrementFileAccessCount(resolvedPath);
         IncrementCounter("total-writes");
         State["last-access"] = new StateEntry("last-access", DateTimeOffset.UtcNow.ToString("O"));
         await WriteStateAsync(ct);
@@ -61,22 +61,22 @@ public class FileSystemAgent(
         var eventName = fileExisted ? "file.written" : "file.created";
         await PublishAsync(eventName, new Dictionary<string, string>
         {
-            ["Path"] = path,
+            ["Path"] = resolvedPath,
             ["SizeBytes"] = content.Length.ToString()
         }, ct);
     }
 
     public async Task<string[]> ListFilesAsync(string directory, string pattern = "*", CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(directory);
-        return await WorkspaceFiles.EnumerateFilesAsync(directory, pattern, ct);
+        var resolvedDir = ResolvePathAgainstWorkspace(directory);
+        return await WorkspaceFiles.EnumerateFilesAsync(resolvedDir, pattern, ct);
     }
 
     public async Task<string[]> SearchCodeAsync(string pattern, string directory, string fileFilter = "*.cs", CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(directory);
+        var resolvedDir = ResolvePathAgainstWorkspace(directory);
 
-        var files = await WorkspaceFiles.EnumerateFilesAsync(directory, fileFilter, ct);
+        var files = await WorkspaceFiles.EnumerateFilesAsync(resolvedDir, fileFilter, ct);
 
         var matchingLines = new List<string>();
         foreach (var file in files)
@@ -93,15 +93,15 @@ public class FileSystemAgent(
 
     public async Task<DirectoryComparison> CompareDirectoriesAsync(string dirA, string dirB, CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(dirA);
-        ValidatePathWithinWorkspace(dirB);
+        var resolvedDirA = ResolvePathAgainstWorkspace(dirA);
+        var resolvedDirB = ResolvePathAgainstWorkspace(dirB);
 
-        var comparison = await WorkspaceFiles.CompareDirectoriesAsync(dirA, dirB, ct);
+        var comparison = await WorkspaceFiles.CompareDirectoriesAsync(resolvedDirA, resolvedDirB, ct);
 
         await PublishAsync("directories.compared", new Dictionary<string, string>
         {
-            ["DirA"] = dirA,
-            ["DirB"] = dirB,
+            ["DirA"] = resolvedDirA,
+            ["DirB"] = resolvedDirB,
             ["OnlyInFirst"] = comparison.OnlyInFirst.Length.ToString(),
             ["OnlyInSecond"] = comparison.OnlyInSecond.Length.ToString(),
             ["Different"] = comparison.DifferentFiles.Length.ToString(),

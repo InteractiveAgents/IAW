@@ -30,9 +30,9 @@ public interface IFileSystem : IAgent
         - When searching: return matches as "file:line: content"
 
         RULES:
-        - ALWAYS validate paths are within the workspace boundary before any operation
-        - Reject requests for paths outside the workspace explicitly
-        - Never read or write files outside the workspace
+        - Relative paths resolve against the workspace directory
+        - Absolute paths are used as-is — the assistant has full file access
+        - Workspace is the default working directory, not a security boundary
         - For large files (>50KB), truncate and report the limit in the response
         - When file operations fail, include error details in the response
         """;
