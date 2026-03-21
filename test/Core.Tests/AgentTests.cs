@@ -485,6 +485,24 @@ public class AgentSchedulingTests : AgentTest<SchedulingTestAgent>
 
 #endregion
 
+#region PayloadKeys Constants
+
+public class PayloadKeysTests
+{
+    [Fact]
+    public void PayloadKeys_UseCamelCase()
+    {
+        Assert.Equal("projectKey", IAWConstants.PayloadKeys.ProjectKey);
+        Assert.Equal("jobName", IAWConstants.PayloadKeys.JobName);
+        Assert.Equal("result", IAWConstants.PayloadKeys.Result);
+        Assert.Equal("taskId", IAWConstants.PayloadKeys.TaskId);
+        Assert.Equal("phase", IAWConstants.PayloadKeys.Phase);
+        Assert.Equal("message", IAWConstants.PayloadKeys.Message);
+    }
+}
+
+#endregion
+
 #region Stream Name Mapping
 
 public class EventTypeToStreamNameTests

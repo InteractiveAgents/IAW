@@ -131,8 +131,9 @@ public abstract partial class Agent : IDurableJobHandler
 
         await PublishAsync(IAWConstants.Events.JobCompleted, new Dictionary<string, string>
         {
-            ["JobName"] = job.Name,
-            ["Result"] = result
+            [IAWConstants.PayloadKeys.ProjectKey] = this.GetPrimaryKeyString(),
+            [IAWConstants.PayloadKeys.JobName] = job.Name,
+            [IAWConstants.PayloadKeys.Result] = result
         }, ct);
     }
 
