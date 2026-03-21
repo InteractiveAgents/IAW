@@ -53,35 +53,12 @@ public class ThreadAgent(
 
     private async Task<string> DelegateAsync(string request, CancellationToken ct = default)
     {
-        try
-        {
-            logger.LogInformation("Delegate: calling AgentSelector for: {Request}", request[..Math.Min(80, request.Length)]);
+        var taskId = $"dlg-{Guid.NewGuid().ToString("N")[..8]}";
+        logger.LogInformation("Delegate: scheduling job {TaskId} for: {Request}",
+            taskId, request[..Math.Min(80, request.Length)]);
 
-            var selector = GrainFactory.Get<IAgentSelector>();
-            var result = await selector.SelectAsync(request, ct);
-
-            logger.LogInformation("Delegate: AgentSelector returned Status={Status}, Agents=[{Agents}], PlanLength={PlanLength}",
-                result.Status, string.Join(",", result.SelectedAgents), result.Plan?.Length ?? 0);
-
-            switch (result.Status)
-            {
-                case SelectionStatus.NeedsClarification:
-                    return FormatClarificationResponse(result);
-                case SelectionStatus.CannotHandle:
-                    logger.LogWarning("Delegate: CannotHandle — {Plan}", result.Plan?[..Math.Min(200, result.Plan?.Length ?? 0)]);
-                    return result.Plan ?? "The agent system cannot handle this request.";
-                case SelectionStatus.Ready:
-                    logger.LogInformation("Delegate: Ready — executing with {Count} agent(s)", result.SelectedAgents.Count);
-                    return await ExecuteSelection(result, request, ct);
-                default:
-                    return "Unexpected selection status.";
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Delegate: FAILED for request: {Request}", request[..Math.Min(80, request.Length)]);
-            return $"Delegation failed: {ex.GetType().Name}: {ex.Message}";
-        }
+        await ScheduleJob(taskId, TimeSpan.Zero, $"{IAWConstants.DelegationPrefix}{request}", ct);
+        return $"Task {taskId} submitted. I'm working on your request and will deliver results shortly.";
     }
 
     private async Task<string> ExecuteSelection(SelectionResult selection, string request, CancellationToken ct)
