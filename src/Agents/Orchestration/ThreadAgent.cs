@@ -1,7 +1,6 @@
 using Core;
 using Core.Context;
 using Core.Contracts;
-using Core.Contracts.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,12 +15,11 @@ public class ThreadAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient,
     ILogger<ThreadAgent> logger)
-    : Agent<IThread>(durableState, chatClient), IThread, IThreadUI
+    : Agent<IThread>(durableState, chatClient), IThread
 {
     private const string CallbackPrefix = "cb:";
 
     private IReadOnlyList<IAgentContextProvider>? _contextProviders;
-    private PendingOptions? _pendingOptions;
 
     protected override IReadOnlyList<IAgentContextProvider> GetContextProviders()
     {
@@ -51,10 +49,7 @@ public class ThreadAgent(
             AIFunctionFactory.Create(DelegateAsync, "Delegate",
                 "Delegate a task to the IAW agent system. Use this for any request that requires " +
                 "code execution, system operations, builds, git, file operations, or specialized agent skills. " +
-                "Describe WHAT needs to be done."),
-            AIFunctionFactory.Create(PresentOptionsAsync, "PresentOptions",
-                "Present interactive options to the user as clickable buttons. " +
-                "Use when offering choices, comparisons, votes, or any pick-one scenario.")
+                "Describe WHAT needs to be done.")
         ];
     }
 
@@ -66,22 +61,6 @@ public class ThreadAgent(
 
         await ScheduleJob(taskId, TimeSpan.Zero, $"{IAWConstants.DelegationPrefix}{request}", ct);
         return $"Task {taskId} submitted. I'm working on your request and will deliver results shortly.";
-    }
-
-    private async Task<string> PresentOptionsAsync(string prompt, string[] options, CancellationToken ct = default)
-    {
-        var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
-        var pendingOptions = options.Select((o, i) => new PendingOption(o, (i + 1).ToString())).ToArray();
-
-        _pendingOptions = new PendingOptions(
-            callbackId, prompt, pendingOptions, DateTimeOffset.UtcNow.AddMinutes(30));
-
-        var threadId = this.GetPrimaryKeyString();
-        var userId = threadId.Contains('/') ? threadId.Split('/')[0] : threadId;
-        var session = GrainFactory.GetGrain<IUISession>(userId);
-        await session.RegisterOptions(callbackId, prompt, pendingOptions, threadId, "option", ct);
-
-        return "Options presented to user. Waiting for selection.";
     }
 
     private async Task<string> ExecuteSelection(SelectionResult selection, string request, CancellationToken ct)
@@ -212,10 +191,4 @@ public class ThreadAgent(
         return await targetAgent.HandleCallback(callbackId, value, ct);
     }
 
-    public Task<PendingOptions?> ConsumePendingOptions(CancellationToken ct)
-    {
-        var result = _pendingOptions;
-        _pendingOptions = null;
-        return Task.FromResult(result);
-    }
 }
