@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using Core;
 using Core.AI;
@@ -27,6 +28,10 @@ public sealed class TelegramBotService(
 {
     static readonly int ColorPurple = 0xCB86DB;
     static readonly int ColorBlue = 0x6FB9F0;
+
+    private readonly ConcurrentDictionary<string, (long ChatId, int MessageId, int? TopicId)> _progressMessages = new();
+
+    const int StreamingEditIntervalMs = 1500;
 
     static readonly (string Slug, string Name, int Color)[] PredefinedTopics =
     [
@@ -397,43 +402,116 @@ public sealed class TelegramBotService(
         }
 
         var topicId = await userProfile.GetTopicId(slug, ct);
-        var header = $"*{EscapeMarkdown(jobName)}*\n\n";
-        var escapedResult = EscapeMarkdown(result);
+        var telegramId = long.Parse(userId);
+        var (formattedText, orchestrationTaskId) = FormatOrchestrationResult(result);
 
-        foreach (var chunk in SplitForTelegram(header, escapedResult))
+        int messageId;
+        if (orchestrationTaskId is not null && TryGetProgressMessage(orchestrationTaskId, out var progress))
         {
             try
             {
-                await botClient.SendMessageAsync(chatId, chunk,
-                    messageThreadId: topicId, parseMode: FormatStyles.MarkdownV2);
+                await EditSafe(progress.ChatId, progress.MessageId, formattedText);
+                messageId = progress.MessageId;
+                chatId = progress.ChatId;
+                topicId = progress.TopicId;
             }
-            catch (BotRequestException)
+            catch
             {
-                var plain = chunk.Replace("\\", "");
-                await botClient.SendMessageAsync(chatId, plain, messageThreadId: topicId);
+                var sent = await botClient.SendMessageAsync(chatId, formattedText, messageThreadId: topicId);
+                messageId = sent.MessageId;
             }
+        }
+        else
+        {
+            var sent = await botClient.SendMessageAsync(chatId, formattedText, messageThreadId: topicId);
+            messageId = sent.MessageId;
+        }
+
+        try
+        {
+            var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
+            var richOutput = await uiAgent.FormatResponse(formattedText, ct);
+
+            if (richOutput.Parts.Count > 0)
+                await RenderRichOutput(chatId, messageId, topicId, richOutput, telegramId, ct);
+            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
+                await EditWithMarkdown(chatId, messageId, richOutput.FormattedText);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "TelegramUI formatting failed for job result, keeping plain text");
         }
     }
 
-    private static List<string> SplitForTelegram(string header, string body, int maxLength = 4000)
+    public async Task SendProgressAsync(string projectKey, string taskId, string phase, string message, CancellationToken ct)
     {
-        var full = header + body;
-        if (full.Length <= maxLength)
-            return [full];
-
-        var chunks = new List<string>();
-        var remaining = body;
-        chunks.Add(header + remaining[..Math.Min(maxLength - header.Length, remaining.Length)]);
-        remaining = remaining[(maxLength - header.Length)..];
-
-        while (remaining.Length > 0)
+        if (_progressMessages.TryGetValue(taskId, out var existing))
         {
-            var take = Math.Min(maxLength, remaining.Length);
-            chunks.Add(remaining[..take]);
-            remaining = remaining[take..];
+            try
+            {
+                await botClient.EditMessageTextAsync(existing.ChatId, existing.MessageId, $"\u2699\ufe0f {message}");
+            }
+            catch (BotRequestException) { }
+            return;
         }
 
-        return chunks;
+        var parts = projectKey.Split('/');
+        if (parts.Length < 2 || !long.TryParse(parts[0], out _))
+        {
+            logger.LogWarning("SendProgress: invalid projectKey format '{ProjectKey}'", projectKey);
+            return;
+        }
+
+        var userId = parts[0];
+        var slug = parts[1];
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        {
+            logger.LogWarning("SendProgress: no GroupChatId for user {UserId}", userId);
+            return;
+        }
+
+        var topicId = await userProfile.GetTopicId(slug, ct);
+        var sent = await botClient.SendMessageAsync(chatId, $"\u2699\ufe0f {message}", messageThreadId: topicId);
+        _progressMessages[taskId] = (chatId, sent.MessageId, topicId);
+    }
+
+    public bool TryGetProgressMessage(string taskId, out (long ChatId, int MessageId, int? TopicId) progress)
+        => _progressMessages.TryRemove(taskId, out progress);
+
+    private static (string Text, string? TaskId) FormatOrchestrationResult(string resultPayload)
+    {
+        try
+        {
+            var result = System.Text.Json.JsonSerializer.Deserialize<Core.Contracts.OrchestrationResult>(resultPayload);
+            if (result is null) return (resultPayload, null);
+
+            var sb = new StringBuilder();
+            sb.AppendLine(result.Success ? $"\u2705 {result.Summary}" : $"\u274c {result.Summary}");
+
+            foreach (var artifact in result.Artifacts)
+                sb.AppendLine($"\ud83d\udcc1 {artifact}");
+
+            if (result.Metrics is { Count: > 0 })
+            {
+                var metricStr = string.Join(", ", result.Metrics.Select(kv => $"{kv.Key}: {kv.Value}"));
+                sb.AppendLine($"\u23f1 {metricStr}");
+            }
+
+            if (!result.Success && !string.IsNullOrEmpty(result.ErrorDetail))
+            {
+                var truncated = result.ErrorDetail.Length > 500 ? result.ErrorDetail[..500] + "..." : result.ErrorDetail;
+                sb.AppendLine();
+                sb.AppendLine(truncated);
+            }
+
+            return (sb.ToString().TrimEnd(), result.TaskId);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (resultPayload, null);
+        }
     }
 
     public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)
@@ -626,7 +704,7 @@ public sealed class TelegramBotService(
                     continue;
                 }
 
-                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
+                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > StreamingEditIntervalMs)
                 {
                     await EditSafe(chatId, currentMessageId, buffer.ToString());
                     lastEditAt = DateTimeOffset.UtcNow;
