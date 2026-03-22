@@ -62,30 +62,18 @@ public class CodeOrchestratorAgent(
 
         TEMPLATE (always start with this exact boilerplate):
         ```
-        using System;
-        using System.IO;
-        using System.Threading;
         using System.Text.Json;
-        using Microsoft.Extensions.DependencyInjection;
-        using Microsoft.Extensions.Hosting;
         using Aspire.IAW;
-        using Orleans;
         using Core;
         using Core.Contracts;
         using IAW.Agents.System;
         using IAW.Agents.Coding;
-        using IAW.Agents.LLM;
+        using IAW.Agents.Models;
 
-        var builder = Host.CreateApplicationBuilder(args);
-        builder.AddIAWClient();
-        using var host = builder.Build();
-        await host.StartAsync();
-        var client = host.Services.GetRequiredService<IClusterClient>();
-        var taskId = "task-" + Guid.NewGuid().ToString("N");
+        using var iaw = await IAWCluster.Connect(args);
+        var taskId = iaw.TaskId;
 
         // YOUR CODE HERE
-
-        await host.StopAsync();
         ```
 
         AGENT API — USE TYPED METHODS (not GetResponse):
@@ -133,9 +121,9 @@ public class CodeOrchestratorAgent(
 
         COMPLETE EXAMPLE (scaffold a project, modify files, build, verify):
         ```
-        var shell = client.Get<IShell>(taskId);
-        var dotnet = client.Get<IDotNet>(taskId);
-        var roslyn = client.Get<IRoslyn>(taskId);
+        var shell = iaw.Get<IShell>(taskId);
+        var dotnet = iaw.Get<IDotNet>(taskId);
+        var roslyn = iaw.Get<IRoslyn>(taskId);
 
         // Step 1: Scaffold
         var scaffold = await shell.RunDotnetAsync("new console -n MyApp -o {{workspacePath}}/MyApp", null, default);
@@ -168,7 +156,7 @@ public class CodeOrchestratorAgent(
         ```
 
         RULES:
-        - Get agents: `client.Get<IInterfaceName>(taskId)` — one instance per task
+        - Get agents: `iaw.Get<IInterfaceName>(taskId)` — one instance per task
         - Always write result.json with status, summary, artifacts, metrics fields
         - Wrap everything in try/catch, write error result.json in catch
         - Use Dictionary<string, object> for result.json
