@@ -8,6 +8,16 @@ public class AgentRegistryGrain : Grain, IAgentRegistry
 {
     readonly Dictionary<string, AgentRecord> _records = new(StringComparer.OrdinalIgnoreCase);
 
+    public override Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        if (_records.Count == 0)
+        {
+            foreach (var record in AgentRegistrationStartupTask.DiscoverAndBuildRecords())
+                _records[record.AgentType] = record;
+        }
+        return base.OnActivateAsync(cancellationToken);
+    }
+
     public Task RegisterAsync(AgentRecord record, CancellationToken ct = default)
     {
         _records[record.AgentType] = record;

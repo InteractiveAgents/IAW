@@ -8,13 +8,12 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
     {
         var registry = grainFactory.GetGrain<IAgentRegistry>("global");
 
-        foreach (var agentType in DiscoverAgentTypes())
-        {
-            var record = BuildRecord(agentType);
-            if (record is not null)
-                await registry.RegisterAsync(record, ct);
-        }
+        foreach (var record in DiscoverAndBuildRecords())
+            await registry.RegisterAsync(record, ct);
     }
+
+    public static IEnumerable<AgentRecord> DiscoverAndBuildRecords() =>
+        DiscoverAgentTypes().Select(BuildRecord).Where(r => r is not null)!;
 
     static IEnumerable<Type> DiscoverAgentTypes() =>
         AppDomain.CurrentDomain.GetAssemblies()

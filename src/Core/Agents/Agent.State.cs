@@ -39,6 +39,4 @@ public abstract partial class Agent
             : Path.GetFullPath(path);
     }
 
-    [Obsolete("Workspace is no longer a hard boundary. Use ResolvePathAgainstWorkspace for path resolution.")]
-    protected void ValidatePathWithinWorkspace(string path) { }
 }

@@ -59,11 +59,10 @@ public class ThreadAgent(
     private async Task<string> DelegateAsync(string request, CancellationToken ct = default)
     {
         var taskId = $"dlg-{Guid.NewGuid().ToString("N")[..8]}";
-        logger.LogInformation("Delegate: scheduling job {TaskId} for: {Request}",
+        logger.LogInformation("Delegate: executing {TaskId} for: {Request}",
             taskId, request[..Math.Min(80, request.Length)]);
 
-        await ScheduleJob(taskId, TimeSpan.Zero, $"{IAWConstants.DelegationPrefix}{request}", ct);
-        return $"Task {taskId} submitted. I'm working on your request and will deliver results shortly.";
+        return await ExecuteDelegation(taskId, request, ct);
     }
 
     private async Task<string> ExecuteSelection(SelectionResult selection, string request, CancellationToken ct)
@@ -114,8 +113,16 @@ public class ThreadAgent(
         }
 
         var request = job.Prompt[IAWConstants.DelegationPrefix.Length..];
-        logger.LogInformation("DelegateJob: executing {JobName} for: {Request}",
-            job.Name, request[..Math.Min(80, request.Length)]);
+        var result = await ExecuteDelegation(job.Name, request, ct);
+
+        var updated = job with { LastRunAt = DateTimeOffset.UtcNow, LastResult = result };
+        ScheduledJobs[job.Name] = updated;
+    }
+
+    private async Task<string> ExecuteDelegation(string taskId, string request, CancellationToken ct)
+    {
+        logger.LogInformation("Delegation: executing {TaskId} for: {Request}",
+            taskId, request[..Math.Min(80, request.Length)]);
 
         string delegationResult;
         using var selectorTimeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -125,7 +132,7 @@ public class ThreadAgent(
             var selector = GrainFactory.Get<IAgentSelector>();
             var selection = await selector.SelectAsync(request, selectorLinked.Token);
 
-            logger.LogInformation("DelegateJob: selector returned Status={Status}, Agents=[{Agents}]",
+            logger.LogInformation("Delegation: selector returned Status={Status}, Agents=[{Agents}]",
                 selection.Status, string.Join(",", selection.SelectedAgents));
 
             delegationResult = selection.Status switch
@@ -138,31 +145,56 @@ public class ThreadAgent(
         }
         catch (OperationCanceledException) when (selectorTimeout.IsCancellationRequested)
         {
-            logger.LogWarning("DelegateJob: selector timed out for {JobName}", job.Name);
+            logger.LogWarning("Delegation: selector timed out for {TaskId}", taskId);
             delegationResult = "Delegation timed out during agent selection. Please try again.";
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "DelegateJob: FAILED {JobName}", job.Name);
+            logger.LogError(ex, "Delegation: FAILED {TaskId}", taskId);
             delegationResult = $"Delegation failed: {ex.GetType().Name}: {ex.Message}";
         }
 
-        var updated = job with { LastRunAt = DateTimeOffset.UtcNow, LastResult = delegationResult };
-        ScheduledJobs[job.Name] = updated;
+        logger.LogInformation("Delegation: completed {TaskId}, result length: {Length}",
+            taskId, delegationResult.Length);
 
-        logger.LogInformation("DelegateJob: completed {JobName}, result length: {Length}",
-            job.Name, delegationResult.Length);
-
-        var truncatedResult = delegationResult.Length > 4000
-            ? delegationResult[..4000] + "\n...(truncated)"
-            : delegationResult;
+        var safeResult = TruncateOrchestrationResultSafely(delegationResult);
 
         await PublishAsync(IAWConstants.Events.JobCompleted, new Dictionary<string, string>
         {
             [IAWConstants.PayloadKeys.ProjectKey] = this.GetPrimaryKeyString(),
-            [IAWConstants.PayloadKeys.JobName] = job.Name,
-            [IAWConstants.PayloadKeys.Result] = truncatedResult
+            [IAWConstants.PayloadKeys.JobName] = taskId,
+            [IAWConstants.PayloadKeys.Result] = safeResult
         }, CancellationToken.None);
+
+        return delegationResult;
+    }
+
+    private static string TruncateOrchestrationResultSafely(string resultPayload)
+    {
+        const int maxLength = 4000;
+        if (resultPayload.Length <= maxLength)
+            return resultPayload;
+
+        // Try to truncate ErrorDetail inside the JSON structure before re-serializing
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<OrchestrationResult>(resultPayload);
+            if (parsed is not null)
+            {
+                var truncatedError = parsed.ErrorDetail is { Length: > 500 }
+                    ? parsed.ErrorDetail[..500] + "...(truncated)"
+                    : parsed.ErrorDetail;
+                var truncatedSummary = parsed.Summary is { Length: > 1000 }
+                    ? parsed.Summary[..1000] + "...(truncated)"
+                    : parsed.Summary;
+                var compact = parsed with { ErrorDetail = truncatedError, Summary = truncatedSummary };
+                return JsonSerializer.Serialize(compact);
+            }
+        }
+        catch (JsonException) { }
+
+        // Non-JSON result: truncate the plain text safely
+        return resultPayload[..maxLength] + "\n...(truncated)";
     }
 
     public async Task RegisterCallback(string callbackId, string grainType, string grainId, DateTimeOffset expiresAt, CancellationToken ct = default)

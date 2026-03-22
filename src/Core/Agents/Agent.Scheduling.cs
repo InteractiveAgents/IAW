@@ -142,6 +142,20 @@ public abstract partial class Agent : IDurableJobHandler
         foreach (var kvp in durableState.ScheduledJobs)
         {
             var job = kvp.Value;
+
+            // Cancel the previous durable job to avoid duplicates
+            if (job.DurableJobId is not null && job.DurableJobShardId is not null)
+            {
+                var oldJob = new DurableJob
+                {
+                    Id = job.DurableJobId,
+                    Name = job.Name,
+                    ShardId = job.DurableJobShardId,
+                    TargetGrainId = this.GetGrainId()
+                };
+                await JobManager.TryCancelDurableJobAsync(oldJob, ct);
+            }
+
             var nextDue = job.LastRunAt.HasValue
                 ? job.LastRunAt.Value + job.Interval
                 : job.CreatedAt + job.Interval;
