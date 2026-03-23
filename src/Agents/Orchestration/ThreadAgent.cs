@@ -79,12 +79,29 @@ public class ThreadAgent(
 
         try
         {
-            return await agent.GetResponse(request, ct);
+            var result = await agent.GetResponse(request, ct);
+            return result.Length > 4000
+                ? result[..4000] + "\n...(truncated)"
+                : result;
+        }
+        catch (OperationCanceledException)
+        {
+            return $"Agent {agentName} timed out. Try a simpler request or a different agent.";
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "SendToAgent: {Agent} failed", agentName);
-            return $"Agent {agentName} failed: {ex.Message}";
+            var suggestion = agentName switch
+            {
+                "DotNet" => "Try Shell agent for raw dotnet CLI commands, or check the project path.",
+                "Shell" => "Check command syntax. For .NET operations, use DotNet agent instead.",
+                "FileSystem" => "Check file path exists. Use absolute paths.",
+                "Git" => "Check repository path. Ensure it's a valid git repo.",
+                "Aspire" => "Aspire MCP may not be connected. Try again after restart.",
+                "Roslyn" => "Check that the workspace is set and contains C# code.",
+                _ => "Try a different agent or rephrase the request."
+            };
+            return $"Agent {agentName} failed: {ex.Message}\nSuggestion: {suggestion}";
         }
     }
 
