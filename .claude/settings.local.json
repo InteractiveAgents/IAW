@@ -120,7 +120,12 @@
       "Read(//e/IAW/$dir/**)",
       "Bash(C:/Users/vhorb/AppData/Local/Temp/iaw-test/Program.cs:*)",
       "Read(//c/Users/vhorb/AppData/Local/Temp/iaw-test/**)",
-      "Bash(mcp__aspire__list_resources)"
+      "Bash(mcp__aspire__list_resources)",
+      "Bash(rm -f src/IAW.MCP/Deploy/DeployEndpoint.cs)",
+      "Bash(rmdir src/IAW.MCP/Deploy)",
+      "Bash(rm -f src/Core/Deployment/DeployVerifier.cs)",
+      "Bash(rmdir src/Core/Deployment)",
+      "Bash(rm -f src/Agents/Fun/IEmoji.cs src/Agents/Fun/EmojiAgent.cs)"
     ]
   },
   "enabledMcpjsonServers": [

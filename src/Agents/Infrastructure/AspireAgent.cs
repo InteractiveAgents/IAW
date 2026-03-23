@@ -6,15 +6,12 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
-using System.Net.Http;
-
 namespace IAW.Agents.Infrastructure;
 
 public class AspireAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<Sonnet46>] IChatClient chatClient,
-    ILogger<AspireAgent> logger,
-    IHttpClientFactory httpClientFactory)
+    ILogger<AspireAgent> logger)
     : Agent<IAspire>(durableState, chatClient), IAspire
 {
     private McpClient? _mcpClient;
@@ -208,35 +205,9 @@ public class AspireAgent(
 
     public async Task<string> DeployAsync(CancellationToken ct = default)
     {
-        logger.LogInformation("Deploy: stopping assistant, building, then restarting");
-
-        try
-        {
-            // Step 1: Stop assistant to release DLL locks
-            await RestartResourceAsync("assistant", ct);
-            await Task.Delay(5000, ct);
-
-            // Step 2: Call MCP /deploy to build
-            using var httpClient = httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromMinutes(5);
-            var response = await httpClient.PostAsync("http://localhost:5300/deploy", null, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
-            logger.LogInformation("Deploy: build result = {Body}", body);
-
-            // Step 3: Start assistant with fresh binary
-            if (_mcpClient is not null)
-            {
-                await _mcpClient.CallToolAsync("execute_resource_command",
-                    new Dictionary<string, object?> { ["resourceName"] = "assistant", ["commandName"] = "resource-start" },
-                    cancellationToken: ct);
-            }
-
-            return $"Deploy completed: {body}";
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Deploy: failed");
-            return $"Deploy failed: {ex.Message}. Try RestartResource to recover.";
-        }
+        // TODO: Implement via Aspire SDK WithCommand("deploy") in AppHost
+        // The AppHost has ResourceCommandService which can stop→build→start
+        // This agent will call execute_resource_command(assistant, deploy) via MCP
+        return await RestartResourceAsync("assistant", ct);
     }
 }

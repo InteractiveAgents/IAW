@@ -120,7 +120,7 @@ public class ThreadAgent(
             - Use DotNet to build E:\IAW\IAW.slnx after writing code
             - If build fails, use FileSystem to fix the code and rebuild
             - Use Git to commit changes after a successful build
-            - Use Aspire Deploy tool (not RestartResource) to deploy code changes — this stops, rebuilds, and starts fresh
+            - Use Aspire to restart the assistant resource after successful build
             - Do NOT read traces unless debugging a specific runtime error
             - Write complete, compilable C# code — follow existing patterns in the codebase
             - For new agents: create an interface (IXxx.cs) and implementation (XxxAgent.cs) in src/Agents/
