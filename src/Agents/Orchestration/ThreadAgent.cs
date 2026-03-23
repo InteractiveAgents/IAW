@@ -49,17 +49,44 @@ public class ThreadAgent(
     protected override IReadOnlyList<AITool> DefineAdditionalTools()
     {
         return [
-            AIFunctionFactory.Create(DelegateAsync, "Delegate",
-                "Delegate a task to the IAW agent system. Use this for any request that requires " +
-                "code execution, system operations, builds, git, file operations, or specialized agent skills. " +
-                "Describe WHAT needs to be done.")
+            AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
+                "Send a task to a specific agent by name. The agent handles it autonomously " +
+                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub."),
+
+            AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
+                "For complex multi-step tasks requiring coordination across multiple agents. " +
+                "NOT needed for single build/run/read/git tasks — use SendToAgent instead.")
         ];
     }
 
-    private async Task<string> DelegateAsync(string request, CancellationToken ct = default)
+    private async Task<string> SendToAgentAsync(string agentName, string request, CancellationToken ct = default)
+    {
+        logger.LogInformation("SendToAgent: {Agent} for: {Request}",
+            agentName, request[..Math.Min(80, request.Length)]);
+
+        var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
+                         ?? AgentInterfaceResolver.Resolve(agentName);
+        if (interfaceType is null)
+            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub.";
+
+        var threadId = this.GetPrimaryKeyString();
+        var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
+
+        try
+        {
+            return await agent.GetResponse(request, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SendToAgent: {Agent} failed", agentName);
+            return $"Agent {agentName} failed: {ex.Message}";
+        }
+    }
+
+    private async Task<string> OrchestrateAsync(string request, CancellationToken ct = default)
     {
         var taskId = $"dlg-{Guid.NewGuid().ToString("N")[..8]}";
-        logger.LogInformation("Delegate: executing {TaskId} for: {Request}",
+        logger.LogInformation("Orchestrate: executing {TaskId} for: {Request}",
             taskId, request[..Math.Min(80, request.Length)]);
 
         return await ExecuteDelegation(taskId, request, ct);
