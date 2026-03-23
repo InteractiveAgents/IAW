@@ -1,10 +1,10 @@
-using System.Diagnostics;
-using System.Reflection;
 using Core;
 using Core.Communication;
 using Core.Messages;
 using Core.Observability;
 using Orleans.Streams;
+using System.Diagnostics;
+using System.Reflection;
 
 namespace IAW.Core;
 

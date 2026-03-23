@@ -1,8 +1,8 @@
-using System.ComponentModel;
 using Core.Communication;
 using Core.Communication.Messages;
 using Core.Contracts;
 using IAW.Agents.System;
+using System.ComponentModel;
 
 namespace IAW.Agents.Coding;
 

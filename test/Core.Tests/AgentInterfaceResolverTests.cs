@@ -1,9 +1,9 @@
-using System.Runtime.CompilerServices;
 using Core;
 using Core.Contracts;
-using IAW.Agents.System;
 using IAW.Agents.Coding;
 using IAW.Agents.Orchestration;
+using IAW.Agents.System;
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace IAW.Core.Tests;

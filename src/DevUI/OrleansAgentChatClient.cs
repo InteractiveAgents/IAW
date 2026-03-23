@@ -1,8 +1,8 @@
-using System.Runtime.CompilerServices;
 using Core;
 using Core.Contracts;
 using IAW.Agents.Orchestration;
 using Microsoft.Extensions.AI;
+using System.Runtime.CompilerServices;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using IAgent = Core.Contracts.IAgent;
 

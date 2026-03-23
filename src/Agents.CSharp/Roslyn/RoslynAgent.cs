@@ -1,20 +1,20 @@
-using System.Text;
-using System.Text.Json;
-using System.Xml.Linq;
-using IAW.Core;
+using Core.AI;
+using Core.Communication;
+using Core.Communication.Messages;
+using Core.Contracts;
+using Core.Tools;
 using IAW.Agents.CSharp.Roslyn.Workspace;
+using IAW.Core;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.AI;
-using Core.Tools;
-using Core.Contracts;
-using Core.Communication;
-using Core.AI;
-using Core.Communication.Messages;
 using Orleans;
 using Orleans.Concurrency;
 using Orleans.Streams;
+using System.Text;
+using System.Text.Json;
+using System.Xml.Linq;
 
 namespace IAW.Agents.Coding;
 
@@ -566,48 +566,48 @@ public class RoslynAgent(
             switch (member)
             {
                 case IMethodSymbol method when method.MethodKind == MethodKind.Ordinary:
-                {
-                    var returnType = SyntaxFactory.ParseTypeName(method.ReturnType.ToDisplayString());
-                    var parameters = method.Parameters.Select(p =>
-                        SyntaxFactory.Parameter(SyntaxFactory.Identifier(p.Name))
-                            .WithType(SyntaxFactory.ParseTypeName(p.Type.ToDisplayString())));
+                    {
+                        var returnType = SyntaxFactory.ParseTypeName(method.ReturnType.ToDisplayString());
+                        var parameters = method.Parameters.Select(p =>
+                            SyntaxFactory.Parameter(SyntaxFactory.Identifier(p.Name))
+                                .WithType(SyntaxFactory.ParseTypeName(p.Type.ToDisplayString())));
 
-                    var isAsync = method.ReturnType.ToDisplayString().StartsWith("System.Threading.Tasks.Task", StringComparison.Ordinal);
-                    var bodyStatement = method.ReturnsVoid || method.ReturnType.ToDisplayString() == "System.Threading.Tasks.Task"
-                        ? SyntaxFactory.ParseStatement("throw new System.NotImplementedException();")
-                        : SyntaxFactory.ParseStatement("throw new System.NotImplementedException();");
+                        var isAsync = method.ReturnType.ToDisplayString().StartsWith("System.Threading.Tasks.Task", StringComparison.Ordinal);
+                        var bodyStatement = method.ReturnsVoid || method.ReturnType.ToDisplayString() == "System.Threading.Tasks.Task"
+                            ? SyntaxFactory.ParseStatement("throw new System.NotImplementedException();")
+                            : SyntaxFactory.ParseStatement("throw new System.NotImplementedException();");
 
-                    var methodDecl = SyntaxFactory.MethodDeclaration(returnType, method.Name)
-                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
-                        .WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(parameters)))
-                        .WithBody(SyntaxFactory.Block(bodyStatement));
+                        var methodDecl = SyntaxFactory.MethodDeclaration(returnType, method.Name)
+                            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                            .WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SeparatedList(parameters)))
+                            .WithBody(SyntaxFactory.Block(bodyStatement));
 
-                    if (isAsync)
-                        methodDecl = methodDecl.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
+                        if (isAsync)
+                            methodDecl = methodDecl.AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword));
 
-                    stubs.Add(methodDecl);
-                    break;
-                }
+                        stubs.Add(methodDecl);
+                        break;
+                    }
                 case IPropertySymbol property:
-                {
-                    var propType = SyntaxFactory.ParseTypeName(property.Type.ToDisplayString());
-                    var accessors = new List<AccessorDeclarationSyntax>();
+                    {
+                        var propType = SyntaxFactory.ParseTypeName(property.Type.ToDisplayString());
+                        var accessors = new List<AccessorDeclarationSyntax>();
 
-                    if (!property.IsWriteOnly)
-                        accessors.Add(SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
-                            .WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement("throw new System.NotImplementedException();"))));
+                        if (!property.IsWriteOnly)
+                            accessors.Add(SyntaxFactory.AccessorDeclaration(SyntaxKind.GetAccessorDeclaration)
+                                .WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement("throw new System.NotImplementedException();"))));
 
-                    if (!property.IsReadOnly)
-                        accessors.Add(SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
-                            .WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement("throw new System.NotImplementedException();"))));
+                        if (!property.IsReadOnly)
+                            accessors.Add(SyntaxFactory.AccessorDeclaration(SyntaxKind.SetAccessorDeclaration)
+                                .WithBody(SyntaxFactory.Block(SyntaxFactory.ParseStatement("throw new System.NotImplementedException();"))));
 
-                    var propDecl = SyntaxFactory.PropertyDeclaration(propType, property.Name)
-                        .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
-                        .WithAccessorList(SyntaxFactory.AccessorList(SyntaxFactory.List(accessors)));
+                        var propDecl = SyntaxFactory.PropertyDeclaration(propType, property.Name)
+                            .AddModifiers(SyntaxFactory.Token(SyntaxKind.PublicKeyword))
+                            .WithAccessorList(SyntaxFactory.AccessorList(SyntaxFactory.List(accessors)));
 
-                    stubs.Add(propDecl);
-                    break;
-                }
+                        stubs.Add(propDecl);
+                        break;
+                    }
             }
         }
 

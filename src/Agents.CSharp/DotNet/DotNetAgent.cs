@@ -1,13 +1,13 @@
-using System.Diagnostics;
-using System.Text.RegularExpressions;
-using IAW.Core;
-using IAW.Agents.System;
-using Microsoft.Extensions.AI;
-using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
 using Core.Communication;
 using Core.Communication.Messages;
+using Core.Contracts;
+using IAW.Agents.System;
+using IAW.Core;
+using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace IAW.Agents.Coding;
 

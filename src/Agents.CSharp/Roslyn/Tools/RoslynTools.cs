@@ -1,9 +1,9 @@
-using System.ComponentModel;
-using System.Text;
 using Core.Tools;
 using IAW.Agents.CSharp.Roslyn.Workspace;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using System.ComponentModel;
+using System.Text;
 
 namespace IAW.Agents.Coding.Tools;
 

@@ -1,18 +1,12 @@
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
-using System.Threading.Channels;
 using Core;
 using Core.Agents;
 using Core.AI;
 using Core.Context;
 using Core.Contracts;
 using Core.Ingestion;
+using Core.Observability;
 using Core.Services;
 using Core.UI;
-using UIAgentResponse = Core.UI.AgentResponse;
-using ChatMessage = Core.Contracts.ChatMessage;
-using ContractsTextContent = Core.Contracts.TextContent;
-using Core.Observability;
 using Grpc.Core;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -21,6 +15,12 @@ using Orleans.Journaling;
 using Orleans.Streams;
 using Qdrant.Client;
 using Qdrant.Client.Grpc;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
+using ChatMessage = Core.Contracts.ChatMessage;
+using ContractsTextContent = Core.Contracts.TextContent;
+using UIAgentResponse = Core.UI.AgentResponse;
 
 namespace IAW.Core;
 

@@ -1,10 +1,10 @@
-using System.Reflection;
 using Core;
 using Core.Contracts;
 using Core.Messages;
 using Core.Messages.Events;
 using Core.Models;
 using IAW.Agents.Orchestration;
+using System.Reflection;
 using Xunit;
 
 namespace IAW.Core.Tests;

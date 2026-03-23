@@ -1,10 +1,10 @@
-using IAW.Core;
-using IAW.Agents.Coding.Models;
-using Microsoft.Extensions.AI;
-using Octokit;
-using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
+using Core.Contracts;
+using IAW.Agents.Coding.Models;
+using IAW.Core;
+using Microsoft.Extensions.AI;
+using Octokit;
 
 namespace IAW.Agents.Coding;
 

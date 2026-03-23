@@ -1,9 +1,9 @@
-using System.Text.Json;
 using Core.AI;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.Text.Json;
 
 namespace IAW.Agents.System;
 

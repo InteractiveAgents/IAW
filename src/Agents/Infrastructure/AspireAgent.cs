@@ -1,4 +1,3 @@
-using System.Net.Http;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -7,6 +6,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using System.Net.Http;
 
 namespace IAW.Agents.Infrastructure;
 

@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using Core.Deployment;
+using System.Diagnostics;
 
 namespace IAW.MCP.Deploy;
 
@@ -18,7 +18,7 @@ public static class DeployEndpoint
             {
                 logger.LogInformation("Deploy: building solution at {Root}", iawRoot);
                 var (exitCode, output, error) = await RunProcessAsync(
-                    "dotnet", "build IAW.slnx", iawRoot, ct);
+                    "dotnet", "build src/IAW.Assistant/IAW.Assistant.csproj", iawRoot, ct);
 
                 var fullOutput = output + "\n" + error;
                 var verification = DeployVerifier.VerifyBuildOutput(fullOutput);

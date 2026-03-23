@@ -1,6 +1,6 @@
-using System.ComponentModel;
 using Core.Contracts;
 using Core.Tools;
+using System.ComponentModel;
 
 namespace IAW.Agents.System;
 

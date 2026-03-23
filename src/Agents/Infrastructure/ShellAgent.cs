@@ -1,11 +1,11 @@
-using System.Diagnostics;
-using System.Text.Json;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text.Json;
 
 namespace IAW.Agents.System;
 

@@ -1,8 +1,8 @@
-using System.Reflection;
 using Core.Contracts;
 using Core.Contracts.UI;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Journaling;
+using System.Reflection;
 
 namespace Core.AI;
 

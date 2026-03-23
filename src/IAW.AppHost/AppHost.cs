@@ -10,8 +10,8 @@ var iaw = builder.AddIAW("iaw")
     .WithLLM<Opus46>().AsReasoning()
     .WithLLM<GitHubGpt4oMini>()
     .WithVoice2Text<WhisperLargeV3Turbo>();
-    //.WithLLM<Qwen25>()
-    //.WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI())
+//.WithLLM<Qwen25>()
+//.WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI())
 
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
     .WithReference(iaw)

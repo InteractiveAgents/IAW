@@ -1,5 +1,5 @@
-using System.ComponentModel;
 using Core.Contracts;
+using System.ComponentModel;
 
 namespace IAW.Agents.System;
 

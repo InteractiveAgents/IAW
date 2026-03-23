@@ -1,9 +1,9 @@
 using Core.Contracts;
 using Core.Models;
+using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Orleans.Journaling;
-using IAW.Core;
 
 namespace Core;
 

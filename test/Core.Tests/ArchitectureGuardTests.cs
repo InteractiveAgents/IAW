@@ -1,7 +1,7 @@
-using System.Reflection;
 using Core.Communication;
 using Core.Contracts;
 using Core.Messages;
+using System.Reflection;
 using Xunit;
 
 namespace IAW.Core.Tests;

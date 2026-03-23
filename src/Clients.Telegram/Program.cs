@@ -54,7 +54,9 @@ app.MapPost("/webhook", async (
     // process the update in the background so webhook doesn't timeout
     _ = Task.Run(async () =>
     {
-        try { await botService.HandleUpdateAsync(update, CancellationToken.None); }
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        try { await botService.HandleUpdateAsync(update, cts.Token); }
+        catch (OperationCanceledException) { logger.LogWarning("Update processing timed out after 5 minutes"); }
         catch (Exception ex) { logger.LogError(ex, "Background update processing failed"); }
     }, ct);
     return Results.Ok();

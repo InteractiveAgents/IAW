@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core;
 using Core.Context;
 using Core.Contracts;
@@ -7,6 +6,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Qdrant.Client;
+using System.Text.Json;
 using AgentResponse = global::Core.UI.AgentResponse;
 
 namespace IAW.Agents.Orchestration;

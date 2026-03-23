@@ -1,6 +1,6 @@
 using Core.AI;
-using IAW.Testing;
 using IAW.Agents.Orchestration;
+using IAW.Testing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;

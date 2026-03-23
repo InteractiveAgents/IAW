@@ -1,9 +1,9 @@
-using System.ComponentModel;
-using System.Reflection;
 using Core.Communication;
 using Core.Contracts;
 using Core.Tools;
 using Microsoft.Extensions.AI;
+using System.ComponentModel;
+using System.Reflection;
 
 namespace IAW.Core;
 

@@ -117,7 +117,10 @@
       "Bash(SESSION=\"PtrgZj56o8iGVCVq7XbDLA\")",
       "Bash(grep -E \"\\\\.\\(cs\\)$\")",
       "Bash(for dir:*)",
-      "Read(//e/IAW/$dir/**)"
+      "Read(//e/IAW/$dir/**)",
+      "Bash(C:/Users/vhorb/AppData/Local/Temp/iaw-test/Program.cs:*)",
+      "Read(//c/Users/vhorb/AppData/Local/Temp/iaw-test/**)",
+      "Bash(mcp__aspire__list_resources)"
     ]
   },
   "enabledMcpjsonServers": [

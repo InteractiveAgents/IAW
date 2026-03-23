@@ -1,8 +1,8 @@
+using Core.AI;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Core.AI;
 
 namespace Aspire.IAW;
 

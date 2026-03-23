@@ -1,7 +1,7 @@
+using Aspire.IAW;
 using DevUI;
 using Microsoft.Agents.AI.DevUI;
 using Microsoft.Extensions.AI;
-using Aspire.IAW;
 
 var builder = WebApplication.CreateBuilder(args);
 

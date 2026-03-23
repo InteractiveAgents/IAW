@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Text;
 using Core;
 using Core.AI;
 using Core.AI.Models;
@@ -9,6 +7,8 @@ using Core.Orchestration;
 using Core.Registry;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text;
 
 namespace IAW.Agents.Orchestration;
 

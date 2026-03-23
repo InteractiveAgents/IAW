@@ -1,7 +1,7 @@
-using System.Reflection;
 using Core.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Journaling;
+using System.Reflection;
 using ChatMessage = Core.Contracts.ChatMessage;
 
 namespace Core.AI;

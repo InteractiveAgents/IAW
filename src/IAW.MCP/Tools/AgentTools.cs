@@ -1,10 +1,10 @@
-using System.Text.Json;
-using ModelContextProtocol.Server;
-using System.ComponentModel;
 using Core;
 using Core.Contracts;
 using Core.Registry;
 using IAW.Agents.Orchestration;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
+using System.Text.Json;
 
 internal sealed class AgentTools(IClusterClient orleans)
 {
@@ -136,8 +136,12 @@ internal sealed class AgentTools(IClusterClient orleans)
         var historyCount = (await agent.GetHistory(ct)).Count;
         return JsonSerializer.Serialize(new
         {
-            metadata.AgentType, metadata.DisplayName, metadata.Description,
-            eventCount, historyCount, capabilities
+            metadata.AgentType,
+            metadata.DisplayName,
+            metadata.Description,
+            eventCount,
+            historyCount,
+            capabilities
         }, JsonOptions);
     }
 }
