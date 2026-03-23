@@ -1,3 +1,4 @@
+using System.Net.Http;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
@@ -12,7 +13,8 @@ namespace IAW.Agents.Infrastructure;
 public class AspireAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<Sonnet46>] IChatClient chatClient,
-    ILogger<AspireAgent> logger)
+    ILogger<AspireAgent> logger,
+    IHttpClientFactory httpClientFactory)
     : Agent<IAspire>(durableState, chatClient), IAspire
 {
     private McpClient? _mcpClient;
@@ -28,10 +30,42 @@ public class AspireAgent(
             await ScheduleRecurringJob("log-monitor", TimeSpan.FromMinutes(30),
                 "Check system health and report any resource errors or warnings.", ct);
         }
+
+        if (!ScheduledJobs.ContainsKey("deploy-verify"))
+        {
+            await ScheduleJob("deploy-verify", TimeSpan.FromSeconds(60),
+                "Verify deployment health: check all resources are running.", ct);
+        }
     }
 
     protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
+        if (job.Name == "deploy-verify")
+        {
+            logger.LogInformation("Deploy verify: checking deployment health after restart");
+            var resources = await ListResourcesAsync(ct);
+            var healthy = resources.Contains("Running") && !resources.Contains("FailedToStart");
+
+            if (!healthy)
+            {
+                logger.LogError("Deploy verify: UNHEALTHY after deployment!");
+                await PublishAsync("deploy.verify.failed", new Dictionary<string, string>
+                {
+                    ["summary"] = "Deployment verification failed",
+                    ["details"] = resources
+                }, ct);
+            }
+            else
+            {
+                logger.LogInformation("Deploy verify: all resources healthy");
+                await PublishAsync("deploy.verify.succeeded", new Dictionary<string, string>
+                {
+                    ["summary"] = "Deployment verified — all resources running"
+                }, ct);
+            }
+            return;
+        }
+
         if (job.Name == "log-monitor")
         {
             logger.LogInformation("Aspire log monitor: checking system health");
@@ -170,5 +204,39 @@ public class AspireAgent(
     public Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default)
     {
         return GetLogsAsync(resourceName, ct);
+    }
+
+    public async Task<string> DeployAsync(CancellationToken ct = default)
+    {
+        logger.LogInformation("Deploy: stopping assistant, building, then restarting");
+
+        try
+        {
+            // Step 1: Stop assistant to release DLL locks
+            await RestartResourceAsync("assistant", ct);
+            await Task.Delay(5000, ct);
+
+            // Step 2: Call MCP /deploy to build
+            using var httpClient = httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromMinutes(5);
+            var response = await httpClient.PostAsync("http://localhost:5300/deploy", null, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            logger.LogInformation("Deploy: build result = {Body}", body);
+
+            // Step 3: Start assistant with fresh binary
+            if (_mcpClient is not null)
+            {
+                await _mcpClient.CallToolAsync("execute_resource_command",
+                    new Dictionary<string, object?> { ["resourceName"] = "assistant", ["commandName"] = "resource-start" },
+                    cancellationToken: ct);
+            }
+
+            return $"Deploy completed: {body}";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Deploy: failed");
+            return $"Deploy failed: {ex.Message}. Try RestartResource to recover.";
+        }
     }
 }

@@ -18,14 +18,15 @@ public interface IAspire : IAgent
         distributed system through the Aspire dashboard.
 
         RULES:
-        - When asked to "deploy" or "apply changes": call RestartResource("assistant").
+        - For deploying CODE CHANGES after writing files: call Deploy (stops, rebuilds, starts fresh).
+        - For simple service restarts (no code changes): call RestartResource.
         - When asked about system health: call ListResources and report states.
         - When asked about performance: call GetTraces and summarize token usage and timing.
         - For debugging: call GetLogs and surface errors/warnings first.
         - DO NOT execute shell commands for infrastructure tasks — use your typed tools.
         - DO NOT restart resources without being asked — deployments need explicit intent.
 
-        TOOLS: RestartResource, ListResources, GetTraces, GetLogs (typed interface methods).
+        TOOLS: Deploy, RestartResource, ListResources, GetTraces, GetLogs (typed interface methods).
         Additional MCP tools available for deeper queries.
         """;
 
@@ -43,4 +44,7 @@ public interface IAspire : IAgent
 
     [Description("Check system health and clean up monitoring state. Reports any unhealthy resources.")]
     Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default);
+
+    [Description("Deploy code changes. Stops assistant, rebuilds from source via MCP /deploy endpoint, then starts with fresh binary. Use after writing code changes — slower than RestartResource but picks up new code.")]
+    Task<string> DeployAsync(CancellationToken ct = default);
 }
