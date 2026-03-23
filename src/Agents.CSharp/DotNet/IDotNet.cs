@@ -2,6 +2,7 @@ using System.ComponentModel;
 using Core.Communication;
 using Core.Communication.Messages;
 using Core.Contracts;
+using IAW.Agents.System;
 
 namespace IAW.Agents.Coding;
 
@@ -38,6 +39,12 @@ public interface IDotNet : IAgent, IReceiver<CodeChangedMessage>
 
     [Description("Format C# code in the workspace using dotnet format with editorconfig. Returns summary of changed files.")]
     Task<string> FormatAsync(CancellationToken ct = default);
+
+    [Description("Run a .NET project with dotnet run. Accepts directory or .csproj path — auto-discovers project. 120-second timeout kills the process. Returns exit code, stdout, stderr.")]
+    Task<CommandResult> RunAsync(string projectPath, string? arguments = null, CancellationToken ct = default);
+
+    [Description("List all .csproj, .sln, and .slnx files in a directory tree. Use to discover projects before building. Returns array of absolute file paths.")]
+    Task<string[]> ListProjectsAsync(string directory, CancellationToken ct = default);
 }
 
 [GenerateSerializer]

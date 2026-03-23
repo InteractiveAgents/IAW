@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using IAW.Core;
+using IAW.Agents.System;
 using Microsoft.Extensions.AI;
 using Core.Contracts;
 using Core.AI;
@@ -79,6 +80,65 @@ public partial class DotNetAgent(
 
         var result = await RunFormatAsync(solutionPath, ct);
         return result.Summary;
+    }
+
+    public async Task<CommandResult> RunAsync(
+        string projectPath, string? arguments = null, CancellationToken ct = default)
+    {
+        var resolvedPath = ResolveProjectPath(projectPath);
+        var sw = Stopwatch.StartNew();
+
+        var args = $"run --project \"{resolvedPath}\"";
+        if (!string.IsNullOrEmpty(arguments))
+            args += $" -- {arguments}";
+
+        var psi = new ProcessStartInfo("dotnet", args)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi);
+        if (process is null)
+        {
+            sw.Stop();
+            return new CommandResult(-1, "", "Failed to start dotnet run", sw.Elapsed);
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(120_000);
+
+        try
+        {
+            var output = await process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var error = await process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            sw.Stop();
+            return new CommandResult(process.ExitCode, output, error, sw.Elapsed);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            sw.Stop();
+            return new CommandResult(-1, "", "dotnet run timed out after 120s", sw.Elapsed);
+        }
+    }
+
+    public Task<string[]> ListProjectsAsync(string directory, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!Directory.Exists(directory))
+            return Task.FromResult(Array.Empty<string>());
+
+        var projects = Directory.GetFiles(directory, "*.csproj", SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(directory, "*.sln", SearchOption.AllDirectories))
+            .Concat(Directory.GetFiles(directory, "*.slnx", SearchOption.AllDirectories))
+            .OrderBy(p => p)
+            .ToArray();
+
+        return Task.FromResult(projects);
     }
 
     public async Task<MessageReceipt> ReceiveAsync(CodeChangedMessage message, CancellationToken ct = default)
