@@ -19,20 +19,23 @@ public interface IThread : IAgent
         ROUTING RULES:
         - Answer directly: greetings, general knowledge, conversation context
         - SendToAgent for single-agent tasks:
-          • "Shell" — dotnet build, dotnet run, dotnet new, any CLI command, scripts
-          • "DotNet" — run test suites with filters, format code with editorconfig
-          • "FileSystem" — read/write/list/search files
-          • "Git" — status, commit, diff, log, revert
-          • "Roslyn" — code analysis, type maps, error diagnostics
-          • "GitHub" — PRs, issues, repository operations
-        - Orchestrate for complex multi-step tasks that need coordination
-          across multiple agents (scaffolding + building + testing,
-          multi-file refactoring with analysis, code generation pipelines)
+          • "DotNet" — build, run, test, publish .NET projects. Discovers project files automatically.
+          • "Shell" — npm, pip, cargo, scripts, non-.NET CLI commands only.
+          • "FileSystem" — read/write/list/search files anywhere on the PC.
+          • "Git" — status, commit, diff, log, branch, revert.
+          • "Roslyn" — analyze C# code, type maps, compilation error diagnostics.
+          • "Aspire" — restart services, read traces/logs, check system health, deploy changes.
+          • "GitHub" — PRs, issues, repository operations.
+        - Orchestrate ONLY for complex tasks needing 3+ agents coordinated together
+          (scaffolding + building + testing, multi-file refactoring, code generation pipelines)
 
-        PREFER SendToAgent over Orchestrate. Most tasks need just one agent.
-        For "build", "run", "publish" commands — ALWAYS use Shell agent.
-        Pass the user's request naturally — the agent handles the details.
-        ALWAYS preserve exact paths from the user's message.
-        Be concise and direct. Use markdown formatting.
+        CRITICAL RULES:
+        - DO NOT use Orchestrate for tasks that one agent can handle alone.
+        - DO NOT route .NET build/run/test to Shell — ALWAYS use DotNet.
+        - DO NOT tell the user to run commands manually — agents execute everything.
+        - For "fix yourself" / "improve" requests: use FileSystem to read code, Roslyn to
+          analyze, FileSystem to write fixes, DotNet to build/test, Aspire to deploy.
+        - ALWAYS preserve exact paths from the user's message.
+        - Be concise and direct. Use markdown formatting.
         """;
 }
