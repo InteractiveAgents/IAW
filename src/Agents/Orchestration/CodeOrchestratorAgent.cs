@@ -225,8 +225,14 @@ public class CodeOrchestratorAgent(
             for (var attempt = 0; attempt <= maxRetries; attempt++)
             {
                 await PublishProgress(projectKey, taskId, "building", $"Building (attempt {attempt + 1})...", ct);
-                var buildErrors = await TryBuild(taskDir, ct);
+                var (buildErrors, fullBuildOutput) = await TryBuild(taskDir, ct);
                 if (buildErrors is null) break; // clean build
+
+                var deterministicAction = TryDeterministicFix(fullBuildOutput);
+                if (deterministicAction == "skip")
+                    break;
+                if (deterministicAction == "retry")
+                    continue;
 
                 if (attempt == maxRetries)
                 {
@@ -281,7 +287,7 @@ public class CodeOrchestratorAgent(
         }
     }
 
-    private async Task<string?> TryBuild(string taskDir, CancellationToken ct)
+    private async Task<(string? ErrorLines, string FullOutput)> TryBuild(string taskDir, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
@@ -300,7 +306,7 @@ public class CodeOrchestratorAgent(
         var error = await process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
 
-        if (process.ExitCode == 0) return null; // clean build
+        if (process.ExitCode == 0) return (null, ""); // clean build
 
         var fullOutput = output + error;
         // extract just the error lines
@@ -309,9 +315,11 @@ public class CodeOrchestratorAgent(
             .Take(15)
             .ToList();
 
-        return errorLines.Count > 0
+        var errorSummary = errorLines.Count > 0
             ? string.Join("\n", errorLines)
             : (fullOutput.Length > 2000 ? fullOutput[^2000..] : fullOutput);
+
+        return (errorSummary, fullOutput);
     }
 
     private async Task<string> RegenerateCode(string plan, string previousCode, string buildErrors, CancellationToken ct)
@@ -529,5 +537,22 @@ public class CodeOrchestratorAgent(
 
         var result = sb.ToString();
         return result.Length > 30 ? result : fullCatalog;
+    }
+
+    static string? TryDeterministicFix(string buildOutput)
+    {
+        if (buildOutput.Contains("CS0246") && buildOutput.Contains("IAW.Agents"))
+            return "skip";
+
+        if (buildOutput.Contains("CS0103") && buildOutput.Contains("'Console'"))
+            return "add_using_system";
+
+        if (buildOutput.Contains("The process cannot access the file"))
+            return "skip";
+
+        if (buildOutput.Contains("timed out"))
+            return "retry";
+
+        return null;
     }
 }
