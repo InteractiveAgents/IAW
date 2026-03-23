@@ -1,4 +1,5 @@
 using Core.Contracts;
+using Core.Registry;
 
 namespace Core;
 
@@ -33,6 +34,16 @@ public static class AgentInterfaceResolver
                 ? t.Name[1..]
                 : t.Name;
             return string.Equals(stripped, normalized, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    public static Type? ResolveByDisplayName(string displayName)
+    {
+        var interfaces = DiscoverAgentInterfaces();
+        return interfaces.FirstOrDefault(t =>
+        {
+            var (name, _, _) = AgentInterfaceMetadata.ReadFrom(t);
+            return string.Equals(name, displayName, StringComparison.OrdinalIgnoreCase);
         });
     }
 
