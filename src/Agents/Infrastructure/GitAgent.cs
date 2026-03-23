@@ -10,7 +10,7 @@ namespace IAW.Agents.Coding;
 
 public class GitAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient)
+    [Llm<Fast>] IChatClient chatClient)
     : Agent<IGit>(durableState, chatClient), IGit
 {
 

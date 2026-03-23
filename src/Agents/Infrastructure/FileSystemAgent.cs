@@ -9,7 +9,7 @@ namespace IAW.Agents.System;
 
 public class FileSystemAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient)
+    [Llm<Fast>] IChatClient chatClient)
     : Agent<IFileSystem>(durableState, chatClient), IFileSystem
 {
 
