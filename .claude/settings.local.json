@@ -114,7 +114,10 @@
       "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-calc)",
       "Bash(Orleans__ClusterId=dev Orleans__ServiceId=iaw dotnet run --project test-e2e-sim)",
       "Bash(SESSION=\"vMPJe15336FQGzfiVc6MxQ\")",
-      "Bash(SESSION=\"PtrgZj56o8iGVCVq7XbDLA\")"
+      "Bash(SESSION=\"PtrgZj56o8iGVCVq7XbDLA\")",
+      "Bash(grep -E \"\\\\.\\(cs\\)$\")",
+      "Bash(for dir:*)",
+      "Read(//e/IAW/$dir/**)"
     ]
   },
   "enabledMcpjsonServers": [

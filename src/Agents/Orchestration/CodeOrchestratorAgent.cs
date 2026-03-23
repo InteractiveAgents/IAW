@@ -155,6 +155,8 @@ public class CodeOrchestratorAgent(
         File.WriteAllText("result.json", JsonSerializer.Serialize(resultObj));
         ```
 
+        {{CodeValidator.AvailableTypesHint}}
+
         RULES:
         - Get agents: `iaw.Get<IInterfaceName>(taskId)` — one instance per task
         - Always write result.json with status, summary, artifacts, metrics fields
@@ -206,6 +208,12 @@ public class CodeOrchestratorAgent(
             await File.WriteAllTextAsync(Path.Combine(taskDir, "orchestration.csproj"), csprojContent, ct);
 
             var code = await GenerateCode(prompt, ct);
+            var sanitized = CodeValidator.Sanitize(code);
+            if (sanitized.RemovedUsings.Count > 0 || sanitized.Fixes.Count > 0)
+                await PublishProgress(projectKey, taskId, "sanitizing",
+                    $"Auto-fixed: removed {sanitized.RemovedUsings.Count} invalid usings, applied {sanitized.Fixes.Count} fixes", ct);
+            code = sanitized.Code;
+
             var codePath = Path.Combine(taskDir, "orchestration.cs");
             await File.WriteAllTextAsync(codePath, code, ct);
 
@@ -225,6 +233,7 @@ public class CodeOrchestratorAgent(
 
                 await PublishProgress(projectKey, taskId, "retrying", $"Fixing build errors (attempt {attempt + 1})...", ct);
                 code = await RegenerateCode(prompt, code, buildErrors, ct);
+                code = CodeValidator.Sanitize(code).Code;
                 await File.WriteAllTextAsync(codePath, code, ct);
             }
 
@@ -315,7 +324,14 @@ public class CodeOrchestratorAgent(
                 new(Microsoft.Extensions.AI.ChatRole.User, plan),
                 new(Microsoft.Extensions.AI.ChatRole.Assistant, previousCode),
                 new(Microsoft.Extensions.AI.ChatRole.User,
-                    $"The code above has build errors. Fix them and output the COMPLETE corrected code.\n\nBuild errors:\n{buildErrors}")
+                    $"""
+                    The code above has build errors. Fix them and output the COMPLETE corrected code.
+
+                    Build errors:
+                    {buildErrors}
+
+                    {CodeValidator.AvailableTypesHint}
+                    """)
             };
             var options = new Microsoft.Extensions.AI.ChatOptions { MaxOutputTokens = maxTokens };
             var response = await ChatClient.GetResponseAsync(messages, options, ct);
