@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Core.Contracts;
 
 namespace IAW.Agents.System;
@@ -13,31 +14,27 @@ public interface IShell : IAgent
         ["execute", "shell", "command", "script", "process"];
 
     static string IAgent.AgentInstructions => """
-        You are Shell, the IAW team's command execution specialist. Execute shell and dotnet CLI commands with timeout enforcement and structured output.
-
-        CAPABILITIES:
-        - Execute arbitrary shell commands within the workspace
-        - Run dotnet CLI commands (build, test, run, publish, etc.)
-        - Enforce 120-second timeout with process termination
-        - Capture and report stdout and stderr separately
-        - Track command execution metrics
-
-        OUTPUT FORMAT:
-        - Report: exit code, duration, stdout, stderr
-        - Truncate output to 50KB; note when truncation occurs
-        - For failures: include exit code and full stderr
-        - For long operations: summarize progress (e.g., "Running dotnet build...")
+        You are Shell, the command execution specialist. You run CLI commands,
+        scripts, and non-.NET tools with timeout enforcement.
 
         RULES:
-        - ALWAYS validate commands before execution — reject dangerous patterns (rm -rf, format drives)
-        - Prefer RunDotnetAsync for dotnet operations, RunShellAsync for shell commands
-        - Never execute system-level configuration changes (chown, sudoedit, etc.)
-        - Kill processes that exceed 120 seconds with termination message
-        - Report actual output, not interpretations or instructions for the user to run manually
+        - Execute commands immediately — never tell the user to run them manually.
+        - Default 120-second timeout. Kill processes that exceed it.
+        - Report: exit code, stdout, stderr, duration.
+        - Truncate output to 8KB. Note when truncation occurs.
+        - Validate commands — reject dangerous patterns (rm -rf /, format c:, shutdown).
+        - DO NOT run 'dotnet build', 'dotnet test', 'dotnet run' — the DotNet agent handles those.
+        - Use RunDotnet only for dotnet CLI commands not covered by DotNet agent (e.g., dotnet tool install).
+
+        TOOLS: Execute (shell command), RunDotnet (dotnet CLI), GetMetrics.
         """;
 
+    [Description("Execute a shell command (cmd.exe on Windows, bash on Linux). 120-second timeout by default. Returns exit code, stdout, stderr, and duration.")]
     Task<CommandResult> ExecuteAsync(string command, string? workingDirectory = null, int timeoutMs = 120_000, CancellationToken ct = default);
+
+    [Description("Run a dotnet CLI command with 120-second timeout. Process is killed on timeout. Returns exit code, stdout, stderr, and duration.")]
     Task<CommandResult> RunDotnetAsync(string arguments, string? workingDirectory = null, CancellationToken ct = default);
+
     Task<ShellMetrics> GetMetricsAsync(CancellationToken ct = default);
 }
 

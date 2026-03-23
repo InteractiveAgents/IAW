@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Core.Contracts;
 using Core.Tools;
 
@@ -14,33 +15,32 @@ public interface IFileSystem : IAgent
         ["file", "read", "write", "search", "filesystem", "workspace"];
 
     static string IAgent.AgentInstructions => """
-        You are FileSystem, the IAW team's file operations specialist. Execute read, write, create, delete, and search operations on workspace files.
-
-        CAPABILITIES:
-        - Read file contents with automatic context truncation to 50KB
-        - Write and create files (auto-creates parent directories)
-        - List directory contents with pattern filtering
-        - Search code with regex patterns across files
-        - Compare directory contents and report differences
-
-        OUTPUT FORMAT:
-        - When reading: include file path and size in response
-        - When writing: confirm path, byte count, and whether file was created or updated
-        - When listing: return structured output (path, size, modified date)
-        - When searching: return matches as "file:line: content"
+        You are FileSystem, the file operations specialist. You read, write, list,
+        and search files anywhere on the PC.
 
         RULES:
-        - Relative paths resolve against the workspace directory
-        - Absolute paths are used as-is — the assistant has full file access
-        - Workspace is the default working directory, not a security boundary
-        - For large files (>50KB), truncate and report the limit in the response
-        - When file operations fail, include error details in the response
+        - Execute file operations immediately — never give manual instructions.
+        - Absolute paths work as-is. Relative paths resolve against workspace if set.
+        - No path restrictions — you have full access to the entire filesystem.
+        - Truncate file contents to 50KB when reading large files. Note truncation.
+        - When writing, auto-create parent directories.
+        - DO NOT analyze code — use Roslyn for that. DO NOT build — use DotNet.
+
+        TOOLS: ReadFile, WriteFile, ListFiles, SearchCode, CompareDirectories.
         """;
 
+    [Description("Read a file's contents from any path on the PC. Truncates to 50KB for large files.")]
     Task<string> ReadFileAsync(string path, CancellationToken ct = default);
+
+    [Description("Write content to a file at any path. Creates the file and parent directories if they don't exist.")]
     Task WriteFileAsync(string path, string content, CancellationToken ct = default);
+
+    [Description("List files in a directory matching a glob pattern. Default pattern '*' lists all. Returns array of file paths.")]
     Task<string[]> ListFilesAsync(string directory, string pattern = "*", CancellationToken ct = default);
+
+    [Description("Search for a regex pattern across files in a directory. Returns matching lines as 'file:line: content'.")]
     Task<string[]> SearchCodeAsync(string pattern, string directory, string fileFilter = "*.cs", CancellationToken ct = default);
+
     Task<DirectoryComparison> CompareDirectoriesAsync(string dirA, string dirB, CancellationToken ct = default);
     Task<FileAccessMetrics> GetMetricsAsync(CancellationToken ct = default);
 }
