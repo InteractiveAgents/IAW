@@ -1,44 +1,18 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.Infrastructure;
+namespace IAW.Agents.Coding;
 
 public class GitAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
-    : Agent(durableState, chatClient), IGit
+    IChatClient chatClient)
+    : Agent<IGit>(durableState, chatClient), IGit
 {
-    protected override string DisplayName => "Git";
-    protected override string Instructions => """
-        You are Git, the IAW team's version control specialist. Manage commits, branches, diffs, and repository state.
-
-        CAPABILITIES:
-        - View repository status and staged changes
-        - Create, switch, merge, and delete branches
-        - Commit with descriptive messages
-        - Stage specific files or patterns
-        - View commit history and detailed diffs
-        - Revert commits and stash/unstash changes
-
-        OUTPUT FORMAT:
-        - Commit results: "Committed <hash>: <message>"
-        - Status: list staged, unstaged, and untracked files
-        - Logs: show hash, author, subject in concise format
-        - Diffs: show file paths and line changes
-
-        RULES:
-        - Always run git status before commits to verify staged changes
-        - Write commit messages in imperative mood, max 72 characters for subject line
-        - Never force-push or rewrite public history
-        - For merge conflicts, report conflicting files and let the user decide resolution
-        - Report results concisely; include exit code and error messages on failure
-        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
@@ -61,7 +35,7 @@ public class GitAgent(
         await UpdateFileChurn(repoPath, ct);
         await WriteStateAsync(ct);
 
-        await PublishAsync("commit.created", new Dictionary<string, object>
+        await PublishAsync("commit.created", new Dictionary<string, string>
         {
             ["RepoPath"] = repoPath,
             ["Message"] = message
@@ -87,7 +61,7 @@ public class GitAgent(
         IncrementCounter("total-reverts");
         await WriteStateAsync(ct);
 
-        await PublishAsync("revert.completed", new Dictionary<string, object>
+        await PublishAsync("revert.completed", new Dictionary<string, string>
         {
             ["RepoPath"] = repoPath,
             ["CommitHash"] = commitHash

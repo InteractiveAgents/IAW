@@ -11,27 +11,24 @@ namespace IAW.Agents.Memory;
 
 public class ProjectMemoryAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient,
+    IChatClient chatClient,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger<ProjectMemoryAgent> logger)
-    : MemoryAgentBase(durableState, chatClient, memories, embedder, logger), IProjectMemory
+    : MemoryAgentBase<IProjectMemory>(durableState, chatClient, memories, embedder, logger), IProjectMemory
 {
     protected override string CollectionName => "iaw-project-memory";
-    protected override string DisplayName => "Project Memory";
-    protected override string Instructions =>
-        "You are Project Memory, the IAW team's record of conventions, architecture decisions, and agreements. " +
-        "Track how the project evolves and surface relevant decisions when queried.";
 
     public override async Task OnActivateAsync(CancellationToken ct)
     {
         await base.OnActivateAsync(ct);
-        await this.RegisterOrUpdateReminder("memory-maintenance", TimeSpan.FromHours(24), TimeSpan.FromHours(24));
+        if (!ScheduledJobs.ContainsKey("memory-maintenance"))
+            await ScheduleRecurringJob("memory-maintenance", TimeSpan.FromHours(24), "memory-maintenance", ct);
     }
 
-    public override async Task ReceiveReminder(string reminderName, TickStatus status)
+    protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
-        if (reminderName == "memory-maintenance")
+        if (job.Name == "memory-maintenance")
         {
             try
             {
@@ -40,12 +37,13 @@ public class ProjectMemoryAgent(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Memory maintenance reminder failed");
+                logger.LogError(ex, "Memory maintenance job failed");
             }
+            ScheduledJobs[job.Name] = job with { LastRunAt = DateTimeOffset.UtcNow };
         }
         else
         {
-            await base.ReceiveReminder(reminderName, status);
+            await base.OnScheduledJobDueAsync(job, ct);
         }
     }
 }

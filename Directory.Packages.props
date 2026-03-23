@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.1.3" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.2" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ngrok" Version="13.1.2-beta.518" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.1.2-beta.518" />
@@ -20,6 +20,8 @@
     <PackageVersion Include="Microsoft.Orleans.Persistence.Memory" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Journaling" Version="10.0.1-alpha.1" />
     <PackageVersion Include="Microsoft.Orleans.Reminders" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Orleans.DurableJobs" Version="10.0.1-alpha.1" />
+    <PackageVersion Include="Microsoft.Orleans.DurableJobs.AzureStorage" Version="10.0.1-alpha.1" />
     <PackageVersion Include="Microsoft.Orleans.Dashboard" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Server" Version="10.0.1" />
@@ -37,24 +39,26 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="Anthropic" Version="12.9.0" />
-    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.4.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.4.1" />
     <PackageVersion Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.0.1" />
-    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.0" />
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.Abstractions" Version="10.4.1" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.4.1" />
     <PackageVersion Include="OpenAI" Version="2.9.1" />
     <PackageVersion Include="OllamaSharp" Version="5.4.24" />
     <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="0.9.0" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.1.3" />
     <PackageVersion Include="Octokit" Version="14.0.0" />
     <PackageVersion Include="Telegram.BotAPI" Version="9.5.0" />
-    <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.1.2" />
-    <PackageVersion Include="Aspire.Qdrant.Client" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.1.3" />
+    <PackageVersion Include="Aspire.Qdrant.Client" Version="13.1.3" />
     <PackageVersion Include="Concentus" Version="2.2.2" />
     <PackageVersion Include="Concentus.Oggfile" Version="1.0.7" />
     <PackageVersion Include="NAudio" Version="2.3.0" />
     <PackageVersion Include="ElBruno.LocalEmbeddings" Version="1.1.4" />
     <PackageVersion Include="ElBruno.PersonaPlex" Version="0.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.3.0" />
+    <PackageVersion Include="Microsoft.Build.Locator" Version="1.11.2" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="11.0.0-preview.2.26159.112" />
     <PackageVersion Include="Microsoft.Orleans.Persistence.Cosmos" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Orleans.Clustering.Cosmos" Version="10.0.1" />
@@ -62,10 +66,10 @@
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.28.0-beta.1" />
     <PackageVersion Include="PdfPig" Version="0.1.14-alpha-20260315-fb715" />
     <PackageVersion Include="Qdrant.Client" Version="1.17.0" />
-    <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.1.2" />
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.2" />
-    <PackageVersion Include="Aspire.Hosting.Azure.AIFoundry" Version="13.1.2-preview.1.26125.13" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.1.2" />
+    <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.1.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.1.3" />
+    <PackageVersion Include="Aspire.Hosting.Azure.AIFoundry" Version="13.1.3-preview.1.26166.8" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.1.3" />
     <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.1.2" />
   </ItemGroup>
 </Project>

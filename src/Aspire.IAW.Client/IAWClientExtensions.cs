@@ -2,45 +2,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Orleans.Dashboard;
-using Orleans.Journaling;
 using Core.AI;
-using Core.Services;
 
 namespace Aspire.IAW;
 
+// Orleans client configuration. Called by MCP, DevUI, Telegram (grain consumers).
+// For silo configuration, see IAWSiloExtensions.cs.
 public static class IAWClientExtensions
 {
-    public static TBuilder AddIAW<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
-    {
-        builder.ConfigureOpenTelemetry();
-        builder.AddDefaultHealthChecks();
-        builder.Services.AddServiceDiscovery();
-        builder.Services.ConfigureHttpClientDefaults(http =>
-        {
-            http.AddStandardResilienceHandler();
-            http.AddServiceDiscovery();
-        });
-
-        builder.UseOrleans(silo =>
-        {
-            silo.Configure<Orleans.Configuration.EndpointOptions>(ep =>
-                ep.AdvertisedIPAddress = System.Net.IPAddress.Loopback);
-            silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
-            silo.AddStateMachineStorage();
-            silo.AddDashboard();
-        });
-
-        builder.AddLlmProviders();
-        builder.AddEmbeddingProvider();
-
-        builder.AddAzureBlobServiceClient("file-storage");
-        builder.AddQdrantClient("qdrant");
-        builder.Services.AddSingleton<BlobFileStorage>();
-
-        return builder;
-    }
-
     public static TBuilder AddIAWClient<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
         builder.ConfigureOpenTelemetry();
@@ -54,7 +23,12 @@ public static class IAWClientExtensions
 
         var clusterId = builder.Configuration["Orleans:ClusterId"] ?? "dev";
         var serviceId = builder.Configuration["Orleans:ServiceId"] ?? "dev";
-        builder.UseOrleansClient(client => client.UseLocalhostClustering(clusterId: clusterId, serviceId: serviceId));
+        builder.UseOrleansClient(client =>
+        {
+            client.UseLocalhostClustering(clusterId: clusterId, serviceId: serviceId);
+            client.Configure<Orleans.Configuration.ClientMessagingOptions>(msg =>
+                msg.ResponseTimeout = TimeSpan.FromMinutes(5));
+        });
 
         return builder;
     }

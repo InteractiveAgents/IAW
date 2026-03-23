@@ -8,6 +8,18 @@ Most AI agent frameworks today are black boxes. Something happens, you get a res
 
 IAW is built around three principles: **transparency**, **collaboration**, and **control**.
 
+**Observable, not opaque.** Every agent call, every LLM request, every tool invocation shows up as a distributed trace in the Aspire dashboard — with model name, token counts, latency, and the full decision chain. You don't have to trust a black box. You can see exactly what happened, why, and how much it cost.
+
+**Agents that specialize and talk to each other.** Instead of one model doing everything, IAW runs a team of focused agents — each good at one thing — that coordinate through clear communication channels: direct calls, typed messages, pub/sub streams, and notifications. A coding task flows through agents that understand your codebase, check packages, run builds, review the output, and remember what worked last time. Every interaction between agents is traceable.
+
+**Memory that persists.** Agents remember your projects, preferences, and past decisions across sessions. They build context over time — not just within a conversation, but across all of them.
+
+**You pick the models.** Mix and match providers freely. Run Claude for orchestration, GPT-5.4 Nano for fast subtasks, Qwen locally for privacy. Compare models side-by-side on the same prompt — see who's faster, cheaper, better. No vendor lock-in, no walled gardens — just operate freely.
+
+**Self-improving.** Agents review each other's work. A reviewer agent checks code changes, a self-improvement agent learns from outcomes. The system gets better the more you use it.
+
+**Not just cloud, not just local.** Use cloud APIs, local Ollama models, or both. Your infrastructure, your rules.
+
 ## How It Works
 
 You send a message from Telegram, Claude Code (MCP), or the Web UI. Here's what happens:

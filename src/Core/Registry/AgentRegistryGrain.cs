@@ -1,39 +1,93 @@
+using System.Text;
 using Core.Contracts;
-using Orleans.Journaling;
 
 namespace Core.Registry;
 
 [GrainType(IAWConstants.GrainTypes.AgentRegistry)]
-public class AgentRegistryGrain(
-    [Memory("registrations")] IDurableDictionary<string, AgentRegistration> registrations)
-    : DurableGrain, IAgentRegistryGrain
+public class AgentRegistryGrain : Grain, IAgentRegistry
 {
-    public async Task RegisterAsync(AgentRegistration registration)
+    readonly Dictionary<string, AgentRecord> _records = new(StringComparer.OrdinalIgnoreCase);
+
+    public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        registrations[registration.AgentType] = registration;
-        await WriteStateAsync();
+        if (_records.Count == 0)
+        {
+            foreach (var record in AgentRegistrationStartupTask.DiscoverAndBuildRecords())
+                _records[record.AgentType] = record;
+        }
+        return base.OnActivateAsync(cancellationToken);
     }
 
-    public async Task UnregisterAsync(string agentType)
+    public Task RegisterAsync(AgentRecord record, CancellationToken ct = default)
     {
-        if (registrations.ContainsKey(agentType))
-            registrations.Remove(agentType);
-        await WriteStateAsync();
+        _records[record.AgentType] = record;
+        return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<AgentRegistration>> GetAllAsync()
-        => Task.FromResult<IReadOnlyList<AgentRegistration>>([.. registrations.Values]);
-
-    public Task<IReadOnlyList<AgentRegistration>> QueryAsync(AgentQuery query)
+    public Task<List<AgentCandidate>> SearchAsync(string query, string? namespaceFilter = null, int top = 15, CancellationToken ct = default)
     {
-        var results = registrations.Values.AsEnumerable();
-        if (query.Publishes is { Length: > 0 } pubs)
-            results = results.Where(r => pubs.Any(p => r.Publishes.Contains(p)));
-        if (query.Subscribes is { Length: > 0 } subs)
-            results = results.Where(r => subs.Any(s => r.Subscribes.Contains(s)));
-        return Task.FromResult<IReadOnlyList<AgentRegistration>>([.. results]);
+        var queryTerms = query
+            .Split([' ', ',', '.', '-', '_'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => t.ToLowerInvariant())
+            .ToHashSet();
+
+        var candidates = _records.Values
+            .Where(r => namespaceFilter is null || r.Namespace.Equals(namespaceFilter, StringComparison.OrdinalIgnoreCase))
+            .Select(r => ScoreRecord(r, queryTerms))
+            .Where(c => c.Score > 0)
+            .OrderByDescending(c => c.Score)
+            .Take(top)
+            .ToList();
+
+        return Task.FromResult(candidates);
     }
 
-    public Task<AgentRegistration?> GetByTypeAsync(string agentType)
-        => Task.FromResult(registrations.TryGetValue(agentType, out var reg) ? reg : null);
+    public Task<List<AgentRecord>> GetAllAsync(CancellationToken ct = default)
+        => Task.FromResult(_records.Values.ToList());
+
+    public Task<string> ToPromptStringAsync(CancellationToken ct = default)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# Agent Catalog");
+        sb.AppendLine();
+
+        var grouped = _records.Values
+            .GroupBy(r => r.Namespace)
+            .OrderBy(g => g.Key);
+
+        foreach (var group in grouped)
+        {
+            sb.AppendLine($"## {group.Key}");
+            foreach (var record in group.OrderBy(r => r.InterfaceName))
+            {
+                sb.Append($"- **{record.InterfaceName}** — {record.Description}");
+                if (record.Capabilities.Length > 0)
+                    sb.Append($" [{string.Join(", ", record.Capabilities)}]");
+                sb.AppendLine();
+            }
+            sb.AppendLine();
+        }
+
+        return Task.FromResult(sb.ToString());
+    }
+
+    public Task<AgentRecord?> GetByAgentTypeAsync(string agentType, CancellationToken ct = default)
+        => Task.FromResult(_records.TryGetValue(agentType, out var record) ? record : null);
+
+    static AgentCandidate ScoreRecord(AgentRecord record, HashSet<string> queryTerms)
+    {
+        var searchText = $"{record.Description} {string.Join(" ", record.Capabilities)} {record.DisplayName} {record.InterfaceName} {record.AgentType}"
+            .ToLowerInvariant();
+
+        var matchCount = queryTerms.Count(term => searchText.Contains(term, StringComparison.Ordinal));
+        var score = queryTerms.Count > 0 ? (float)matchCount / queryTerms.Count : 0f;
+
+        return new AgentCandidate(
+            record.AgentType,
+            record.Namespace,
+            record.DisplayName,
+            record.Description,
+            record.InterfaceName,
+            score);
+    }
 }

@@ -21,9 +21,11 @@ public static class IAWHostingExtensions
             .WithMemoryStreaming(IAWConstants.StreamProvider)
             .WithMemoryReminders();
 
-        var iaw = new IAWService(orleans, builder);
-
-        iaw.GitHubTokenParam = builder.AddParameter("github-token", secret: true);
+        var iaw = new IAWService(orleans, builder)
+        {
+            GitHubTokenParam = builder.AddParameter("github-token", secret: true)
+                .WithDescription("Create at [github.com/settings/tokens](https://github.com/settings/tokens) with `repo` scope", enableMarkdown: true)
+        };
 
         var storage = builder.AddAzureStorage("iaw-storage");
         iaw.Blobs = storage.AddBlobs("file-storage");
@@ -33,11 +35,15 @@ public static class IAWHostingExtensions
         return iaw;
     }
 
-    public static IAWService WithLLM<TModel>(this IAWService iaw)
+    public static LLMModelBuilder WithLLM<TModel>(this IAWService iaw)
         where TModel : LLMModel
     {
         LLMModel.EnsureAllModelsLoaded();
         var model = LLMModel.All.OfType<TModel>().First();
+
+        if (model.Provider == "tier")
+            throw new InvalidOperationException(
+                $"Cannot add tier type '{typeof(TModel).Name}' via WithLLM. Use .AsFast(), .AsBalanced(), or .AsReasoning() after WithLLM<ConcreteModel>().");
 
         iaw.DeclaredModels.Add(model);
         iaw.DeclaredProviders.Add(model.Provider);
@@ -50,12 +56,14 @@ public static class IAWHostingExtensions
         }
 
         if (model.Provider.Equals("anthropic", StringComparison.OrdinalIgnoreCase))
-            iaw.AnthropicKeyParam ??= iaw.AppBuilder.AddParameter("anthropic-api-key", secret: true);
+            iaw.AnthropicKeyParam ??= iaw.AppBuilder.AddParameter("anthropic-api-key", secret: true)
+                .WithDescription("Get your key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)", enableMarkdown: true);
 
         if (model.Provider.Equals("openai", StringComparison.OrdinalIgnoreCase))
-            iaw.OpenAiKeyParam ??= iaw.AppBuilder.AddParameter("openai-api-key", secret: true);
+            iaw.OpenAiKeyParam ??= iaw.AppBuilder.AddParameter("openai-api-key", secret: true)
+                .WithDescription("Get your key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys)", enableMarkdown: true);
 
-        return iaw;
+        return new LLMModelBuilder(iaw, model);
     }
 
     public static IAWService WithOllama(
@@ -131,6 +139,12 @@ public static class IAWHostingExtensions
             builder.WithEnvironment($"{prefix}__Id", model.Id);
             builder.WithEnvironment($"{prefix}__Provider", model.Provider);
             builder.WithEnvironment($"{prefix}__ServiceKey", model.ServiceKey);
+        }
+
+        foreach (var (tierKey, concreteKey) in iaw.TierMappings)
+        {
+            var tierName = tierKey.Replace("tier-tier-", "");
+            builder.WithEnvironment($"AI__LLM__Tiers__{tierName}", concreteKey);
         }
 
         if (iaw.AnthropicKeyParam is not null)

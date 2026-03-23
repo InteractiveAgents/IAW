@@ -1,9 +1,12 @@
+using System.Collections.Concurrent;
 using System.Text;
 using Core;
 using Core.AI;
 using Core.Contracts;
 using Core.Contracts.UI;
 using Core.Services;
+using Core.UI;
+using IAW.Agents.Orchestration;
 using Microsoft.Extensions.Options;
 using Telegram;
 using Telegram.BotAPI;
@@ -25,15 +28,15 @@ public sealed class TelegramBotService(
 {
     static readonly int ColorPurple = 0xCB86DB;
     static readonly int ColorBlue = 0x6FB9F0;
-    static readonly int ColorGreen = 0x8EEE98;
-    static readonly int ColorOrange = 0xFB6F5F;
+
+    private readonly ConcurrentDictionary<string, (long ChatId, int MessageId, int? TopicId)> _progressMessages = new();
+
+    const int StreamingEditIntervalMs = 1500;
 
     static readonly (string Slug, string Name, int Color)[] PredefinedTopics =
     [
         ("personal", "Personal", ColorPurple),
         ("iaw", "IAW", ColorBlue),
-        ("scheduled", "Scheduled", ColorGreen),
-        ("notifications", "Notifications", ColorOrange),
     ];
 
     public async Task HandleUpdateAsync(Update update, CancellationToken ct)
@@ -87,6 +90,12 @@ public sealed class TelegramBotService(
         var telegramId = from.Id;
         var topicId = message.MessageThreadId;
 
+        // ensure GroupChatId is persisted so async event handlers (job results, notifications) can find it
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var storedChatId) || storedChatId != chatId.ToString())
+            await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
+
         // Photo message: download highest-res photo -> upload to blob -> send as ImageContent
         if (message.Photo is not null && message.Photo.Any())
         {
@@ -117,13 +126,13 @@ public sealed class TelegramBotService(
             // Future: route to UISession free-text handler
         }
 
-        var (project, _) = await ResolveProjectAsync(telegramId, topicId, ct);
+        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
         var chatMessage = BuildChatMessage(text);
 
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
+        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
     }
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -166,6 +175,45 @@ public sealed class TelegramBotService(
                 await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
             }
         }
+
+        if (callbackQuery.Data?.StartsWith("opt:") == true && result.Action is not null)
+        {
+            if (result.Action.StartsWith("suggestion:"))
+            {
+                var selectedLabel = result.NewText?.Contains('\u2014') == true
+                    ? result.NewText.Split('\u2014', 2).Last().Trim()
+                    : result.Action.Replace("suggestion:", "");
+
+                var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
+                var selectionMessage = BuildChatMessage(selectedLabel);
+
+                var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
+                await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
+            }
+            else
+            {
+                var optParts = callbackQuery.Data.Split(':', 3);
+                if (optParts.Length >= 3)
+                {
+                    var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                    var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
+
+                    var selectedLabel = result.NewText?.Contains('\u2014') == true
+                        ? result.NewText.Split('\u2014', 2).Last().Trim()
+                        : result.Action;
+                    var originalPrompt = result.NewText?.Contains('\u2014') == true
+                        ? result.NewText.Split('\u2014', 2).First().Replace("\u2705", "").Trim()
+                        : "";
+                    var contextPrefix = !string.IsNullOrEmpty(originalPrompt)
+                        ? $"Re: '{originalPrompt}' -- " : "";
+                    var selectionMessage = BuildChatMessage($"{contextPrefix}I choose: {selectedLabel}");
+
+                    var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
+                    await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
+                }
+            }
+        }
     }
 
     private async Task HandleCommandCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -182,17 +230,6 @@ public sealed class TelegramBotService(
 
         switch (parts[1])
         {
-            case "projects" when action == "new":
-                await botClient.SendMessageAsync(chatId, "What should the project be called?");
-                var session = clusterClient.GetGrain<IUISession>(from.Id.ToString());
-                var formFields = new FormField[]
-                {
-                    new("project-name", "What should the project be called?",
-                        FormFieldType.FreeText, null)
-                };
-                await session.StartForm("new-project", formFields, $"{from.Id}/general", ct);
-                break;
-
             case "status" when action == "show":
                 await HandleStatusCommandAsync(chatId, from.Id, null, ct);
                 break;
@@ -252,10 +289,9 @@ public sealed class TelegramBotService(
         await userProfile.RegisterProject("general", "general", ct);
         await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
 
-        var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n- Scheduled \u2014 recurring jobs dashboard\n- Notifications \u2014 system alerts\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview of all active work.";
+        var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview.";
         var welcomeButtons = new InlineKeyboardMarkup([
             [
-                new InlineKeyboardButton("+ New Project") { CallbackData = "cmd:projects:new" },
                 new InlineKeyboardButton("Status") { CallbackData = "cmd:status:show" }
             ]
         ]);
@@ -264,35 +300,14 @@ public sealed class TelegramBotService(
         try { await botClient.PinChatMessageAsync(chatId, welcomeMsg.MessageId); }
         catch (Exception ex) { logger.LogWarning(ex, "Could not pin welcome message"); }
 
-        var scheduledTopicId = await userProfile.GetTopicId("scheduled", ct);
-        if (scheduledTopicId is not null)
-        {
-            var dashboardText = "Active Schedules\n\nNo active jobs yet.\n\nLast updated: " + DateTimeOffset.UtcNow.ToString("yyyy-MM-dd HH:mm");
-            var dashMsg = await botClient.SendMessageAsync(chatId, dashboardText, messageThreadId: scheduledTopicId);
-            try { await botClient.PinChatMessageAsync(chatId, dashMsg.MessageId); }
-            catch (Exception ex) { logger.LogWarning(ex, "Could not pin scheduled dashboard"); }
-            await userProfile.SetPreference(IAWConstants.StateKeys.ScheduledDashboardMsgId, dashMsg.MessageId.ToString(), ct);
-        }
-
-        var personalTopicId = await userProfile.GetTopicId("personal", ct);
-        if (personalTopicId is not null)
-        {
-            var personalProject = clusterClient.GetGrain<IProject>($"{telegramId}/personal");
-            try
-            {
-                await personalProject.ScheduleJob("Daily Weather", TimeSpan.FromHours(24), "Check the current weather and send a brief forecast", ct);
-            }
-            catch (Exception ex) { logger.LogWarning(ex, "Could not create default weather job"); }
-        }
-
         await userProfile.SetPreference(IAWConstants.StateKeys.SetupComplete, "true", ct);
         logger.LogInformation("Setup complete for user {TelegramId}", telegramId);
     }
 
     private async Task HandleClearCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
     {
-        var (project, _) = await ResolveProjectAsync(telegramId, topicId, ct);
-        await project.ClearHistory(ct);
+        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
+        await thread.ClearHistory(ct);
         await botClient.SendMessageAsync(chatId, "Conversation cleared.", messageThreadId: topicId);
     }
 
@@ -306,26 +321,24 @@ public sealed class TelegramBotService(
 
         foreach (var proj in projects)
         {
-            if (proj.Slug is "notifications") continue;
             var grainId = $"{telegramId}/{proj.Slug}";
-            var project = clusterClient.GetGrain<IProject>(grainId);
+            var thread = clusterClient.GetGrain<IThread>(grainId);
             try
             {
-                var dashboard = await project.GetDashboard(ct);
-                var activeTasks = dashboard.Tasks.Count(t => t.Status is ProjectTaskStatus.Pending or ProjectTaskStatus.InProgress);
-                var activeJobs = dashboard.Jobs.Count(j => j.Active);
-                if (activeTasks > 0 || activeJobs > 0)
-                    sb.AppendLine($"[{proj.Slug}] Tasks: {activeTasks} active, Jobs: {activeJobs} running");
+                var meta = await thread.GetMetadata(ct);
+                var history = await thread.GetHistory(ct);
+                if (history.Count > 0)
+                    sb.AppendLine($"[{proj.Slug}] {history.Count} messages");
             }
             catch { }
         }
 
-        if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active tasks or jobs.");
+        if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active threads.");
 
         await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
     }
 
-    private async Task<(IProject Project, string Slug)> ResolveProjectAsync(long telegramId, int? topicId, CancellationToken ct)
+    private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
     {
         var userProfileId = telegramId.ToString();
         var userProfile = clusterClient.GetGrain<IUserProfile>(userProfileId);
@@ -339,7 +352,7 @@ public sealed class TelegramBotService(
         }
 
         var grainId = $"{userProfileId}/{projectSlug}";
-        return (clusterClient.GetGrain<IProject>(grainId), projectSlug);
+        return (clusterClient.GetGrain<IThread>(grainId), projectSlug);
     }
 
     private static ChatMessage BuildChatMessage(string text) => new()
@@ -372,27 +385,135 @@ public sealed class TelegramBotService(
     public async Task SendJobResultAsync(string projectKey, string jobName, string result, CancellationToken ct)
     {
         var parts = projectKey.Split('/');
-        if (parts.Length < 2 || !long.TryParse(parts[0], out _)) return;
+        if (parts.Length < 2 || !long.TryParse(parts[0], out _))
+        {
+            logger.LogWarning("SendJobResult: invalid projectKey format '{ProjectKey}'", projectKey);
+            return;
+        }
 
         var userId = parts[0];
         var slug = parts[1];
         var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
         var prefs = await userProfile.GetPreferences(ct);
         if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        {
+            logger.LogWarning("SendJobResult: no GroupChatId for user {UserId}, slug {Slug}", userId, slug);
             return;
+        }
 
         var topicId = await userProfile.GetTopicId(slug, ct);
-        var text = $"*{EscapeMarkdown(jobName)}*\n\n{EscapeMarkdown(result)}";
+        var telegramId = long.Parse(userId);
+        var (formattedText, orchestrationTaskId) = FormatOrchestrationResult(result);
 
+        int messageId;
+        if (orchestrationTaskId is not null && TryGetProgressMessage(orchestrationTaskId, out var progress))
+        {
+            try
+            {
+                await EditSafe(progress.ChatId, progress.MessageId, formattedText);
+                messageId = progress.MessageId;
+                chatId = progress.ChatId;
+                topicId = progress.TopicId;
+            }
+            catch
+            {
+                var sent = await botClient.SendMessageAsync(chatId, formattedText, messageThreadId: topicId);
+                messageId = sent.MessageId;
+            }
+        }
+        else
+        {
+            var sent = await botClient.SendMessageAsync(chatId, formattedText, messageThreadId: topicId);
+            messageId = sent.MessageId;
+        }
+
+        if (NeedsRichFormatting(formattedText))
+        {
+            try
+            {
+                var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
+                var richOutput = await uiAgent.FormatResponse(formattedText, ct);
+
+                if (richOutput.Parts.Count > 0)
+                    await RenderRichOutput(chatId, messageId, topicId, richOutput, telegramId, ct);
+                else if (!string.IsNullOrEmpty(richOutput.FormattedText))
+                    await EditWithMarkdown(chatId, messageId, richOutput.FormattedText);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "TelegramUI formatting failed for job result, keeping plain text");
+            }
+        }
+    }
+
+    public async Task SendProgressAsync(string projectKey, string taskId, string phase, string message, CancellationToken ct)
+    {
+        if (_progressMessages.TryGetValue(taskId, out var existing))
+        {
+            try
+            {
+                await botClient.EditMessageTextAsync(existing.ChatId, existing.MessageId, $"\u2699\ufe0f {message}");
+            }
+            catch (BotRequestException) { }
+            return;
+        }
+
+        var parts = projectKey.Split('/');
+        if (parts.Length < 2 || !long.TryParse(parts[0], out _))
+        {
+            logger.LogWarning("SendProgress: invalid projectKey format '{ProjectKey}'", projectKey);
+            return;
+        }
+
+        var userId = parts[0];
+        var slug = parts[1];
+        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
+        var prefs = await userProfile.GetPreferences(ct);
+        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        {
+            logger.LogWarning("SendProgress: no GroupChatId for user {UserId}", userId);
+            return;
+        }
+
+        var topicId = await userProfile.GetTopicId(slug, ct);
+        var sent = await botClient.SendMessageAsync(chatId, $"\u2699\ufe0f {message}", messageThreadId: topicId);
+        _progressMessages[taskId] = (chatId, sent.MessageId, topicId);
+    }
+
+    public bool TryGetProgressMessage(string taskId, out (long ChatId, int MessageId, int? TopicId) progress)
+        => _progressMessages.TryRemove(taskId, out progress);
+
+    private static (string Text, string? TaskId) FormatOrchestrationResult(string resultPayload)
+    {
         try
         {
-            await botClient.SendMessageAsync(chatId, text,
-                messageThreadId: topicId, parseMode: FormatStyles.MarkdownV2);
+            var result = System.Text.Json.JsonSerializer.Deserialize<Core.Contracts.OrchestrationResult>(resultPayload);
+            if (result is null) return (resultPayload, null);
+
+            var sb = new StringBuilder();
+            sb.AppendLine(result.Success ? $"\u2705 {result.Summary}" : $"\u274c {result.Summary}");
+
+            foreach (var artifact in result.Artifacts)
+                sb.AppendLine($"\ud83d\udcc1 {artifact}");
+
+            if (result.Metrics is { Count: > 0 })
+            {
+                var metricStr = string.Join(", ", result.Metrics.Select(kv => $"{kv.Key}: {kv.Value}"));
+                sb.AppendLine($"\u23f1 {metricStr}");
+            }
+
+            if (!result.Success && !string.IsNullOrEmpty(result.ErrorDetail))
+            {
+                var truncated = result.ErrorDetail.Length > 500 ? result.ErrorDetail[..500] + "..." : result.ErrorDetail;
+                sb.AppendLine();
+                sb.AppendLine(truncated);
+            }
+
+            return (sb.ToString().TrimEnd(), result.TaskId);
         }
-        catch (BotRequestException)
+        catch (System.Text.Json.JsonException)
         {
-            // fallback without markdown if escaping still fails
-            await botClient.SendMessageAsync(chatId, $"{jobName}\n\n{result}", messageThreadId: topicId);
+            return (resultPayload, null);
         }
     }
 
@@ -503,8 +624,8 @@ public sealed class TelegramBotService(
         {
             await using var photoStream = await DownloadTelegramFileAsync(highestResPhoto.FileId, ct);
 
-            var (project, projectSlug) = await ResolveProjectAsync(telegramId, topicId, ct);
-            var blobPath = $"{telegramId}/{projectSlug}/{Guid.NewGuid()}-photo.jpg";
+            var (thread, threadSlug) = await ResolveThreadAsync(telegramId, topicId, ct);
+            var blobPath = $"{telegramId}/{threadSlug}/{Guid.NewGuid()}-photo.jpg";
 
             var blobUri = await blobFileStorage.UploadAsync(photoStream, blobPath, "image/jpeg");
 
@@ -514,7 +635,7 @@ public sealed class TelegramBotService(
                 Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
             };
 
-            await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
+            await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -535,9 +656,9 @@ public sealed class TelegramBotService(
         {
             await using var docStream = await DownloadTelegramFileAsync(document.FileId, ct);
 
-            var (project, projectSlug) = await ResolveProjectAsync(telegramId, topicId, ct);
+            var (thread, threadSlug) = await ResolveThreadAsync(telegramId, topicId, ct);
             var safeFileName = document.FileName ?? "document";
-            var blobPath = $"{telegramId}/{projectSlug}/{Guid.NewGuid()}-{safeFileName}";
+            var blobPath = $"{telegramId}/{threadSlug}/{Guid.NewGuid()}-{safeFileName}";
             var mimeType = document.MimeType ?? "application/octet-stream";
 
             var blobUri = await blobFileStorage.UploadAsync(docStream, blobPath, mimeType);
@@ -552,7 +673,7 @@ public sealed class TelegramBotService(
             if (!string.IsNullOrEmpty(message.Caption))
                 chatMessage.Parts.Add(new TextContent(message.Caption));
 
-            await StreamResponseAsync(chatId, sent.MessageId, topicId, project, chatMessage, telegramId, ct);
+            await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
@@ -562,16 +683,16 @@ public sealed class TelegramBotService(
     }
 
     private async Task StreamResponseAsync(
-        long chatId, int messageId, int? topicId, IProject project, ChatMessage chatMessage, long telegramId, CancellationToken ct)
+        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct)
     {
-        const int maxChars = 4000; // leave margin below Telegram's 4096 hard limit
+        const int maxChars = 4000;
         var buffer = new StringBuilder();
         var currentMessageId = messageId;
         var lastEditAt = DateTimeOffset.MinValue;
 
         try
         {
-            await foreach (var chunk in project.GetResponseStream(chatMessage, ct))
+            await foreach (var chunk in thread.GetResponseStream(chatMessage, ct))
             {
                 buffer.Append(chunk);
 
@@ -586,7 +707,7 @@ public sealed class TelegramBotService(
                     continue;
                 }
 
-                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > 500)
+                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > StreamingEditIntervalMs)
                 {
                     await EditSafe(chatId, currentMessageId, buffer.ToString());
                     lastEditAt = DateTimeOffset.UtcNow;
@@ -595,12 +716,117 @@ public sealed class TelegramBotService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error streaming response from project for user {TelegramId}", telegramId);
+            logger.LogError(ex, "Error streaming response from thread for user {TelegramId}", telegramId);
             buffer.Append("\n\n[Error communicating with assistant]");
         }
 
-        if (buffer.Length > 0)
-            await EditSafe(chatId, currentMessageId, buffer.ToString());
+        var finalText = buffer.ToString();
+
+        // skip TelegramUIAgent for short/simple responses -- not worth an LLM call
+        if (finalText.Length < 200 || !NeedsRichFormatting(finalText))
+        {
+            if (finalText.Length > 0)
+                await EditSafe(chatId, currentMessageId, finalText);
+            return;
+        }
+
+        try
+        {
+            var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
+            var richOutput = await uiAgent.FormatResponse(finalText, ct);
+
+            if (richOutput.Parts.Count > 0)
+            {
+                await RenderRichOutput(chatId, currentMessageId, topicId, richOutput, telegramId, ct);
+            }
+            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
+            {
+                await EditWithMarkdown(chatId, currentMessageId, richOutput.FormattedText);
+            }
+            else if (finalText.Length > 0)
+            {
+                await EditSafe(chatId, currentMessageId, finalText);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "TelegramUI formatting failed for user {TelegramId}, falling back to plain text", telegramId);
+            if (finalText.Length > 0)
+                await EditSafe(chatId, currentMessageId, finalText);
+        }
+    }
+
+    private async Task RenderRichOutput(long chatId, int messageId, int? topicId, RichOutput richOutput, long telegramId, CancellationToken ct)
+    {
+        var userId = telegramId.ToString();
+        var session = clusterClient.GetGrain<IUISession>(userId);
+
+        var rows = new List<InlineKeyboardButton[]>();
+
+        foreach (var part in richOutput.Parts)
+        {
+            if (part is OptionsPart optionsPart && optionsPart.Options.Count >= 2)
+            {
+                var pendingOpts = optionsPart.Options.Select(o => new PendingOption(o.Label, o.Value)).ToArray();
+                var threadId = $"{telegramId}/{topicId?.ToString() ?? "general"}";
+                await session.RegisterOptions(optionsPart.CallbackId, optionsPart.Prompt, pendingOpts, threadId, "option", ct);
+                rows.Add(optionsPart.Options.Select(o =>
+                    new InlineKeyboardButton(o.Label) { CallbackData = $"opt:{optionsPart.CallbackId}:{o.Value}" }
+                ).ToArray());
+            }
+
+            if (part is SuggestionPart suggestionPart && suggestionPart.Actions.Count > 0)
+            {
+                var pendingOpts = suggestionPart.Actions.Select((a, i) => new PendingOption(a.Label, (i + 1).ToString())).ToArray();
+                var threadId = $"{telegramId}/{topicId?.ToString() ?? "general"}";
+                await session.RegisterOptions(suggestionPart.CallbackId, "", pendingOpts, threadId, "suggestion", ct);
+                rows.Add(suggestionPart.Actions.Select((a, i) =>
+                    new InlineKeyboardButton(a.Label) { CallbackData = $"opt:{suggestionPart.CallbackId}:{i + 1}" }
+                ).ToArray());
+            }
+        }
+
+        var keyboard = rows.Count > 0 ? new InlineKeyboardMarkup([.. rows]) : null;
+        await EditWithMarkdown(chatId, messageId, richOutput.FormattedText, keyboard);
+
+        foreach (var part in richOutput.Parts.OfType<MediaPart>())
+        {
+            try
+            {
+                if (part.MimeType.StartsWith("image/"))
+                    await botClient.SendPhotoAsync(chatId, part.Url,
+                        messageThreadId: topicId, caption: part.Caption);
+                else
+                    await botClient.SendDocumentAsync(chatId, part.Url,
+                        messageThreadId: topicId, caption: part.Caption);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to send media {FileName}", part.FileName);
+            }
+        }
+    }
+
+    private async Task EditWithMarkdown(long chatId, int messageId, string markdownText, InlineKeyboardMarkup? keyboard = null)
+    {
+        if (string.IsNullOrWhiteSpace(markdownText)) return;
+        try
+        {
+            await botClient.EditMessageTextAsync(chatId, messageId, markdownText,
+                parseMode: FormatStyles.MarkdownV2, replyMarkup: keyboard);
+        }
+        catch (BotRequestException)
+        {
+            try
+            {
+                await botClient.EditMessageTextAsync(chatId, messageId, markdownText,
+                    replyMarkup: keyboard);
+            }
+            catch (BotRequestException ex) when (
+                ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase))
+            {
+            }
+        }
     }
 
     private async Task<Stream> DownloadTelegramFileAsync(string fileId, CancellationToken ct)
@@ -642,21 +868,37 @@ public sealed class TelegramBotService(
         if (string.IsNullOrWhiteSpace(text)) return;
         try
         {
-            await botClient.EditMessageTextAsync(chatId, messageId, text,
-                parseMode: FormatStyles.MarkdownV2);
+            // plain text to avoid 400 errors from unescaped markdown chars
+            // TODO: implement proper markdown-to-MarkdownV2 conversion for links, bold, code blocks
+            await botClient.EditMessageTextAsync(chatId, messageId, text);
         }
-        catch (BotRequestException)
+        catch (BotRequestException ex) when (
+            ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
         {
-            try
-            {
-                await botClient.EditMessageTextAsync(chatId, messageId, text);
-            }
-            catch (BotRequestException ex) when (
-                ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) ||
-                ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
-            {
-            }
         }
+    }
+
+    static bool NeedsRichFormatting(string text)
+    {
+        // numbered list: "1." or "1)" at line start
+        if (System.Text.RegularExpressions.Regex.IsMatch(text, @"(?m)^\s*\d+[\.\)]\s"))
+            return true;
+
+        // 3+ bullet items
+        if (System.Text.RegularExpressions.Regex.Matches(text, @"(?m)^\s*[-*\u2022]\s").Count >= 3)
+            return true;
+
+        // markdown headers
+        if (text.Contains("\n##"))
+            return true;
+
+        // explicit option/choice language (at least 2 options)
+        if (text.Contains("Option 1", StringComparison.OrdinalIgnoreCase) &&
+            text.Contains("Option 2", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     private static string EscapeMarkdown(string text) =>

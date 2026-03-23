@@ -1,6 +1,7 @@
 using Core;
 using Core.AI;
 using Core.Contracts;
+using IAW.Agents.Orchestration;
 using IAW.Testing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,19 +11,31 @@ using Xunit;
 
 namespace IAW.E2E.Tests;
 
-/// <summary>
-/// E2E tests for the code orchestration pipeline.
-/// Uses Orleans TestCluster with a REAL Ollama LLM (Qwen 2.5) instead of mocks.
-///
-/// Requires: Ollama running locally with qwen2.5 model pulled.
-/// Run: ollama pull qwen2.5
-/// </summary>
 public class CodeOrchestrationE2ETests : IAsyncLifetime
 {
     private TestCluster _cluster = null!;
+    private static bool _ollamaAvailable = CheckOllama();
+
+    static bool CheckOllama()
+    {
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            var endpoint = Environment.GetEnvironmentVariable("OLLAMA_HOST") ?? "http://localhost:11434";
+            var response = http.GetAsync(endpoint).GetAwaiter().GetResult();
+            return response.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
 
     public async ValueTask InitializeAsync()
     {
+        if (!_ollamaAvailable)
+        {
+            // Skip cluster setup — tests will skip via Skip.If
+            return;
+        }
+
         Environment.SetEnvironmentVariable("IAW__Workspace", "D:\\IAW-E2E-Workspace");
 
         var builder = new TestClusterBuilder();
@@ -33,6 +46,8 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
+        if (!_ollamaAvailable) return;
+
         await _cluster.StopAllSilosAsync();
         _cluster.Dispose();
         Environment.SetEnvironmentVariable("IAW__Workspace", null);
@@ -45,10 +60,11 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
     [Trait("Category", "E2E")]
     public async Task Execute_CreatesHelloWorldProject()
     {
+        Assert.SkipWhen(!_ollamaAvailable, "Ollama not available at localhost:11434");
         var ct = TestContext.Current.CancellationToken;
         var testId = Guid.NewGuid().ToString("N")[..8];
 
-        var project = _cluster.GrainFactory.GetGrain<IProject>($"e2e-{testId}/general");
+        var project = _cluster.GrainFactory.GetGrain<IThread>($"e2e-{testId}/general");
 
         var response = await project.GetResponse(
             $"Create a C# console app at D:/E2ETest_{testId} that prints Hello World", ct);
@@ -80,12 +96,13 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
 
     [Fact(Timeout = 120_000)]
     [Trait("Category", "E2E")]
-    public async Task Project_AnswersSimpleQuestionDirectly()
+    public async Task Thread_AnswersSimpleQuestionDirectly()
     {
+        Assert.SkipWhen(!_ollamaAvailable, "Ollama not available at localhost:11434");
         var ct = TestContext.Current.CancellationToken;
         var testId = Guid.NewGuid().ToString("N")[..8];
 
-        var project = _cluster.GrainFactory.GetGrain<IProject>($"e2e-{testId}/general");
+        var project = _cluster.GrainFactory.GetGrain<IThread>($"e2e-{testId}/general");
 
         var response = await project.GetResponse("What is 2+2?", ct);
 
@@ -94,10 +111,6 @@ public class CodeOrchestrationE2ETests : IAsyncLifetime
     }
 }
 
-/// <summary>
-/// Configures the test silo with a real Ollama LLM (Qwen 2.5)
-/// instead of MockChatClient.
-/// </summary>
 public class OllamaSiloConfigurator : ISiloConfigurator
 {
     public void Configure(ISiloBuilder siloBuilder)

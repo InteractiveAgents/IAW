@@ -6,10 +6,10 @@ public class AgentDurableState(
     IDurableDictionary<string, StateEntry> state,
     IDurableList<AgentEvent> eventLog,
     IDurableList<ChatMessage> history,
-    IDurableDictionary<string, TrackingItem> trackingItems)
+    IDurableDictionary<string, ScheduledJobItem> scheduledJobs)
 {
     public IDurableDictionary<string, StateEntry> State => state;
     public IDurableList<AgentEvent> EventLog => eventLog;
     public IDurableList<ChatMessage> History => history;
-    public IDurableDictionary<string, TrackingItem> TrackingItems => trackingItems;
+    public IDurableDictionary<string, ScheduledJobItem> ScheduledJobs => scheduledJobs;
 }

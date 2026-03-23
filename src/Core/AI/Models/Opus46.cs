@@ -10,4 +10,9 @@ public sealed class Opus46 : LLMModel
     public override ModelCapabilities Capabilities => ModelCapabilities.FullyCapable;
 }
 
-public interface IOpus46 : IAgent { }
+public interface IOpus46 : IAgent
+{
+    static string IAgent.AgentDisplayName => "Claude Opus 4.6";
+    static string IAgent.AgentDescription => "Claude Opus 4.6 most capable Anthropic model wrapper for complex reasoning and nuanced analysis.";
+    static string[] IAgent.AgentCapabilities => ["llm", "reasoning", "generation", "claude", "anthropic", "powerful"];
+}

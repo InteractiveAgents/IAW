@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
+using Core.Communication;
 using Core.Contracts;
 using Core.Tools;
 using Microsoft.Extensions.AI;
@@ -10,7 +11,11 @@ public abstract partial class Agent
 {
     private IReadOnlyList<AITool>? _cachedTools;
 
+    private static readonly HashSet<string> ExcludedMethodNames = BuildExcludedMethodNames();
+
     protected virtual IReadOnlyList<AITool> DefineTools() => [];
+
+    protected virtual IReadOnlyList<AITool> DefineAdditionalTools() => [];
 
     private IReadOnlyList<AITool> GetAllTools()
     {
@@ -28,10 +33,103 @@ public abstract partial class Agent
             });
         RegisterToolMethods(tools, workspaceTools);
 
+        DiscoverInterfaceTools(tools);
+
         tools.AddRange(DefineTools());
+        tools.AddRange(DefineAdditionalTools());
+
         _cachedTools = tools;
         return _cachedTools;
     }
+
+    private void DiscoverInterfaceTools(List<AITool> tools)
+    {
+        var agentInterface = FindAgentInterface();
+        if (agentInterface is null)
+            return;
+
+        var methods = agentInterface.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+        foreach (var method in methods)
+        {
+            if (ExcludedMethodNames.Contains(method.Name))
+                continue;
+
+            // skip property accessors and special methods
+            if (method.IsSpecialName)
+                continue;
+
+            // skip methods returning complex domain types — they aren't useful as LLM tools
+            // and can cause recursive loops (e.g., FormatResponse returning RichOutput)
+            if (!IsToolSafeReturnType(method.ReturnType))
+                continue;
+
+            try
+            {
+                tools.Add(AIFunctionFactory.Create(method, this));
+            }
+            catch
+            {
+                // method signature incompatible with AIFunctionFactory — skip silently
+            }
+        }
+    }
+
+    private Type? FindAgentInterface()
+    {
+        var agentInterfaces = GetType().GetInterfaces()
+            .Where(IsAgentLeafInterface)
+            .ToList();
+
+        // prefer leaf: exclude any interface that is a base of another candidate
+        return agentInterfaces
+            .FirstOrDefault(i => !agentInterfaces.Any(other => other != i && i.IsAssignableFrom(other)))
+            ?? agentInterfaces.FirstOrDefault();
+    }
+
+    private static bool IsAgentLeafInterface(Type iface)
+    {
+        if (iface == typeof(IAgent) || !typeof(IAgent).IsAssignableFrom(iface))
+            return false;
+
+        // exclude infrastructure communication interfaces
+        if (iface.IsGenericType)
+        {
+            var def = iface.GetGenericTypeDefinition();
+            if (def == typeof(IReceiver<>) || def == typeof(IStreamConsumer<>) || def == typeof(IStreamProducer<>))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static HashSet<string> BuildExcludedMethodNames()
+    {
+        var excluded = new HashSet<string>();
+
+        foreach (var method in typeof(IAgent).GetMethods())
+            excluded.Add(method.Name);
+
+        foreach (var baseIface in typeof(IAgent).GetInterfaces())
+            foreach (var method in baseIface.GetMethods())
+                excluded.Add(method.Name);
+
+        return excluded;
+    }
+
+    private static bool IsToolSafeReturnType(Type returnType)
+    {
+        if (returnType == typeof(Task) || returnType == typeof(void))
+            return true;
+
+        if (returnType.IsGenericType && returnType.GetGenericTypeDefinition() == typeof(Task<>))
+            returnType = returnType.GetGenericArguments()[0];
+
+        return IsSimpleType(returnType)
+            || (returnType.IsArray && IsSimpleType(returnType.GetElementType()!));
+    }
+
+    private static bool IsSimpleType(Type type) =>
+        type == typeof(string) || type.IsPrimitive || type == typeof(decimal) || type.IsEnum;
 
     protected static void RegisterToolMethods(List<AITool> tools, object toolSource)
     {

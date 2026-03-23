@@ -51,10 +51,19 @@ public class FileToolsTests : IDisposable
     }
 
     [Fact]
-    public async Task WriteFile_OutsideWorkspace_Throws()
+    public async Task WriteFile_OutsideWorkspace_Succeeds()
     {
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => _tools.WriteFileAsync(Path.Combine(_workspace, "..", "escape.txt"), "bad"));
+        var outsidePath = Path.Combine(_workspace, "..", "escape-" + Guid.NewGuid().ToString("N")[..8] + ".txt");
+        try
+        {
+            var result = await _tools.WriteFileAsync(outsidePath, "content");
+            Assert.Contains("File written", result);
+        }
+        finally
+        {
+            var resolved = Path.GetFullPath(outsidePath);
+            if (File.Exists(resolved)) File.Delete(resolved);
+        }
     }
 
     [Fact]

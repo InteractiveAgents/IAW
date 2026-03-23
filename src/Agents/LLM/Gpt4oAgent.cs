@@ -4,12 +4,9 @@ using Core.AI.Models;
 using Core.Contracts;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.LLM;
+namespace IAW.Agents.Models;
 
 public class Gpt4oAgent(
     [AgentState] AgentDurableState durableState,
     [Llm<Gpt4o>] IChatClient chatClient)
-    : LlmAgentBase(durableState, chatClient), IGpt4o
-{
-    protected override string DisplayName => "GPT-4o";
-}
+    : LlmAgentBase<IGpt4o>(durableState, chatClient), IGpt4o;

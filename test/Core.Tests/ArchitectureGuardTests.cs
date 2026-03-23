@@ -130,7 +130,7 @@ public class ArchitectureGuardTests
     [Fact]
     public void AllAgentsInIAWAgents_ExtendAgent()
     {
-        var agentsAssembly = typeof(IAW.Agents.Infrastructure.FileSystemAgent).Assembly;
+        var agentsAssembly = typeof(IAW.Agents.System.FileSystemAgent).Assembly;
         var concreteGrains = agentsAssembly.GetTypes()
             .Where(t => !t.IsAbstract && !t.IsInterface
                 && t.Name.EndsWith("Agent")
@@ -148,7 +148,7 @@ public class ArchitectureGuardTests
         var allAssemblies = new[]
         {
             typeof(Agent).Assembly,
-            typeof(IAW.Agents.Infrastructure.FileSystemAgent).Assembly
+            typeof(IAW.Agents.System.FileSystemAgent).Assembly
         };
 
         foreach (var assembly in allAssemblies)

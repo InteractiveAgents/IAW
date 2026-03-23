@@ -1,7 +1,14 @@
+using Core.UI;
+
 namespace Core.Contracts;
 
 public interface IAgent : IGrainWithStringKey
 {
+    static virtual string AgentDisplayName => "";
+    static virtual string AgentDescription => "";
+    static virtual string[] AgentCapabilities => [];
+    static virtual string AgentInstructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
+
     // Conversation
     IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
     IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
@@ -10,6 +17,16 @@ public interface IAgent : IGrainWithStringKey
     Task<string> GetResponse(string prompt, CancellationToken ct);
     Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken ct);
     Task ClearHistory(CancellationToken ct);
+
+    // Rich responses & callbacks
+    Task<AgentResponse> GetRichResponse(string prompt, CancellationToken ct = default);
+    Task<AgentResponse> HandleCallback(string callbackId, string value, CancellationToken ct = default);
+
+    // Scheduling
+    Task ScheduleJob(string name, TimeSpan delay, string prompt, CancellationToken ct = default);
+    Task ScheduleRecurringJob(string name, TimeSpan interval, string prompt, CancellationToken ct = default);
+    Task CancelJob(string name, CancellationToken ct = default);
+    Task<List<ScheduledJobInfo>> ListJobs(CancellationToken ct = default);
 
     // State
     Task<AgentState> GetState(CancellationToken ct);
@@ -20,7 +37,7 @@ public interface IAgent : IGrainWithStringKey
     Task<AgentCapabilities> GetCapabilities(CancellationToken ct);
 
     // Events
-    Task<IReadOnlyList<AgentEvent>> GetEventLog(CancellationToken ct);
+    Task<List<AgentEvent>> GetEventLog(CancellationToken ct);
 
     // Streams
     Task<IReadOnlyList<string>> GetActiveSubscriptions(CancellationToken ct);

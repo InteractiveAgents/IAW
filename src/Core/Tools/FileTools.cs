@@ -25,13 +25,12 @@ public class FileTools(Func<string> getWorkspacePath)
         return await File.ReadAllTextAsync(fullPath);
     }
 
-    [Description("Create or overwrite a file in the workspace")]
+    [Description("Create or overwrite a file")]
     public async Task<string> WriteFileAsync(
         [Description("Absolute or workspace-relative path")] string path,
         [Description("Content to write")] string content)
     {
         var fullPath = ResolvePath(path);
-        ValidateInsideWorkspace(fullPath);
         var dir = Path.GetDirectoryName(fullPath);
         if (dir is not null && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
@@ -79,12 +78,6 @@ public class FileTools(Func<string> getWorkspacePath)
 
     private string ResolvePath(string path) =>
         Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(WorkspacePath, path));
-
-    private void ValidateInsideWorkspace(string fullPath)
-    {
-        if (!Path.GetFullPath(fullPath).StartsWith(Path.GetFullPath(WorkspacePath), StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Path {fullPath} is outside workspace");
-    }
 
     private static IEnumerable<string> EnumerateFiles(string root, string pattern)
     {

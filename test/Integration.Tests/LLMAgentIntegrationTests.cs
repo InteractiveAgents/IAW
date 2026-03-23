@@ -1,7 +1,6 @@
 using Core.AI.Models;
 using Core.Contracts;
-using Core.Orchestration;
-using IAW.Agents.LLM;
+using IAW.Agents.Models;
 using IAW.Testing;
 using Xunit;
 
@@ -9,16 +8,6 @@ namespace IAW.Integration.Tests;
 
 public class LLMAgentIntegrationTests : AgentTest<Opus46Agent>
 {
-    [Fact]
-    public void InterfaceCatalog_discovers_all_LLM_agents()
-    {
-        var catalog = InterfaceCatalog.Discover();
-        var llmInterfaces = new[] { "IOpus46", "ISonnet46", "IClaude45Haiku", "IGpt4o", "IGpt4oMini", "IGpt52", "IGpt53", "IGemini31", "IGrokLatest", "ILlama32", "IQwen25" };
-
-        foreach (var name in llmInterfaces)
-            Assert.Contains(catalog, e => e.InterfaceName == name);
-    }
-
     [Fact]
     public async Task LLM_agent_responds_to_prompt()
     {

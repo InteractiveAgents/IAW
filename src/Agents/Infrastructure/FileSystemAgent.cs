@@ -1,42 +1,17 @@
 using System.Text.Json;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.Infrastructure;
+namespace IAW.Agents.System;
 
 public class FileSystemAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
-    : Agent(durableState, chatClient), IFileSystem
+    IChatClient chatClient)
+    : Agent<IFileSystem>(durableState, chatClient), IFileSystem
 {
-    protected override string DisplayName => "FileSystem";
-    protected override string Instructions => """
-        You are FileSystem, the IAW team's file operations specialist. Execute read, write, create, delete, and search operations on workspace files.
-
-        CAPABILITIES:
-        - Read file contents with automatic context truncation to 50KB
-        - Write and create files (auto-creates parent directories)
-        - List directory contents with pattern filtering
-        - Search code with regex patterns across files
-        - Compare directory contents and report differences
-
-        OUTPUT FORMAT:
-        - When reading: include file path and size in response
-        - When writing: confirm path, byte count, and whether file was created or updated
-        - When listing: return structured output (path, size, modified date)
-        - When searching: return matches as "file:line: content"
-
-        RULES:
-        - ALWAYS validate paths are within the workspace boundary before any operation
-        - Reject requests for paths outside the workspace explicitly
-        - Never read or write files outside the workspace
-        - For large files (>50KB), truncate and report the limit in the response
-        - When file operations fail, include error details in the response
-        """;
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
@@ -49,19 +24,19 @@ public class FileSystemAgent(
 
     public async Task<string> ReadFileAsync(string path, CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(path);
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
 
-        var content = await File.ReadAllTextAsync(path, ct);
+        var content = await File.ReadAllTextAsync(resolvedPath, ct);
 
-        IncrementFileAccessCount(path);
+        IncrementFileAccessCount(resolvedPath);
         IncrementCounter("total-reads");
         State["last-access"] = new StateEntry("last-access", DateTimeOffset.UtcNow.ToString("O"));
         await WriteStateAsync(ct);
 
-        await PublishAsync("file.read", new Dictionary<string, object>
+        await PublishAsync("file.read", new Dictionary<string, string>
         {
-            ["Path"] = path,
-            ["SizeBytes"] = content.Length
+            ["Path"] = resolvedPath,
+            ["SizeBytes"] = content.Length.ToString()
         }, ct);
 
         return content;
@@ -69,39 +44,39 @@ public class FileSystemAgent(
 
     public async Task WriteFileAsync(string path, string content, CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(path);
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
 
-        var fileExisted = File.Exists(path);
-        var directory = Path.GetDirectoryName(path);
+        var fileExisted = File.Exists(resolvedPath);
+        var directory = Path.GetDirectoryName(resolvedPath);
         if (directory is not null && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
-        await File.WriteAllTextAsync(path, content, ct);
+        await File.WriteAllTextAsync(resolvedPath, content, ct);
 
-        IncrementFileAccessCount(path);
+        IncrementFileAccessCount(resolvedPath);
         IncrementCounter("total-writes");
         State["last-access"] = new StateEntry("last-access", DateTimeOffset.UtcNow.ToString("O"));
         await WriteStateAsync(ct);
 
         var eventName = fileExisted ? "file.written" : "file.created";
-        await PublishAsync(eventName, new Dictionary<string, object>
+        await PublishAsync(eventName, new Dictionary<string, string>
         {
-            ["Path"] = path,
-            ["SizeBytes"] = content.Length
+            ["Path"] = resolvedPath,
+            ["SizeBytes"] = content.Length.ToString()
         }, ct);
     }
 
     public async Task<string[]> ListFilesAsync(string directory, string pattern = "*", CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(directory);
-        return await WorkspaceFiles.EnumerateFilesAsync(directory, pattern, ct);
+        var resolvedDir = ResolvePathAgainstWorkspace(directory);
+        return await WorkspaceFiles.EnumerateFilesAsync(resolvedDir, pattern, ct);
     }
 
     public async Task<string[]> SearchCodeAsync(string pattern, string directory, string fileFilter = "*.cs", CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(directory);
+        var resolvedDir = ResolvePathAgainstWorkspace(directory);
 
-        var files = await WorkspaceFiles.EnumerateFilesAsync(directory, fileFilter, ct);
+        var files = await WorkspaceFiles.EnumerateFilesAsync(resolvedDir, fileFilter, ct);
 
         var matchingLines = new List<string>();
         foreach (var file in files)
@@ -118,19 +93,19 @@ public class FileSystemAgent(
 
     public async Task<DirectoryComparison> CompareDirectoriesAsync(string dirA, string dirB, CancellationToken ct = default)
     {
-        ValidatePathWithinWorkspace(dirA);
-        ValidatePathWithinWorkspace(dirB);
+        var resolvedDirA = ResolvePathAgainstWorkspace(dirA);
+        var resolvedDirB = ResolvePathAgainstWorkspace(dirB);
 
-        var comparison = await WorkspaceFiles.CompareDirectoriesAsync(dirA, dirB, ct);
+        var comparison = await WorkspaceFiles.CompareDirectoriesAsync(resolvedDirA, resolvedDirB, ct);
 
-        await PublishAsync("directories.compared", new Dictionary<string, object>
+        await PublishAsync("directories.compared", new Dictionary<string, string>
         {
-            ["DirA"] = dirA,
-            ["DirB"] = dirB,
-            ["OnlyInFirst"] = comparison.OnlyInFirst.Length,
-            ["OnlyInSecond"] = comparison.OnlyInSecond.Length,
-            ["Different"] = comparison.DifferentFiles.Length,
-            ["Identical"] = comparison.IdenticalFiles.Length
+            ["DirA"] = resolvedDirA,
+            ["DirB"] = resolvedDirB,
+            ["OnlyInFirst"] = comparison.OnlyInFirst.Length.ToString(),
+            ["OnlyInSecond"] = comparison.OnlyInSecond.Length.ToString(),
+            ["Different"] = comparison.DifferentFiles.Length.ToString(),
+            ["Identical"] = comparison.IdenticalFiles.Length.ToString()
         }, ct);
 
         return comparison;

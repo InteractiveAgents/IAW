@@ -8,6 +8,8 @@ using Core.Context;
 using Core.Contracts;
 using Core.Ingestion;
 using Core.Services;
+using Core.UI;
+using UIAgentResponse = Core.UI.AgentResponse;
 using ChatMessage = Core.Contracts.ChatMessage;
 using ContractsTextContent = Core.Contracts.TextContent;
 using Core.Observability;
@@ -42,6 +44,7 @@ public abstract partial class Agent(
 
     protected virtual string Instructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
     protected virtual int MaxHistoryMessages => 100;
+    protected virtual int MaxOutputTokens => 4096;
     protected IChatClient ChatClient => chatClient;
     protected IDurableList<ChatMessage> History => durableState.History;
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
@@ -60,7 +63,8 @@ public abstract partial class Agent(
         _chatOptions = new ChatOptions
         {
             Instructions = Instructions,
-            Tools = GetAllTools().ToList()
+            Tools = GetAllTools().ToList(),
+            MaxOutputTokens = MaxOutputTokens
         };
         _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
@@ -73,8 +77,7 @@ public abstract partial class Agent(
 
         await SubscribeToStreamConsumerInterfaces();
 
-        foreach (var kvp in durableState.TrackingItems)
-            await this.RegisterOrUpdateReminder(kvp.Key, TimeSpan.Zero, kvp.Value.Interval);
+        await RescheduleExistingJobsAsync(cancellationToken);
 
         await base.OnActivateAsync(cancellationToken);
     }
@@ -150,7 +153,7 @@ public abstract partial class Agent(
             var correlationId = activity?.TraceId.ToString() ?? Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
             durableState.EventLog.Add(new AgentEvent(
                 "LlmCall", this.GetPrimaryKeyString(), correlationId,
-                DateTimeOffset.UtcNow, new Dictionary<string, object> { ["prompt_length"] = prompt.Length }));
+                DateTimeOffset.UtcNow, new Dictionary<string, string> { ["prompt_length"] = prompt.Length.ToString() }));
 
             await WriteStateAsync(cancellationToken);
             completed = true;
@@ -374,6 +377,15 @@ public abstract partial class Agent(
         catch (Exception)
         {
         }
+    }
+
+    public virtual Task<UIAgentResponse> HandleCallback(string callbackId, string value, CancellationToken ct = default)
+        => Task.FromResult(new UIAgentResponse([]));
+
+    public virtual async Task<UIAgentResponse> GetRichResponse(string prompt, CancellationToken ct = default)
+    {
+        var text = await GetResponse(prompt, ct);
+        return new UIAgentResponse([new TextPart(text)]);
     }
 
     protected static string BuildSafeErrorMessage(Exception ex)

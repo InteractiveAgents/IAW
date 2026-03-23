@@ -10,4 +10,9 @@ public sealed class Llama32 : LLMModel
     public override ModelCapabilities Capabilities => ModelCapabilities.ChatOnly;
 }
 
-public interface ILlama32 : IAgent { }
+public interface ILlama32 : IAgent
+{
+    static string IAgent.AgentDisplayName => "Llama 3.2";
+    static string IAgent.AgentDescription => "Llama 3.2 open-weight language model wrapper for local and on-premise inference.";
+    static string[] IAgent.AgentCapabilities => ["llm", "reasoning", "generation", "llama", "meta", "local"];
+}

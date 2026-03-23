@@ -86,40 +86,25 @@ public class StreamTestAgent(
     }
 }
 
-// test agent that overrides OnTrackingDueAsync for tracking tests
-public interface ITrackingTestAgent : IAgent
-{
-    Task StartTestTracking(string name, string description, TimeSpan interval, CancellationToken ct = default);
-    Task StopTestTracking(string name, CancellationToken ct = default);
-}
+// test agent that overrides OnScheduledJobDueAsync for scheduling tests
+public interface ISchedulingTestAgent : IAgent;
 
-public class TrackingTestAgent(
+public class SchedulingTestAgent(
     [AgentState] AgentDurableState durableState,
     IChatClient chatClient)
-    : Agent(durableState, chatClient), ITrackingTestAgent
+    : Agent(durableState, chatClient), ISchedulingTestAgent
 {
-    protected override string Instructions => "Tracking test agent.";
-    protected override string DisplayName => "Tracking Test";
+    protected override string Instructions => "Scheduling test agent.";
+    protected override string DisplayName => "Scheduling Test";
 
-    public int TrackingCheckCount { get; private set; }
-    public TrackingItem? LastCheckedItem { get; private set; }
+    public int JobFireCount { get; private set; }
+    public ScheduledJobItem? LastFiredJob { get; private set; }
 
-    public async Task StartTestTracking(string name, string description, TimeSpan interval, CancellationToken ct = default)
+    protected override Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
-        var item = new TrackingItem(name, description, interval, DateTimeOffset.UtcNow, null, null);
-        await StartTrackingAsync(name, item, interval, ct);
-    }
-
-    public async Task StopTestTracking(string name, CancellationToken ct = default)
-    {
-        await StopTrackingAsync(name, ct);
-    }
-
-    protected override Task OnTrackingDueAsync(TrackingItem item, CancellationToken ct)
-    {
-        TrackingCheckCount++;
-        LastCheckedItem = item;
-        TrackingItems[item.Id] = item with { LastResult = $"check-{TrackingCheckCount}" };
+        JobFireCount++;
+        LastFiredJob = job;
+        ScheduledJobs[job.Name] = job with { LastRunAt = DateTimeOffset.UtcNow, LastResult = $"run-{JobFireCount}" };
         return Task.CompletedTask;
     }
 }

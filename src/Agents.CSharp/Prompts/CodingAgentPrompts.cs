@@ -1,4 +1,4 @@
-namespace IAW.Agents.CSharp.Prompts;
+namespace IAW.Agents.Coding.Prompts;
 
 public static class CodingAgentPrompts
 {

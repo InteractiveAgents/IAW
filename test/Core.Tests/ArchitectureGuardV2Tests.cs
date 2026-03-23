@@ -4,7 +4,6 @@ using Core.Contracts;
 using Core.Messages;
 using Core.Messages.Events;
 using Core.Models;
-using Core.Orchestration;
 using IAW.Agents.Orchestration;
 using Xunit;
 
@@ -31,7 +30,7 @@ public class ArchitectureGuardV2Tests
     public void LLM_agents_extend_LLM_base()
     {
         var llmAgents = AgentsAssembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(LlmAgentBase)) && !t.IsAbstract);
+            .Where(t => t.BaseType is { IsGenericType: true } bt && bt.GetGenericTypeDefinition() == typeof(LlmAgentBase<>) && !t.IsAbstract);
 
         Assert.NotEmpty(llmAgents);
     }
@@ -40,9 +39,21 @@ public class ArchitectureGuardV2Tests
     public void Memory_agents_extend_Memory_base()
     {
         var memoryAgents = AgentsAssembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(MemoryAgentBase)) && !t.IsAbstract);
+            .Where(t => !t.IsAbstract && IsSubclassOfOpenGeneric(t, typeof(MemoryAgentBase<>)));
 
         Assert.NotEmpty(memoryAgents);
+    }
+
+    private static bool IsSubclassOfOpenGeneric(Type type, Type openGeneric)
+    {
+        var current = type.BaseType;
+        while (current is not null)
+        {
+            if (current.IsGenericType && current.GetGenericTypeDefinition() == openGeneric)
+                return true;
+            current = current.BaseType;
+        }
+        return false;
     }
 
     [Fact]
@@ -71,22 +82,6 @@ public class ArchitectureGuardV2Tests
     {
         var methods = typeof(IAgent).GetMethods();
         Assert.DoesNotContain(methods, m => m.Name == "HandleEvent");
-    }
-
-    [Fact]
-    public void InterfaceCatalog_discovers_LLM_agents()
-    {
-        var catalog = InterfaceCatalog.Discover();
-        Assert.Contains(catalog, e => e.InterfaceName == "IOpus46");
-        Assert.Contains(catalog, e => e.InterfaceName == "ISonnet46");
-    }
-
-    [Fact]
-    public void InterfaceCatalog_discovers_Memory_agents()
-    {
-        var catalog = InterfaceCatalog.Discover();
-        Assert.Contains(catalog, e => e.InterfaceName == "IUserMemory");
-        Assert.Contains(catalog, e => e.InterfaceName == "IProjectMemory");
     }
 
     [Fact]

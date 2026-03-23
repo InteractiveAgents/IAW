@@ -7,39 +7,13 @@ using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 
-namespace IAW.Agents.Knowledge;
+namespace IAW.Agents.Memory;
 
 public class KnowledgeAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient)
-    : Agent(durableState, chatClient), IKnowledge
+    IChatClient chatClient)
+    : Agent<IKnowledge>(durableState, chatClient), IKnowledge
 {
-    protected override string DisplayName => "Project Knowledge";
-
-    protected override string Instructions => """
-        You are Project Knowledge, the IAW team's institutional memory for project conventions and decisions. Store and retrieve architecture decisions, code patterns, and coding standards.
-
-        CAPABILITIES:
-        - Record and list architecture decisions with context, rationale, and outcomes
-        - Add and list reusable code patterns and design approaches
-        - Store and retrieve project-specific coding conventions
-        - Maintain tech stack definitions and file structure maps
-        - Provide synthesized project summaries
-
-        OUTPUT FORMAT:
-        Decisions: list with date, title, rationale, and outcome
-        Patterns: list with name, description, and optional code example
-        Conventions: simple list of one-line rules
-        Summaries: markdown with sections for decisions, patterns, and conventions
-
-        RULES:
-        - When recording decisions, require: context (why it matters), decision (what was chosen), consequences
-        - Group patterns by category when listing
-        - Answer convention questions by citing the exact stored text
-        - If no knowledge exists for a query, say so explicitly — never guess or invent answers
-        - Treat all stored knowledge as authoritative for this project
-        """;
-
     protected override IReadOnlyList<AITool> DefineTools()
     {
         return
@@ -58,7 +32,7 @@ public class KnowledgeAgent(
     {
         State["project-info"] = new StateEntry("project-info", JsonSerializer.Serialize(info));
         await WriteStateAsync();
-        await PublishAsync("project.info.updated", new Dictionary<string, object>
+        await PublishAsync("project.info.updated", new Dictionary<string, string>
         {
             ["Name"] = info.Name
         });
@@ -77,7 +51,7 @@ public class KnowledgeAgent(
         decisions.Add(new ProjectDecision(title, rationale, outcome, DateTimeOffset.UtcNow));
         State["decisions"] = new StateEntry("decisions", JsonSerializer.Serialize(decisions));
         await WriteStateAsync();
-        await PublishAsync("decision.recorded", new Dictionary<string, object> { ["Title"] = title });
+        await PublishAsync("decision.recorded", new Dictionary<string, string> { ["Title"] = title });
     }
 
     public Task<IReadOnlyList<ProjectDecision>> GetDecisions()
@@ -98,7 +72,7 @@ public class KnowledgeAgent(
         patterns.Add(new ProjectPattern(name, description, example));
         State["patterns"] = new StateEntry("patterns", JsonSerializer.Serialize(patterns));
         await WriteStateAsync();
-        await PublishAsync("pattern.added", new Dictionary<string, object> { ["Name"] = name });
+        await PublishAsync("pattern.added", new Dictionary<string, string> { ["Name"] = name });
     }
 
     public Task<IReadOnlyList<ProjectPattern>> GetPatterns()

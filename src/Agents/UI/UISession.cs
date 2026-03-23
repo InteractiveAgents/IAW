@@ -52,7 +52,18 @@ public class UISession(
                         state.PendingFreeText.Remove(ftKey);
             }
 
+        foreach (var key in state.PendingOptionSets.Keys.ToList())
+            if (now - state.PendingOptionSets[key].CreatedAt > WizardFormTimeout)
+                state.PendingOptionSets.Remove(key);
+
     }
+    public Task RegisterOptions(string optionsId, string prompt, PendingOption[] options, string projectSlug, string type, CancellationToken ct)
+    {
+        state.PendingOptionSets[optionsId] = new PendingOptionSet(
+            optionsId, prompt, options, projectSlug, DateTimeOffset.UtcNow, type);
+        return Task.CompletedTask;
+    }
+
     public Task RegisterApproval(string approvalId, string question, string[] options, string projectSlug, CancellationToken ct)
     {
         state.PendingApprovals[approvalId] = new PendingApproval(
@@ -125,6 +136,20 @@ public class UISession(
 
             var nextField = advanced.Fields[advanced.CurrentField];
             return RenderFormFieldResult(advanced, nextField);
+        }
+
+        if (type == "opt" && state.PendingOptionSets.TryGetValue(id, out var optionSet))
+        {
+            var selectedOption = optionSet.Options.FirstOrDefault(o => o.Value == action);
+            var label = selectedOption?.Label ?? action;
+            state.PendingOptionSets.Remove(id);
+
+            var actionValue = optionSet.Type == "suggestion"
+                ? $"suggestion:{action}"
+                : action;
+
+            return new CallbackResult(
+                $"\u2705 {optionSet.Prompt} \u2014 {label}", actionValue, null);
         }
 
         return new CallbackResult(null, null, "Unknown callback");

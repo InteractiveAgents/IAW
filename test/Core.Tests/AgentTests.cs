@@ -1,6 +1,7 @@
 using Core;
 using Core.Contracts;
 using Core.Messages;
+using Core.UI;
 using IAW.Testing;
 using Xunit;
 
@@ -115,6 +116,32 @@ public class AgentBasicTests : AgentTest<TestAgent>
         var agent = Agent(UniqueId("no-streams"));
         var subs = await agent.GetActiveSubscriptions(ct);
         Assert.Empty(subs);
+    }
+
+    [Fact]
+    public async Task HandleCallback_ReturnsEmptyByDefault()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<ITestAgent>(UniqueId("cb"));
+        var result = await agent.HandleCallback("unknown", "val", TestContext.Current.CancellationToken);
+        Assert.Empty(result.Parts);
+    }
+
+    [Fact]
+    public async Task GetRichResponse_WrapsTextInAgentResponse()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<ITestAgent>(UniqueId("rich"));
+        var result = await agent.GetRichResponse("Hello", TestContext.Current.CancellationToken);
+        Assert.Single(result.Parts);
+        var textPart = Assert.IsType<TextPart>(result.Parts[0]);
+        Assert.Equal("mock-response", textPart.Content);
+    }
+
+    [Fact]
+    public async Task ListJobs_ReturnsEmptyByDefault()
+    {
+        var agent = Cluster.GrainFactory.GetGrain<ITestAgent>(UniqueId("jobs"));
+        var jobs = await agent.ListJobs(TestContext.Current.CancellationToken);
+        Assert.Empty(jobs);
     }
 }
 
@@ -359,7 +386,14 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
-        await Task.Delay(1000, ct);
+        // Poll for delivery instead of fixed delay — stream delivery has variable latency
+        for (var attempt = 0; attempt < 15; attempt++)
+        {
+            await Task.Delay(500, ct);
+            var s1 = await agent1.GetState(ct);
+            var s2 = await agent2.GetState(ct);
+            if (s1.Entries.Count > 0 && s2.Entries.Count > 0) return;
+        }
 
         var state1 = await agent1.GetState(ct);
         var state2 = await agent2.GetState(ct);
@@ -370,9 +404,9 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
 
 #endregion
 
-#region Tracking & Reminders
+#region Scheduling & Reminders
 
-public class AgentTrackingTests : AgentTest<TrackingTestAgent>
+public class AgentSchedulingTests : AgentTest<SchedulingTestAgent>
 {
     [Fact]
     public async Task GetCapabilities_HasTimersIsTrue()
@@ -384,47 +418,86 @@ public class AgentTrackingTests : AgentTest<TrackingTestAgent>
     }
 
     [Fact]
-    public async Task GetEventLog_InitiallyEmpty_OnTrackingAgent()
+    public async Task GetEventLog_InitiallyEmpty_OnSchedulingAgent()
     {
         var ct = TestContext.Current.CancellationToken;
-        var agent = Agent(UniqueId("track"));
+        var agent = Agent(UniqueId("sched"));
         var log = await agent.GetEventLog(ct);
         Assert.Empty(log);
     }
 
     [Fact]
-    public async Task StartTracking_ThenStop_DoesNotThrow()
+    public async Task ScheduleJob_StoresInState()
     {
+        var agent = Agent(UniqueId("sched-store"));
         var ct = TestContext.Current.CancellationToken;
-        var id = UniqueId("track-lifecycle");
-        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
-        await grain.StartTestTracking("monitor-1", "Check CPU", TimeSpan.FromMinutes(5), ct);
-        await grain.StopTestTracking("monitor-1", ct);
+        await agent.ScheduleJob("test-job", TimeSpan.FromMinutes(5), "do something", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Single(jobs);
+        Assert.Equal("test-job", jobs[0].Name);
+        Assert.Equal("do something", jobs[0].Prompt);
     }
 
     [Fact]
-    public async Task StopTracking_NonExistent_DoesNotThrow()
+    public async Task CancelJob_RemovesFromState()
     {
+        var agent = Agent(UniqueId("cancel"));
         var ct = TestContext.Current.CancellationToken;
-        var id = UniqueId("track-noexist");
-        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
-        await grain.StopTestTracking("nonexistent", ct);
+        await agent.ScheduleJob("j1", TimeSpan.FromMinutes(5), "prompt", ct);
+        await agent.CancelJob("j1", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Empty(jobs);
     }
 
     [Fact]
-    public async Task Reminder_FiresOnTrackingDueAsync()
+    public async Task ScheduleRecurringJob_StoresWithInterval()
+    {
+        var agent = Agent(UniqueId("recur"));
+        var ct = TestContext.Current.CancellationToken;
+        await agent.ScheduleRecurringJob("poll", TimeSpan.FromMinutes(30), "check status", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Single(jobs);
+        Assert.Equal(TimeSpan.FromMinutes(30), jobs[0].Interval);
+    }
+
+    [Fact]
+    public async Task CancelJob_NonExistent_DoesNotThrow()
     {
         var ct = TestContext.Current.CancellationToken;
-        var id = UniqueId("remind-fire");
-        var grain = Cluster.GrainFactory.GetGrain<ITrackingTestAgent>(id);
-        await grain.StartTestTracking("remind-1", "Test reminder", TimeSpan.FromMinutes(1), ct);
+        var agent = Agent(UniqueId("cancel-noexist"));
+        await agent.CancelJob("nonexistent", ct);
+    }
+
+    [Fact]
+    public async Task ScheduleRecurringJob_ReminderFires_AgentStillResponds()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("remind-fire"));
+        await agent.ScheduleRecurringJob("remind-1", TimeSpan.FromMinutes(1), "Test reminder", ct);
 
         // in-memory reminder fires with dueTime=Zero, so it should fire quickly
         await Task.Delay(3000, ct);
 
-        // verify the agent didn't crash and still responds
-        var response = await ((IAgent)grain).GetResponse("Are you alive?", ct);
+        var response = await agent.GetResponse("Are you alive?", ct);
         Assert.Equal("mock-response", response);
+    }
+}
+
+#endregion
+
+#region PayloadKeys Constants
+
+public class PayloadKeysTests
+{
+    [Fact]
+    public void PayloadKeys_UseCamelCase()
+    {
+        Assert.Equal("projectKey", IAWConstants.PayloadKeys.ProjectKey);
+        Assert.Equal("jobName", IAWConstants.PayloadKeys.JobName);
+        Assert.Equal("result", IAWConstants.PayloadKeys.Result);
+        Assert.Equal("taskId", IAWConstants.PayloadKeys.TaskId);
+        Assert.Equal("phase", IAWConstants.PayloadKeys.Phase);
+        Assert.Equal("message", IAWConstants.PayloadKeys.Message);
     }
 }
 

@@ -38,6 +38,9 @@ internal static class LlmRegistration
 
         foreach (var model in modelsToRegister)
         {
+            if (model.Provider == "tier")
+                continue;
+
             if (!IsProviderConfigured(factoryMap, config, model.Provider))
                 continue;
 
@@ -46,11 +49,33 @@ internal static class LlmRegistration
         }
 
         var firstConfigured = modelsToRegister
+            .Where(m => m.Provider != "tier")
             .FirstOrDefault(m => IsProviderConfigured(factoryMap, config, m.Provider));
         if (firstConfigured is not null)
         {
             builder.Services.AddChatClient(services =>
                 services.GetRequiredKeyedService<IChatClient>(firstConfigured.ServiceKey));
+        }
+
+        var tierNames = new[] { "fast", "balanced", "reasoning" };
+        foreach (var tierName in tierNames)
+        {
+            var concreteKey = config[$"AI:LLM:Tiers:{tierName}"];
+            var tierModel = LLMModel.All.FirstOrDefault(m =>
+                m.Provider == "tier" && m.Id == $"tier-{tierName}");
+
+            if (tierModel is null) continue;
+
+            if (!string.IsNullOrEmpty(concreteKey))
+            {
+                builder.Services.AddKeyedSingleton<IChatClient>(tierModel.ServiceKey,
+                    (sp, _) => sp.GetRequiredKeyedService<IChatClient>(concreteKey));
+            }
+            else if (firstConfigured is not null)
+            {
+                builder.Services.AddKeyedSingleton<IChatClient>(tierModel.ServiceKey,
+                    (sp, _) => sp.GetRequiredKeyedService<IChatClient>(firstConfigured.ServiceKey));
+            }
         }
 
         return builder;

@@ -1,4 +1,4 @@
-namespace IAW.Agents.CSharp.Models;
+namespace IAW.Agents.Coding.Models;
 
 [GenerateSerializer]
 public sealed record PackageUpdate(

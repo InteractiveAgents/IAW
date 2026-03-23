@@ -7,13 +7,13 @@ using IAW.Core;
 
 namespace Core;
 
-public abstract class MemoryAgentBase(
+public abstract class MemoryAgentBase<TContract>(
     [AgentState] AgentDurableState durableState,
     IChatClient chat,
     [Memory("memories")] IDurableList<MemoryEntry> memories,
     IEmbeddingGenerator<string, Embedding<float>> embedder,
     ILogger logger)
-    : Agent(durableState, chat), IMemoryAgent
+    : Agent<TContract>(durableState, chat), IMemoryAgent where TContract : IMemoryAgent
 {
     protected IDurableList<MemoryEntry> Memories => memories;
     protected IEmbeddingGenerator<string, Embedding<float>> Embedder => embedder;
@@ -21,10 +21,6 @@ public abstract class MemoryAgentBase(
     private const int MaxMemories = 500;
 
     protected abstract string CollectionName { get; }
-
-    protected override string Instructions =>
-        $"You are {DisplayName}, an IAW team memory agent. You observe, store, search, and consolidate knowledge. " +
-        "When asked to store, store immediately. When asked to recall, search and return results.";
 
     protected virtual async Task Observe(string content, MemoryProvenance provenance, CancellationToken ct = default)
     {

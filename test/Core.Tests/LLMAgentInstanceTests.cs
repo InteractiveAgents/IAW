@@ -1,4 +1,4 @@
-using IAW.Agents.LLM;
+using IAW.Agents.Models;
 using IAW.Testing;
 using Xunit;
 

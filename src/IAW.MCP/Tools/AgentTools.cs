@@ -1,8 +1,10 @@
 using System.Text.Json;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
+using Core;
 using Core.Contracts;
-using Core.Orchestration;
+using Core.Registry;
+using IAW.Agents.Orchestration;
 
 internal sealed class AgentTools(IClusterClient orleans)
 {
@@ -10,13 +12,12 @@ internal sealed class AgentTools(IClusterClient orleans)
 
     private IAgent ResolveAgent(string agentId)
     {
-        var entry = InterfaceCatalog.Discover()
-            .FirstOrDefault(e => string.Equals(e.GrainId, agentId, StringComparison.OrdinalIgnoreCase));
+        var interfaceType = AgentInterfaceResolver.Resolve(agentId);
+        if (interfaceType is not null)
+            return (IAgent)orleans.GetGrain(interfaceType, agentId);
 
-        if (entry is not null)
-            return (IAgent)orleans.GetGrain(entry.InterfaceType, agentId);
-
-        var known = string.Join(", ", InterfaceCatalog.Discover().Select(e => e.GrainId));
+        var known = string.Join(", ",
+            AgentInterfaceResolver.DiscoverAgentInterfaces().Select(t => t.Name.TrimStart('I').ToLowerInvariant()));
         throw new ArgumentException($"Unknown agent ID: {agentId}. Known: {known}");
     }
 
@@ -24,22 +25,23 @@ internal sealed class AgentTools(IClusterClient orleans)
     [Description("List all registered agents with their metadata and capabilities.")]
     public async Task<string> AgentListAll(CancellationToken ct)
     {
-        var catalog = InterfaceCatalog.Discover();
+        var registry = orleans.GetGrain<IAgentRegistry>("global");
+        var allAgents = await registry.GetAllAsync(ct);
         var results = new List<object>();
-        foreach (var entry in catalog)
+
+        foreach (var record in allAgents)
         {
             try
             {
-                var agent = ResolveAgent(entry.GrainId);
+                var agent = ResolveAgent(record.InterfaceName.TrimStart('I').ToLowerInvariant());
                 var metadata = await agent.GetMetadata(ct);
                 var capabilities = await agent.GetCapabilities(ct);
                 results.Add(new
                 {
-                    id = entry.GrainId,
-                    interfaceName = entry.InterfaceName,
-                    produces = entry.Produces,
-                    consumes = entry.Consumes,
-                    receives = entry.Receives,
+                    agentType = record.AgentType,
+                    interfaceName = record.InterfaceName,
+                    ns = record.Namespace,
+                    description = record.Description,
                     metadata,
                     capabilities
                 });
@@ -50,22 +52,22 @@ internal sealed class AgentTools(IClusterClient orleans)
             }
             catch (Exception)
             {
-                results.Add(new { id = entry.GrainId, error = "Agent not available" });
+                results.Add(new { agentType = record.AgentType, error = "Agent not available" });
             }
         }
         return JsonSerializer.Serialize(results, JsonOptions);
     }
 
     [McpServerTool(Name = "assistant_chat")]
-    [Description("Send a message to the project assistant and get a response.")]
+    [Description("Send a message to a conversational thread and get a response.")]
     public async Task<string> AssistantChat(
         [Description("The message to send")] string message,
-        [Description("Project ID (default: general)")] string projectId = "general",
+        [Description("Thread slug (default: general)")] string threadSlug = "general",
         CancellationToken ct = default)
     {
-        var agent = ResolveAgent(projectId);
-        var response = await agent.GetResponse(message, ct);
-        return JsonSerializer.Serialize(new { agentId = projectId, response }, JsonOptions);
+        var thread = orleans.GetGrain<IThread>($"mcp/{threadSlug}");
+        var response = await thread.GetResponse(message, ct);
+        return JsonSerializer.Serialize(new { threadSlug, response }, JsonOptions);
     }
 
     [McpServerTool(Name = "agent_send_message")]
@@ -95,16 +97,16 @@ internal sealed class AgentTools(IClusterClient orleans)
     }
 
     [McpServerTool(Name = "agent_assign_task")]
-    [Description("Assign a task to a project assistant for handling.")]
+    [Description("Assign a task to a thread for handling.")]
     public async Task<string> AgentAssignTask(
         [Description("Task description")] string task,
         [Description("Priority: low, medium, high")] string priority = "medium",
-        [Description("Project ID (default: general)")] string projectId = "general",
+        [Description("Thread slug (default: general)")] string threadSlug = "general",
         CancellationToken ct = default)
     {
-        var agent = ResolveAgent(projectId);
+        var thread = orleans.GetGrain<IThread>($"mcp/{threadSlug}");
         var prompt = $"[TASK] Priority: {priority}\n\n{task}";
-        var response = await agent.GetResponse(prompt, ct);
+        var response = await thread.GetResponse(prompt, ct);
         return JsonSerializer.Serialize(new { task, priority, response }, JsonOptions);
     }
 
@@ -137,15 +139,5 @@ internal sealed class AgentTools(IClusterClient orleans)
             metadata.AgentType, metadata.DisplayName, metadata.Description,
             eventCount, historyCount, capabilities
         }, JsonOptions);
-    }
-
-    [McpServerTool(Name = "agent_trigger_self_improvement")]
-    [Description("Trigger self-improvement analysis across the agent team.")]
-    public async Task<string> AgentTriggerSelfImprovement(CancellationToken ct)
-    {
-        var agent = ResolveAgent("self-improvement");
-        var response = await agent.GetResponse(
-            "Analyze recent agent interactions and propose improvements", ct);
-        return JsonSerializer.Serialize(new { response }, JsonOptions);
     }
 }

@@ -29,8 +29,8 @@ Every agent is an **Orleans grain** inheriting from `Agent` (abstract, `[GrainTy
 | `Agent.Lifecycle.cs` | Activation hooks, reminder management, deactivation |
 | `Agent.State.cs` | Durable state (history, key-value dict, event log) via `AgentDurableState` |
 | `Agent.Streams.cs` | Auto-subscribe to streams based on `IStreamConsumer<T>` interfaces |
-| `Agent.Tools.cs` | AI tool registration and invocation |
-| `Agent.Tracking.cs` | Periodic monitoring via Orleans reminders |
+| `Agent.Tools.cs` | AI tool registration and invocation; interface methods auto-register as AI tools |
+| `Agent.Scheduling.cs` | Periodic monitoring and scheduled work via Orleans reminders |
 | `Agent.Observers.cs` | Stream observer pattern |
 
 **Durable state** uses Orleans Journaling (`DurableGrain` + `IDurableList`/`IDurableDictionary`), not classic `[Persistent]` state.
@@ -47,7 +47,7 @@ Every agent is an **Orleans grain** inheriting from `Agent` (abstract, `[GrainTy
 | Project | Purpose | Packable |
 |---------|---------|----------|
 | `src/Core` (IAW.Core) | Agent base class, contracts, AI integration, tools, observability | Yes |
-| `src/Agents` (IAW.Agents) | 65 agent implementations (infrastructure, LLM wrappers, memory, orchestration) | Yes |
+| `src/Agents` (IAW.Agents) | Agent implementations grouped into namespaces: System, Coding, Models, Memory, Orchestration | Yes |
 | `src/Agents.CSharp` (IAW.Agents.CSharp) | Roslyn, DotNet, GitHub, NuGet agents | Yes |
 | `src/Aspire.Hosting.IAW` | AppHost integration: `AddIAW()`, `IAWService`, `WithLLM<T>()`, `WithReference(iaw)` | Yes |
 | `src/Aspire.IAW.Client` | Service integration: silo `AddIAW()`, client `AddIAWClient()`, OTel, health | Yes |
@@ -68,6 +68,23 @@ Key ports: assistant silo on 30000 (gateway) / 11111 (silo), MCP on 5300.
 
 Inherit from `AgentTest<TAgent>` — it spins up a `TestCluster` with memory storage, mock LLM (`MockChatClient` returning `"mock-response"`), and all model mappers registered. Use `Agent(UniqueId("prefix"))` to get grain references with unique IDs per test run. Tests use xunit.v3 with `TestContext.Current.CancellationToken`.
 
+### Code Orchestration (`src/Agents/Orchestration`)
+
+The Thread agent (`IThread`) delegates complex tasks to `CodeOrchestratorAgent` via the `Execute` tool. The orchestrator:
+
+1. Receives a natural-language plan
+2. Generates a standalone C# console app that connects to the cluster as an Orleans client (`builder.AddIAWClient()`)
+3. The generated code retrieves agent grains via `client.Get<IGit>(taskId).GetResponse()` — `Get<T>()` resolves agent IDs via `AgentRegistry` keyed to the current task context
+4. Executes the project with `dotnet run`, captures output, returns `result.json`
+
+`AgentRegistry` maps interface types to running grain instances. The `ComputeGrainId()` helper has been removed; grain resolution is dynamic through `Get<T>(taskId)`.
+
+Model comparison is handled via orchestration rather than a dedicated `CompareModelsTool`. Each LLM agent (e.g. `Gpt54MiniAgent`, `Sonnet46Agent`) wraps a specific model via `[Llm<TModel>]`; the orchestrator can fan out calls and collect token usage (`GetLastUsage()`) with traces visible in Aspire under `gen_ai.*` attributes.
+
+### Default LLM Model
+
+The first model in the AppHost `WithLLM<T>()` chain becomes the default (non-keyed) `IChatClient`. Agents without `[Llm<T>]` use this default. Only agents needing a specific model (like ShellAgent with Haiku, or LLM wrapper agents) use `[Llm<T>]`.
+
 ### Observability
 
 OpenTelemetry with activity source `"IAW"` and meter `"IAW"`. Metrics: `Activations`, `MessagesSent`, `ConversationErrors`, `ConversationDuration`, `TokenUsage`, `TotalInputTokens`, `TotalOutputTokens`. Gen AI semantic conventions on trace spans (`gen_ai.agent.id`, `gen_ai.usage.input_tokens`, etc.).
@@ -82,4 +99,4 @@ OpenTelemetry with activity source `"IAW"` and meter `"IAW"`. Metrics: `Activati
 
 ## MCP Integration
 
-`.mcp.json` configures three MCP servers: `iaw` (localhost:5300), `aspire` (CLI), `context7` (npm). The IAW MCP server in `src/IAW.MCP` exposes agent tools: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`, `agent_trigger_self_improvement`.
+`.mcp.json` configures three MCP servers: `iaw` (localhost:5300), `aspire` (CLI), `context7` (npm). The IAW MCP server in `src/IAW.MCP` exposes agent tools: `agent_list_all`, `assistant_chat`, `agent_send_message`, `agent_get_status`, `agent_assign_task`, `agent_get_events`, `agent_get_metrics`.
