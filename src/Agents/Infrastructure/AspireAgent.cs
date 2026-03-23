@@ -1,15 +1,17 @@
 using Core.AI;
+using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 namespace IAW.Agents.Infrastructure;
 
 public class AspireAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient,
+    [Llm<Sonnet46>] IChatClient chatClient,
     ILogger<AspireAgent> logger)
     : Agent<IAspire>(durableState, chatClient), IAspire
 {
@@ -78,5 +80,63 @@ public class AspireAgent(
         }
 
         return null;
+    }
+
+    public async Task<string> RestartResourceAsync(string resourceName, CancellationToken ct = default)
+    {
+        if (_mcpClient is null) return "Aspire MCP not connected. Cannot manage resources.";
+        try
+        {
+            await _mcpClient.CallToolAsync("execute_resource_command",
+                new Dictionary<string, object?> { ["resourceName"] = resourceName, ["commandName"] = "resource-stop" },
+                cancellationToken: ct);
+            await Task.Delay(3000, ct);
+            await _mcpClient.CallToolAsync("execute_resource_command",
+                new Dictionary<string, object?> { ["resourceName"] = resourceName, ["commandName"] = "resource-start" },
+                cancellationToken: ct);
+            return $"Resource '{resourceName}' restarted successfully.";
+        }
+        catch (Exception ex)
+        {
+            return $"Failed to restart '{resourceName}': {ex.Message}";
+        }
+    }
+
+    public async Task<string> ListResourcesAsync(CancellationToken ct = default)
+    {
+        if (_mcpClient is null) return "Aspire MCP not connected.";
+        try
+        {
+            var result = await _mcpClient.CallToolAsync("list_resources", new Dictionary<string, object?>(),
+                cancellationToken: ct);
+            return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text ?? "No resources found.";
+        }
+        catch (Exception ex) { return $"Failed to list resources: {ex.Message}"; }
+    }
+
+    public async Task<string> GetTracesAsync(string resourceName, CancellationToken ct = default)
+    {
+        if (_mcpClient is null) return "Aspire MCP not connected.";
+        try
+        {
+            var result = await _mcpClient.CallToolAsync("list_traces",
+                new Dictionary<string, object?> { ["resourceName"] = resourceName },
+                cancellationToken: ct);
+            return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text ?? "No traces found.";
+        }
+        catch (Exception ex) { return $"Failed to get traces: {ex.Message}"; }
+    }
+
+    public async Task<string> GetLogsAsync(string resourceName, CancellationToken ct = default)
+    {
+        if (_mcpClient is null) return "Aspire MCP not connected.";
+        try
+        {
+            var result = await _mcpClient.CallToolAsync("list_structured_logs",
+                new Dictionary<string, object?> { ["resourceName"] = resourceName },
+                cancellationToken: ct);
+            return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text ?? "No logs found.";
+        }
+        catch (Exception ex) { return $"Failed to get logs: {ex.Message}"; }
     }
 }
