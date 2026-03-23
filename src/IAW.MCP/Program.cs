@@ -1,4 +1,5 @@
 using Aspire.IAW;
+using IAW.MCP.Deploy;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddIAWClient();
@@ -10,4 +11,5 @@ builder.Services
 var app = builder.Build();
 app.MapDefaultEndpoints();
 app.MapMcp();
+app.MapDeployEndpoints();
 app.Run();
