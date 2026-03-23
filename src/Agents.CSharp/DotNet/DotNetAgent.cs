@@ -12,7 +12,7 @@ namespace IAW.Agents.Coding;
 
 public partial class DotNetAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Fast>] IChatClient chatClient,
+    IChatClient chatClient,
     IHttpClientFactory httpClientFactory)
     : Agent<IDotNet>(durableState, chatClient), IDotNet
 {
@@ -22,8 +22,9 @@ public partial class DotNetAgent(
     public async Task<BuildRunResult> BuildAsync(
         string projectPath, string configuration = "Debug", CancellationToken ct = default)
     {
+        var resolvedPath = ResolveProjectPath(projectPath);
         var sw = Stopwatch.StartNew();
-        var psi = new ProcessStartInfo("dotnet", $"build \"{projectPath}\" -c {configuration}")
+        var psi = new ProcessStartInfo("dotnet", $"build \"{resolvedPath}\" -c {configuration}")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -241,6 +242,13 @@ public partial class DotNetAgent(
         return files;
     }
 
+    private string ResolveProjectPath(string projectPath)
+    {
+        if (File.Exists(projectPath)) return projectPath;
+        if (!Directory.Exists(projectPath)) return projectPath;
+        return FindSolutionPath(projectPath) ?? projectPath;
+    }
+
     private string? FindSolutionFromWorkspace()
     {
         var workspace = GetWorkspacePath();
@@ -257,6 +265,8 @@ public partial class DotNetAgent(
             if (slnFiles.Length > 0) return slnFiles[0];
             var slnxFiles = Directory.GetFiles(dir, "*.slnx");
             if (slnxFiles.Length > 0) return slnxFiles[0];
+            var csprojFiles = Directory.GetFiles(dir, "*.csproj");
+            if (csprojFiles.Length > 0) return csprojFiles[0];
             dir = Path.GetDirectoryName(dir);
         }
         return null;

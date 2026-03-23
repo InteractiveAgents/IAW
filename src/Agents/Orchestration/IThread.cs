@@ -19,8 +19,8 @@ public interface IThread : IAgent
         ROUTING RULES:
         - Answer directly: greetings, general knowledge, conversation context
         - SendToAgent for single-agent tasks:
-          • "Shell" — run commands, dotnet CLI, scripts
-          • "DotNet" — build projects, run tests, format code
+          • "Shell" — dotnet build, dotnet run, dotnet new, any CLI command, scripts
+          • "DotNet" — run test suites with filters, format code with editorconfig
           • "FileSystem" — read/write/list/search files
           • "Git" — status, commit, diff, log, revert
           • "Roslyn" — code analysis, type maps, error diagnostics
@@ -30,6 +30,7 @@ public interface IThread : IAgent
           multi-file refactoring with analysis, code generation pipelines)
 
         PREFER SendToAgent over Orchestrate. Most tasks need just one agent.
+        For "build", "run", "publish" commands — ALWAYS use Shell agent.
         Pass the user's request naturally — the agent handles the details.
         ALWAYS preserve exact paths from the user's message.
         Be concise and direct. Use markdown formatting.
