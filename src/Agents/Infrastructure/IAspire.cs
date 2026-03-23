@@ -40,4 +40,7 @@ public interface IAspire : IAgent
 
     [Description("Get recent structured logs for a resource. Shows errors and warnings first.")]
     Task<string> GetLogsAsync(string resourceName, CancellationToken ct = default);
+
+    [Description("Check system health and clean up monitoring state. Reports any unhealthy resources.")]
+    Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default);
 }

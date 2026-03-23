@@ -22,6 +22,33 @@ public class AspireAgent(
     {
         await ConnectMcpAsync(ct);
         await base.OnActivateAsync(ct);
+
+        if (!ScheduledJobs.ContainsKey("log-monitor"))
+        {
+            await ScheduleRecurringJob("log-monitor", TimeSpan.FromMinutes(30),
+                "Check system health and report any resource errors or warnings.", ct);
+        }
+    }
+
+    protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
+    {
+        if (job.Name == "log-monitor")
+        {
+            logger.LogInformation("Aspire log monitor: checking system health");
+            var resources = await ListResourcesAsync(ct);
+            if (resources.Contains("Stopped") || resources.Contains("FailedToStart"))
+            {
+                logger.LogWarning("Aspire log monitor: unhealthy resources detected");
+                await PublishAsync("aspire.health.warning", new Dictionary<string, string>
+                {
+                    ["summary"] = "Unhealthy resources detected",
+                    ["details"] = resources
+                }, ct);
+            }
+            return;
+        }
+
+        await base.OnScheduledJobDueAsync(job, ct);
     }
 
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken ct)
@@ -138,5 +165,10 @@ public class AspireAgent(
             return result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text ?? "No logs found.";
         }
         catch (Exception ex) { return $"Failed to get logs: {ex.Message}"; }
+    }
+
+    public Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default)
+    {
+        return GetLogsAsync(resourceName, ct);
     }
 }
