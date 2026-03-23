@@ -51,11 +51,16 @@ public class ThreadAgent(
         return [
             AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
                 "Send a task to a specific agent by name. The agent handles it autonomously " +
-                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub."),
+                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire."),
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
                 "For complex multi-step tasks requiring coordination across multiple agents. " +
-                "NOT needed for single build/run/read/git tasks — use SendToAgent instead.")
+                "NOT needed for single build/run/read/git tasks — use SendToAgent instead."),
+
+            AIFunctionFactory.Create(SelfImproveAsync, "SelfImprove",
+                "Fix a bug or improve the IAW system itself. Reads source code, analyzes the issue, " +
+                "writes a fix, builds, tests, commits, and deploys via Aspire restart. " +
+                "Use when the user reports a bug in the agent system or asks to improve/fix behavior.")
         ];
     }
 
@@ -80,6 +85,81 @@ public class ThreadAgent(
         {
             logger.LogError(ex, "SendToAgent: {Agent} failed", agentName);
             return $"Agent {agentName} failed: {ex.Message}";
+        }
+    }
+
+    private async Task<string> SelfImproveAsync(string issueDescription, CancellationToken ct = default)
+    {
+        logger.LogInformation("SelfImprove: {Issue}", issueDescription[..Math.Min(80, issueDescription.Length)]);
+        var steps = new global::System.Text.StringBuilder();
+        var iawRoot = @"E:\IAW";
+
+        try
+        {
+            steps.AppendLine("## Step 1: Reading traces...");
+            var traces = await SendToAgentAsync("Aspire",
+                $"Get recent traces for the assistant resource to help diagnose: {issueDescription}", ct);
+            steps.AppendLine(traces.Length > 500 ? traces[..500] + "..." : traces);
+
+            steps.AppendLine("\n## Step 2: Analyzing issue...");
+            var analysis = await SendToAgentAsync("Roslyn",
+                $"Based on this issue description, which source files in {iawRoot}/src/ are most likely involved? " +
+                $"Issue: {issueDescription}\nRecent traces: {traces[..Math.Min(500, traces.Length)]}", ct);
+            steps.AppendLine(analysis.Length > 500 ? analysis[..500] + "..." : analysis);
+
+            steps.AppendLine("\n## Step 3: Reading source code...");
+            var code = await SendToAgentAsync("FileSystem",
+                $"Read the most relevant source files for this issue. {analysis}", ct);
+            steps.AppendLine($"Read {code.Length} chars of source code");
+
+            steps.AppendLine("\n## Step 4: Writing fix...");
+            var fix = await SendToAgentAsync("Roslyn",
+                $"Here is the issue: {issueDescription}\nHere is the code:\n{code[..Math.Min(3000, code.Length)]}\n" +
+                "Generate the fixed code. Return ONLY the complete fixed file content.", ct);
+
+            if (fix.Contains("```"))
+            {
+                steps.AppendLine("Fix generated. Writing to file...");
+                var writeResult = await SendToAgentAsync("FileSystem", $"Write the fix:\n{fix}", ct);
+                steps.AppendLine(writeResult);
+            }
+            else
+            {
+                steps.AppendLine($"Analysis: {fix[..Math.Min(300, fix.Length)]}");
+            }
+
+            steps.AppendLine("\n## Step 5: Building...");
+            var buildResult = await SendToAgentAsync("DotNet", $"Build the solution at {iawRoot}", ct);
+            steps.AppendLine(buildResult);
+
+            if (buildResult.Contains("FAILED", StringComparison.OrdinalIgnoreCase) ||
+                buildResult.Contains("error", StringComparison.OrdinalIgnoreCase))
+            {
+                steps.AppendLine("\n**Build failed. Fix not applied.**");
+                return steps.ToString();
+            }
+
+            steps.AppendLine("\n## Step 6: Running tests...");
+            var testResult = await SendToAgentAsync("DotNet", $"Run tests for {iawRoot}", ct);
+            steps.AppendLine(testResult);
+
+            steps.AppendLine("\n## Step 7: Committing...");
+            var commitResult = await SendToAgentAsync("Git",
+                $"In {iawRoot}, commit all changes with message: fix: {issueDescription[..Math.Min(50, issueDescription.Length)]}", ct);
+            steps.AppendLine(commitResult);
+
+            steps.AppendLine("\n## Step 8: Deploying...");
+            var deployResult = await SendToAgentAsync("Aspire", "Restart the assistant resource to deploy the fix", ct);
+            steps.AppendLine(deployResult);
+
+            steps.AppendLine("\n## Done! Fix applied and deployed.");
+            return steps.ToString();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SelfImprove failed");
+            steps.AppendLine($"\n**Error during self-improvement: {ex.Message}**");
+            return steps.ToString();
         }
     }
 
