@@ -192,7 +192,10 @@ public class CodeOrchestratorAgent(
             var workspacePath = Environment.GetEnvironmentVariable("IAW__Workspace")
                 ?? Path.Combine(Path.GetTempPath(), "iaw-workspace");
 
-            _cachedInstructions = BuildInstructions(_cachedAgentCatalog, workspacePath, selectedAgents);
+            var filteredCatalog = selectedAgents.Count > 0
+                ? FilterCatalogToSelectedAgents(_cachedAgentCatalog, selectedAgents)
+                : _cachedAgentCatalog;
+            _cachedInstructions = BuildInstructions(filteredCatalog, workspacePath, selectedAgents);
 
             var slug = GenerateSlug(prompt);
             var taskId = $"{DateTime.UtcNow:yyyy-MM-dd}-{slug}-{Guid.NewGuid().ToString("N")[..6]}";
@@ -493,5 +496,38 @@ public class CodeOrchestratorAgent(
             [IAWConstants.PayloadKeys.Phase] = phase,
             [IAWConstants.PayloadKeys.Message] = message
         }, ct);
+    }
+
+    static string FilterCatalogToSelectedAgents(string fullCatalog, IReadOnlyList<string> selectedAgents)
+    {
+        if (selectedAgents.Count == 0 || string.IsNullOrEmpty(fullCatalog))
+            return fullCatalog;
+
+        var sb = new global::System.Text.StringBuilder();
+        sb.AppendLine("# Agent Catalog");
+        sb.AppendLine();
+
+        foreach (var line in fullCatalog.Split('\n'))
+        {
+            var trimmed = line.TrimStart();
+
+            // keep namespace headers (## coding, ## system) — they're short
+            if (trimmed.StartsWith("## "))
+            {
+                sb.AppendLine(line);
+                continue;
+            }
+
+            // keep agent lines that match selected agents: "- **IDotNet** — ..."
+            if (trimmed.StartsWith("- **"))
+            {
+                if (selectedAgents.Any(a => trimmed.Contains(a, StringComparison.OrdinalIgnoreCase)))
+                    sb.AppendLine(line);
+                continue;
+            }
+        }
+
+        var result = sb.ToString();
+        return result.Length > 30 ? result : fullCatalog;
     }
 }
