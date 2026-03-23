@@ -42,9 +42,9 @@ public interface IAspire : IAgent
     [Description("Get recent structured logs for a resource. Shows errors and warnings first.")]
     Task<string> GetLogsAsync(string resourceName, CancellationToken ct = default);
 
-    [Description("Check system health and clean up monitoring state. Reports any unhealthy resources.")]
+    [Description("Read recent logs for a resource and report monitoring state. Same as GetLogs — use for health checks.")]
     Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default);
 
-    [Description("Deploy code changes. Stops assistant, rebuilds from source via MCP /deploy endpoint, then starts with fresh binary. Use after writing code changes — slower than RestartResource but picks up new code.")]
+    [Description("Restart the assistant resource. NOTE: currently does not rebuild from source — code changes require manual build first. Full deploy via Aspire SDK is planned.")]
     Task<string> DeployAsync(CancellationToken ct = default);
 }

@@ -28,11 +28,7 @@ public class AspireAgent(
                 "Check system health and report any resource errors or warnings.", ct);
         }
 
-        if (!ScheduledJobs.ContainsKey("deploy-verify"))
-        {
-            await ScheduleJob("deploy-verify", TimeSpan.FromSeconds(60),
-                "Verify deployment health: check all resources are running.", ct);
-        }
+        // deploy-verify job is scheduled from DeployAsync, not on every activation
     }
 
     protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)

@@ -47,8 +47,10 @@ public static class AgentInterfaceResolver
         });
     }
 
+    private static IReadOnlyList<Type>? _cachedInterfaces;
+
     private static IReadOnlyList<Type> ScanInterfaces() =>
-        AppDomain.CurrentDomain.GetAssemblies()
+        _cachedInterfaces ??= AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsInterface
                         && t != typeof(IAgent)

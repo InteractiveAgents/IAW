@@ -72,7 +72,7 @@ public class ThreadAgent(
         var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
                          ?? AgentInterfaceResolver.Resolve(agentName);
         if (interfaceType is null)
-            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub.";
+            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire.";
 
         var threadId = this.GetPrimaryKeyString();
         var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
