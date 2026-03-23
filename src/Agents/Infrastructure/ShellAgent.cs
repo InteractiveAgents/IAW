@@ -117,14 +117,30 @@ public class ShellAgent(
             return new CommandResult(-1, "", "Failed to start dotnet process", sw.Elapsed);
         }
 
-        var output = await process.StandardOutput.ReadToEndAsync(ct);
-        var error = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
-        sw.Stop();
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(120_000);
 
-        var result = new CommandResult(process.ExitCode, output, error, sw.Elapsed);
-        await RecordCommandExecution($"dotnet {arguments}", result, ct);
-        return result;
+        try
+        {
+            var output = await process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var error = await process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            sw.Stop();
+
+            var result = new CommandResult(process.ExitCode, output, error, sw.Elapsed);
+            await RecordCommandExecution($"dotnet {arguments}", result, ct);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            sw.Stop();
+
+            var result = new CommandResult(-1, "", "dotnet command timed out after 120s", sw.Elapsed);
+            await RecordCommandExecution($"dotnet {arguments}", result, ct);
+            return result;
+        }
     }
 
     public Task<ShellMetrics> GetMetricsAsync(CancellationToken ct = default)
