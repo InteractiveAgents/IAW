@@ -163,8 +163,15 @@ public abstract partial class Agent(
             _toolProgressWriter = null;
             if (!completed)
             {
-                activity?.SetTag("error.type", "conversation_error");
-                AgentTelemetry.ConversationErrors.Add(1, new TagList { { "agent.type", GetType().Name } });
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    activity?.SetTag("gen_ai.stream.cancelled", true);
+                }
+                else
+                {
+                    activity?.SetTag("error.type", "conversation_error");
+                    AgentTelemetry.ConversationErrors.Add(1, new TagList { { "agent.type", GetType().Name } });
+                }
             }
             AgentTelemetry.ConversationDuration.Record(sw.Elapsed.TotalSeconds,
                 new TagList { { "agent.type", GetType().Name } });
@@ -194,7 +201,16 @@ public abstract partial class Agent(
         var sb = new System.Text.StringBuilder();
         await foreach (var chunk in GetResponseStream(prompt, cancellationToken))
             sb.Append(chunk);
-        return sb.ToString();
+
+        var result = sb.ToString();
+        if (result.Length > 8000)
+        {
+            var truncated = result[..8000];
+            var lastNewline = truncated.LastIndexOf('\n');
+            if (lastNewline > 6000) truncated = truncated[..lastNewline];
+            return truncated + "\n...(output truncated at 8KB)";
+        }
+        return result;
     }
 
     public Task<IReadOnlyList<ChatMessage>> GetHistory(CancellationToken cancellationToken = default)
@@ -252,8 +268,14 @@ public abstract partial class Agent(
         {
             try
             {
-                var items = await provider.GetContextAsync(this.GetPrimaryKeyString(), prompt, ct);
+                using var providerTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                providerTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+                var items = await provider.GetContextAsync(this.GetPrimaryKeyString(), prompt, providerTimeout.Token);
                 contextParts.AddRange(items);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                activity?.SetTag($"context.provider_timeout.{provider.Name}", true);
             }
             catch (OperationCanceledException)
             {
