@@ -23,6 +23,9 @@ public class AgentSelectorAgent(
         try
         {
             candidates = await registry.SearchAsync(userRequest, ct: ct);
+            candidates = candidates
+                .Where(c => !string.Equals(c.Namespace, "models", StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
         catch
         {
