@@ -42,8 +42,8 @@ public interface IAspire : IAgent
     [Description("Get recent structured logs for a resource. Shows errors and warnings first.")]
     Task<string> GetLogsAsync(string resourceName, CancellationToken ct = default);
 
-    [Description("Read recent logs for a resource and report monitoring state. Same as GetLogs — use for health checks.")]
-    Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default);
+    [Description("Get recent logs for health monitoring.")]
+    Task<string> GetHealthLogsAsync(string resourceName, CancellationToken ct = default);
 
     [Description("Build the solution then restart the assistant resource. Use after writing code changes. Fails fast if build has errors.")]
     Task<string> DeployAsync(CancellationToken ct = default);

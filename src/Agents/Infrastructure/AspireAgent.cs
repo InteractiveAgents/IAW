@@ -195,7 +195,7 @@ public class AspireAgent(
         catch (Exception ex) { return $"Failed to get logs: {ex.Message}"; }
     }
 
-    public Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default)
+    public Task<string> GetHealthLogsAsync(string resourceName, CancellationToken ct = default)
     {
         return GetLogsAsync(resourceName, ct);
     }
