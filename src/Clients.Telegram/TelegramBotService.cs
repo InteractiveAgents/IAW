@@ -126,13 +126,13 @@ public sealed class TelegramBotService(
             // Future: route to UISession free-text handler
         }
 
-        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
+        var (thread, slug) = await ResolveThreadAsync(telegramId, topicId, ct);
         var chatMessage = BuildChatMessage(text);
 
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
+        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct, slug);
     }
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -250,6 +250,9 @@ public sealed class TelegramBotService(
             case "/status":
                 await HandleStatusCommandAsync(chatId, telegramId, topicId, ct);
                 break;
+            case "/newchat":
+                await HandleNewChatCommandAsync(chatId, telegramId, ct);
+                break;
         }
     }
 
@@ -336,6 +339,25 @@ public sealed class TelegramBotService(
         if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active threads.");
 
         await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
+    }
+
+    private async Task HandleNewChatCommandAsync(long chatId, long telegramId, CancellationToken ct)
+    {
+        var slug = $"chat-{Guid.NewGuid().ToString("N")[..6]}";
+
+        try
+        {
+            var topic = await botClient.CreateForumTopicAsync(chatId, "New Chat");
+            var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+            await userProfile.SetTopicId(slug, topic.MessageThreadId, ct);
+            await botClient.SendMessageAsync(chatId, "What would you like to work on?",
+                messageThreadId: topic.MessageThreadId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to create new chat topic");
+            await botClient.SendMessageAsync(chatId, "Could not create topic. Make sure the group has Topics enabled.");
+        }
     }
 
     private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
@@ -683,7 +705,7 @@ public sealed class TelegramBotService(
     }
 
     private async Task StreamResponseAsync(
-        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct)
+        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct, string? slug = null)
     {
         const int maxChars = 4000;
         var buffer = new StringBuilder();
@@ -732,6 +754,7 @@ public sealed class TelegramBotService(
         {
             if (finalText.Length > 0)
                 await EditSafe(chatId, currentMessageId, finalText);
+            await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
             return;
         }
 
@@ -758,6 +781,25 @@ public sealed class TelegramBotService(
             logger.LogWarning(ex, "TelegramUI formatting failed for user {TelegramId}, falling back to plain text", telegramId);
             if (finalText.Length > 0)
                 await EditSafe(chatId, currentMessageId, finalText);
+        }
+
+        await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
+    }
+
+    private async Task TryAutoRenameTopicAsync(long chatId, int? topicId, IThread thread, string? slug, CancellationToken ct)
+    {
+        if (slug is null || !slug.StartsWith("chat-") || !topicId.HasValue)
+            return;
+
+        try
+        {
+            var title = await thread.GetTitle(ct);
+            if (title is not null)
+                await botClient.EditForumTopicAsync(chatId, topicId.Value, name: title);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Best-effort topic rename failed");
         }
     }
 
