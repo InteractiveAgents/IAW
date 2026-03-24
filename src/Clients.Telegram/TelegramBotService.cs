@@ -234,7 +234,8 @@ public sealed class TelegramBotService(
                 await HandleStatusCommandAsync(chatId, from.Id, null, ct);
                 break;
             case "cleanup":
-                await HandleCleanupDeleteAsync(chatId, from.Id, action, ct);
+                var cleanupTopicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                await HandleCleanupDeleteAsync(chatId, from.Id, action, cleanupTopicId, ct);
                 break;
         }
     }
@@ -405,7 +406,7 @@ public sealed class TelegramBotService(
         await botClient.SendMessageAsync(chatId, sb.ToString(), replyMarkup: keyboard, messageThreadId: topicId);
     }
 
-    private async Task HandleCleanupDeleteAsync(long chatId, long telegramId, string slug, CancellationToken ct)
+    private async Task HandleCleanupDeleteAsync(long chatId, long telegramId, string slug, int? replyTopicId, CancellationToken ct)
     {
         var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
 
@@ -420,7 +421,7 @@ public sealed class TelegramBotService(
         await thread.ClearHistory(ct);
         await userProfile.RemoveProject(slug, ct);
 
-        await botClient.SendMessageAsync(chatId, $"Deleted topic: {slug}");
+        await botClient.SendMessageAsync(chatId, $"Deleted topic: {slug}", messageThreadId: replyTopicId);
     }
 
     private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
@@ -854,17 +855,26 @@ public sealed class TelegramBotService(
         if (slug is null || !slug.StartsWith("chat-") || !topicId.HasValue)
             return;
 
+        // only rename once — check if title is already cached (avoids repeated API calls)
+        if (State_RenamedTopics.Contains(slug))
+            return;
+
         try
         {
             var title = await thread.GetTitle(ct);
             if (title is not null)
+            {
                 await botClient.EditForumTopicAsync(chatId, topicId.Value, name: title);
+                State_RenamedTopics.Add(slug);
+            }
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Best-effort topic rename failed");
         }
     }
+
+    private readonly HashSet<string> State_RenamedTopics = [];
 
     private async Task RenderRichOutput(long chatId, int messageId, int? topicId, RichOutput richOutput, long telegramId, CancellationToken ct)
     {
