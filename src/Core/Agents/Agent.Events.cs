@@ -20,9 +20,13 @@ public abstract partial class Agent
         activity?.SetTag("gen_ai.agent.name", DisplayName);
 
         var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString();
+
+        payload ??= [];
+        payload["utc_timestamp"] = DateTimeOffset.UtcNow.ToString("o");
+
         var agentEvent = new AgentEvent(
             eventName, this.GetPrimaryKeyString(), correlationId,
-            DateTimeOffset.UtcNow, payload ?? []);
+            DateTimeOffset.UtcNow, payload);
 
         durableState.EventLog.Add(agentEvent);
         await WriteStateAsync(ct);
