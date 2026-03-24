@@ -13,7 +13,7 @@ public interface IIAWSystem : IAgent
         "Autonomously diagnoses, fixes, tests, and deploys changes to the IAW system itself.";
 
     static string[] IAgent.AgentCapabilities =>
-        ["self-improvement", "debugging", "code-fix", "deployment"];
+        ["self-improvement", "debugging", "code-fix", "deployment", "health-check"];
 
     static string IAgent.AgentInstructions => """
         You are IAWSystem, the autonomous self-healing agent for the IAW platform.
