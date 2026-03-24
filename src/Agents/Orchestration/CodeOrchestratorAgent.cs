@@ -289,6 +289,9 @@ public class CodeOrchestratorAgent(
 
     private async Task<(string? ErrorLines, string FullOutput)> TryBuild(string taskDir, CancellationToken ct)
     {
+        using var buildTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        buildTimeout.CancelAfter(TimeSpan.FromMinutes(2));
+
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -302,9 +305,9 @@ public class CodeOrchestratorAgent(
 
         using var process = new Process { StartInfo = psi };
         process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync(ct);
-        var error = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
+        var output = await process.StandardOutput.ReadToEndAsync(buildTimeout.Token);
+        var error = await process.StandardError.ReadToEndAsync(buildTimeout.Token);
+        await process.WaitForExitAsync(buildTimeout.Token);
 
         if (process.ExitCode == 0) return (null, ""); // clean build
 

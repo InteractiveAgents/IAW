@@ -42,7 +42,7 @@ public static class CodeValidator
 
         for (var i = 0; i < lines.Count; i++)
         {
-            var trimmed = lines[i].TrimStart();
+            var trimmed = lines[i].Trim();
 
             if (trimmed.StartsWith("using ") && trimmed.EndsWith(';') && !trimmed.Contains('('))
             {
