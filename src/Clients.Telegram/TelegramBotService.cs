@@ -233,6 +233,9 @@ public sealed class TelegramBotService(
             case "status" when action == "show":
                 await HandleStatusCommandAsync(chatId, from.Id, null, ct);
                 break;
+            case "cleanup":
+                await HandleCleanupDeleteAsync(chatId, from.Id, action, ct);
+                break;
         }
     }
 
@@ -252,6 +255,9 @@ public sealed class TelegramBotService(
                 break;
             case "/newchat":
                 await HandleNewChatCommandAsync(chatId, telegramId, ct);
+                break;
+            case "/cleanup":
+                await HandleCleanupCommandAsync(chatId, telegramId, topicId, ct);
                 break;
         }
     }
@@ -358,6 +364,63 @@ public sealed class TelegramBotService(
             logger.LogWarning(ex, "Failed to create new chat topic");
             await botClient.SendMessageAsync(chatId, "Could not create topic. Make sure the group has Topics enabled.");
         }
+    }
+
+    private async Task HandleCleanupCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
+    {
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+        var projects = await userProfile.GetProjects(ct);
+
+        var sb = new StringBuilder("Your topics:\n\n");
+        var buttons = new List<InlineKeyboardButton[]>();
+
+        foreach (var proj in projects)
+        {
+            if (proj.Slug is "general" or "personal" or "iaw") continue;
+
+            var grainId = $"{telegramId}/{proj.Slug}";
+            var thread = clusterClient.GetGrain<IThread>(grainId);
+            try
+            {
+                var history = await thread.GetHistory(ct);
+                var title = await thread.GetTitle(ct) ?? proj.Slug;
+                sb.AppendLine($"- {title} ({history.Count} messages)");
+                buttons.Add([new InlineKeyboardButton($"Delete: {title}")
+                    { CallbackData = $"cmd:cleanup:{proj.Slug}" }]);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to get info for topic {Slug}", proj.Slug);
+            }
+        }
+
+        if (buttons.Count == 0)
+        {
+            sb.AppendLine("No custom topics to clean up.");
+            await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
+            return;
+        }
+
+        var keyboard = new InlineKeyboardMarkup([.. buttons]);
+        await botClient.SendMessageAsync(chatId, sb.ToString(), replyMarkup: keyboard, messageThreadId: topicId);
+    }
+
+    private async Task HandleCleanupDeleteAsync(long chatId, long telegramId, string slug, CancellationToken ct)
+    {
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+
+        var topicId = await userProfile.GetTopicId(slug, ct);
+        if (topicId.HasValue)
+        {
+            try { await botClient.CloseForumTopicAsync(chatId, topicId.Value); }
+            catch (Exception ex) { logger.LogWarning(ex, "Failed to close topic {Slug}", slug); }
+        }
+
+        var thread = clusterClient.GetGrain<IThread>($"{telegramId}/{slug}");
+        await thread.ClearHistory(ct);
+        await userProfile.RemoveProject(slug, ct);
+
+        await botClient.SendMessageAsync(chatId, $"Deleted topic: {slug}");
     }
 
     private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
