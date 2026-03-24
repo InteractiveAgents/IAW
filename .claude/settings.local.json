@@ -125,7 +125,8 @@
       "Bash(rmdir src/IAW.MCP/Deploy)",
       "Bash(rm -f src/Core/Deployment/DeployVerifier.cs)",
       "Bash(rmdir src/Core/Deployment)",
-      "Bash(rm -f src/Agents/Fun/IEmoji.cs src/Agents/Fun/EmojiAgent.cs)"
+      "Bash(rm -f src/Agents/Fun/IEmoji.cs src/Agents/Fun/EmojiAgent.cs)",
+      "Skill(code-review:code-review)"
     ]
   },
   "enabledMcpjsonServers": [

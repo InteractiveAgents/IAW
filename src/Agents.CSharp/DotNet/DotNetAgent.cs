@@ -112,11 +112,12 @@ public partial class DotNetAgent(
 
         try
         {
-            var output = await process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
-            var error = await process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var errorTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await Task.WhenAll(outputTask, errorTask);
             await process.WaitForExitAsync(timeoutCts.Token);
             sw.Stop();
-            return new CommandResult(process.ExitCode, output, error, sw.Elapsed);
+            return new CommandResult(process.ExitCode, outputTask.Result, errorTask.Result, sw.Elapsed);
         }
         catch (OperationCanceledException)
         {

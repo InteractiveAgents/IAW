@@ -545,7 +545,7 @@ public class CodeOrchestratorAgent(
             return "skip";
 
         if (buildOutput.Contains("CS0103") && buildOutput.Contains("'Console'"))
-            return "add_using_system";
+            return null;
 
         if (buildOutput.Contains("The process cannot access the file"))
             return "skip";

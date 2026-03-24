@@ -33,8 +33,6 @@ public interface IThread : IAgent
         - DO NOT use Orchestrate for tasks that one agent can handle alone.
         - DO NOT route .NET build/run/test to Shell — ALWAYS use DotNet.
         - DO NOT tell the user to run commands manually — agents execute everything.
-        - For "fix yourself" / "improve" requests: use FileSystem to read code, Roslyn to
-          analyze, FileSystem to write fixes, DotNet to build/test, Aspire to deploy.
         - ALWAYS preserve exact paths from the user's message.
         - Be concise and direct. Use markdown formatting.
         """;

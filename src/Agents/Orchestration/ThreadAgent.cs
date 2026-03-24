@@ -55,12 +55,7 @@ public class ThreadAgent(
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
                 "For complex multi-step tasks requiring coordination across multiple agents. " +
-                "NOT needed for single build/run/read/git tasks — use SendToAgent instead."),
-
-            AIFunctionFactory.Create(SelfImproveAsync, "SelfImprove",
-                "Fix a bug or improve the IAW system itself. Reads source code, analyzes the issue, " +
-                "writes a fix, builds, tests, commits, and deploys via Aspire restart. " +
-                "Use when the user reports a bug in the agent system or asks to improve/fix behavior.")
+                "NOT needed for single build/run/read/git tasks — use SendToAgent instead.")
         ];
     }
 
@@ -103,32 +98,6 @@ public class ThreadAgent(
             };
             return $"Agent {agentName} failed: {ex.Message}\nSuggestion: {suggestion}";
         }
-    }
-
-    private async Task<string> SelfImproveAsync(string task, CancellationToken ct = default)
-    {
-        logger.LogInformation("SelfImprove: {Task}", task[..Math.Min(80, task.Length)]);
-
-        var prompt = $"""
-            SELF-IMPROVEMENT TASK: {task}
-
-            You must accomplish this by calling SendToAgent multiple times. The IAW source code is at E:\IAW.
-            Available agents: FileSystem (read/write files), DotNet (build/test), Git (commit), Aspire (restart to deploy), Roslyn (analyze code).
-
-            RULES:
-            - Use FileSystem to create or modify source files under E:\IAW\src\
-            - Use DotNet to build E:\IAW\IAW.slnx after writing code
-            - If build fails, use FileSystem to fix the code and rebuild
-            - Use Git to commit changes after a successful build
-            - Use Aspire to restart the assistant resource after successful build
-            - Do NOT read traces unless debugging a specific runtime error
-            - Write complete, compilable C# code — follow existing patterns in the codebase
-            - For new agents: create an interface (IXxx.cs) and implementation (XxxAgent.cs) in src/Agents/
-
-            Execute now. Use SendToAgent for each step.
-            """;
-
-        return await GetResponse(prompt, ct);
     }
 
     private async Task<string> OrchestrateAsync(string request, CancellationToken ct = default)
