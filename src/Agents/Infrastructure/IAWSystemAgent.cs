@@ -10,7 +10,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class IAWSystemAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Opus46>] IChatClient chatClient,
+    [Llm<Sonnet46>] IChatClient chatClient,
     ILogger<IAWSystemAgent> logger)
     : Agent<IIAWSystem>(durableState, chatClient), IIAWSystem
 {

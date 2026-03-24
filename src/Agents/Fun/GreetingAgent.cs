@@ -9,4 +9,19 @@ namespace IAW.Agents.Fun;
 public class GreetingAgent([AgentState] AgentDurableState d, [Llm<Claude45Haiku>] IChatClient c)
     : Agent<IGreeting>(d, c), IGreeting
 {
+    private const string Prefix = "Greetings! ";
+
+    public override async Task<string> GetResponse(string prompt, CancellationToken ct = default)
+    {
+        var response = await base.GetResponse(prompt, ct).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return Prefix;
+        }
+
+        return response.StartsWith(Prefix, StringComparison.Ordinal)
+            ? response
+            : Prefix + response;
+    }
 }
