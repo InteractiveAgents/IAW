@@ -114,6 +114,8 @@ public abstract partial class Agent
             foreach (var method in baseIface.GetMethods())
                 excluded.Add(method.Name);
 
+        excluded.Add("GetTitle");
+
         return excluded;
     }
 

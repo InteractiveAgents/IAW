@@ -38,4 +38,6 @@ public interface IThread : IAgent
         - ALWAYS preserve exact paths from the user's message.
         - Be concise and direct. Use markdown formatting.
         """;
+
+    Task<string?> GetTitle(CancellationToken ct);
 }

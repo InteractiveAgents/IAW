@@ -274,4 +274,32 @@ public class ThreadAgent(
         return await targetAgent.HandleCallback(callbackId, value, ct);
     }
 
+    public async Task<string?> GetTitle(CancellationToken ct)
+    {
+        if (State.TryGetValue("title", out var entry))
+            return entry.Value.ToString();
+
+        if (History.Count < 2)
+            return null;
+
+        var firstUser = History.FirstOrDefault(m => m.Role == "user")?.Text;
+        var firstAssistant = History.FirstOrDefault(m => m.Role == "assistant")?.Text;
+        if (firstUser is null) return null;
+
+        var userSnippet = firstUser[..Math.Min(200, firstUser.Length)];
+        var assistantSnippet = firstAssistant?[..Math.Min(200, firstAssistant.Length)] ?? "";
+        var prompt = $"Generate a 2-5 word title for this conversation. Reply with ONLY the title, nothing else.\n\nUser: {userSnippet}\nAssistant: {assistantSnippet}";
+
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.User, prompt)
+        };
+        var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var title = response.Text?.Trim().Trim('"') ?? "Chat";
+
+        State["title"] = new StateEntry("title", title);
+        await WriteStateAsync(ct);
+        return title;
+    }
+
 }
