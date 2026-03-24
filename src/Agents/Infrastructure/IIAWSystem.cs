@@ -4,6 +4,9 @@ namespace IAW.Agents.Infrastructure;
 
 public interface IIAWSystem : IAgent
 {
+    [ResponseTimeout("00:30:00")]
+    new Task<string> GetResponse(string prompt, CancellationToken ct);
+
     static string IAgent.AgentDisplayName => "IAWSystem";
 
     static string IAgent.AgentDescription =>
