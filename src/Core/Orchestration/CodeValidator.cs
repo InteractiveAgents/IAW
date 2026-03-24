@@ -10,7 +10,8 @@ public static class CodeValidator
         "IAW.Agents.Memory",
         "IAW.Agents.Orchestration",
         "IAW.Agents.Models",
-        "IAW.Agents.Messages"
+        "IAW.Agents.Messages",
+        "IAW.Agents.Fun"
     ];
 
     static readonly string[] InvalidNamespacePatterns =

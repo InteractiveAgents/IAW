@@ -856,7 +856,7 @@ public sealed class TelegramBotService(
             return;
 
         // only rename once — check if title is already cached (avoids repeated API calls)
-        if (State_RenamedTopics.Contains(slug))
+        if (_renamedTopics.ContainsKey(slug))
             return;
 
         try
@@ -865,7 +865,7 @@ public sealed class TelegramBotService(
             if (title is not null)
             {
                 await botClient.EditForumTopicAsync(chatId, topicId.Value, name: title);
-                State_RenamedTopics.Add(slug);
+                _renamedTopics.TryAdd(slug, true);
             }
         }
         catch (Exception ex)
@@ -874,7 +874,7 @@ public sealed class TelegramBotService(
         }
     }
 
-    private readonly HashSet<string> State_RenamedTopics = [];
+    private readonly ConcurrentDictionary<string, bool> _renamedTopics = new();
 
     private async Task RenderRichOutput(long chatId, int messageId, int? topicId, RichOutput richOutput, long telegramId, CancellationToken ct)
     {
