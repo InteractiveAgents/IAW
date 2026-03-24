@@ -1,9 +1,9 @@
-using System.Diagnostics;
-using System.Text.RegularExpressions;
 using Core;
 using Core.Contracts;
 using Core.Messages;
 using Core.Observability;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace IAW.Core;
 

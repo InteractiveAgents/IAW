@@ -1,16 +1,16 @@
-using System.Diagnostics;
-using System.Text.Json;
 using Core.AI;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text.Json;
 
 namespace IAW.Agents.Coding;
 
 public class GitAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient)
+    [Llm<Fast>] IChatClient chatClient)
     : Agent<IGit>(durableState, chatClient), IGit
 {
 

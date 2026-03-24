@@ -1,4 +1,5 @@
 using Core.Contracts;
+using Core.Registry;
 
 namespace Core;
 
@@ -36,8 +37,20 @@ public static class AgentInterfaceResolver
         });
     }
 
+    public static Type? ResolveByDisplayName(string displayName)
+    {
+        var interfaces = DiscoverAgentInterfaces();
+        return interfaces.FirstOrDefault(t =>
+        {
+            var (name, _, _) = AgentInterfaceMetadata.ReadFrom(t);
+            return string.Equals(name, displayName, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    private static IReadOnlyList<Type>? _cachedInterfaces;
+
     private static IReadOnlyList<Type> ScanInterfaces() =>
-        AppDomain.CurrentDomain.GetAssemblies()
+        _cachedInterfaces ??= AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
             .Where(t => t.IsInterface
                         && t != typeof(IAgent)

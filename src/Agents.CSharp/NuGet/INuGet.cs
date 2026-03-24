@@ -1,5 +1,5 @@
-using IAW.Agents.Coding.Models;
 using Core.Contracts;
+using IAW.Agents.Coding.Models;
 
 namespace IAW.Agents.Coding;
 

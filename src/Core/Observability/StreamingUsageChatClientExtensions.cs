@@ -1,5 +1,5 @@
-using System.Text.Json;
 using Microsoft.Extensions.AI;
+using System.Text.Json;
 
 namespace Core.Observability;
 

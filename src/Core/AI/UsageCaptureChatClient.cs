@@ -1,6 +1,6 @@
-using System.Runtime.CompilerServices;
 using Core.Contracts;
 using Microsoft.Extensions.AI;
+using System.Runtime.CompilerServices;
 using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace Core.AI;

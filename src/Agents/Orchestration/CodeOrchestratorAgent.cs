@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.Text;
 using Core;
 using Core.AI;
 using Core.AI.Models;
@@ -9,6 +7,8 @@ using Core.Orchestration;
 using Core.Registry;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text;
 
 namespace IAW.Agents.Orchestration;
 
@@ -192,7 +192,10 @@ public class CodeOrchestratorAgent(
             var workspacePath = Environment.GetEnvironmentVariable("IAW__Workspace")
                 ?? Path.Combine(Path.GetTempPath(), "iaw-workspace");
 
-            _cachedInstructions = BuildInstructions(_cachedAgentCatalog, workspacePath, selectedAgents);
+            var filteredCatalog = selectedAgents.Count > 0
+                ? FilterCatalogToSelectedAgents(_cachedAgentCatalog, selectedAgents)
+                : _cachedAgentCatalog;
+            _cachedInstructions = BuildInstructions(filteredCatalog, workspacePath, selectedAgents);
 
             var slug = GenerateSlug(prompt);
             var taskId = $"{DateTime.UtcNow:yyyy-MM-dd}-{slug}-{Guid.NewGuid().ToString("N")[..6]}";
@@ -222,8 +225,14 @@ public class CodeOrchestratorAgent(
             for (var attempt = 0; attempt <= maxRetries; attempt++)
             {
                 await PublishProgress(projectKey, taskId, "building", $"Building (attempt {attempt + 1})...", ct);
-                var buildErrors = await TryBuild(taskDir, ct);
+                var (buildErrors, fullBuildOutput) = await TryBuild(taskDir, ct);
                 if (buildErrors is null) break; // clean build
+
+                var deterministicAction = TryDeterministicFix(fullBuildOutput);
+                if (deterministicAction == "skip")
+                    break;
+                if (deterministicAction == "retry")
+                    continue;
 
                 if (attempt == maxRetries)
                 {
@@ -278,7 +287,7 @@ public class CodeOrchestratorAgent(
         }
     }
 
-    private async Task<string?> TryBuild(string taskDir, CancellationToken ct)
+    private async Task<(string? ErrorLines, string FullOutput)> TryBuild(string taskDir, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
@@ -297,7 +306,7 @@ public class CodeOrchestratorAgent(
         var error = await process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
 
-        if (process.ExitCode == 0) return null; // clean build
+        if (process.ExitCode == 0) return (null, ""); // clean build
 
         var fullOutput = output + error;
         // extract just the error lines
@@ -306,9 +315,11 @@ public class CodeOrchestratorAgent(
             .Take(15)
             .ToList();
 
-        return errorLines.Count > 0
+        var errorSummary = errorLines.Count > 0
             ? string.Join("\n", errorLines)
             : (fullOutput.Length > 2000 ? fullOutput[^2000..] : fullOutput);
+
+        return (errorSummary, fullOutput);
     }
 
     private async Task<string> RegenerateCode(string plan, string previousCode, string buildErrors, CancellationToken ct)
@@ -493,5 +504,55 @@ public class CodeOrchestratorAgent(
             [IAWConstants.PayloadKeys.Phase] = phase,
             [IAWConstants.PayloadKeys.Message] = message
         }, ct);
+    }
+
+    static string FilterCatalogToSelectedAgents(string fullCatalog, IReadOnlyList<string> selectedAgents)
+    {
+        if (selectedAgents.Count == 0 || string.IsNullOrEmpty(fullCatalog))
+            return fullCatalog;
+
+        var sb = new global::System.Text.StringBuilder();
+        sb.AppendLine("# Agent Catalog");
+        sb.AppendLine();
+
+        foreach (var line in fullCatalog.Split('\n'))
+        {
+            var trimmed = line.TrimStart();
+
+            // keep namespace headers (## coding, ## system) — they're short
+            if (trimmed.StartsWith("## "))
+            {
+                sb.AppendLine(line);
+                continue;
+            }
+
+            // keep agent lines that match selected agents: "- **IDotNet** — ..."
+            if (trimmed.StartsWith("- **"))
+            {
+                if (selectedAgents.Any(a => trimmed.Contains(a, StringComparison.OrdinalIgnoreCase)))
+                    sb.AppendLine(line);
+                continue;
+            }
+        }
+
+        var result = sb.ToString();
+        return result.Length > 30 ? result : fullCatalog;
+    }
+
+    static string? TryDeterministicFix(string buildOutput)
+    {
+        if (buildOutput.Contains("CS0246") && buildOutput.Contains("IAW.Agents"))
+            return "skip";
+
+        if (buildOutput.Contains("CS0103") && buildOutput.Contains("'Console'"))
+            return null;
+
+        if (buildOutput.Contains("The process cannot access the file"))
+            return "skip";
+
+        if (buildOutput.Contains("timed out"))
+            return "retry";
+
+        return null;
     }
 }

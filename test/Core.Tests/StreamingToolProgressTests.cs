@@ -1,7 +1,7 @@
-using System.ComponentModel;
 using Core.Contracts;
 using IAW.Testing;
 using Microsoft.Extensions.AI;
+using System.ComponentModel;
 using Xunit;
 
 namespace IAW.Core.Tests;

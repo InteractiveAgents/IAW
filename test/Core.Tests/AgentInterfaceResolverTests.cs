@@ -1,7 +1,9 @@
-using System.Runtime.CompilerServices;
 using Core;
 using Core.Contracts;
+using IAW.Agents.Coding;
 using IAW.Agents.Orchestration;
+using IAW.Agents.System;
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace IAW.Core.Tests;
@@ -10,8 +12,9 @@ public class AgentInterfaceResolverTests
 {
     public AgentInterfaceResolverTests()
     {
-        // ensure the Agents assembly is loaded before scanning
         RuntimeHelpers.RunClassConstructor(typeof(IThread).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(IShell).TypeHandle);
+        RuntimeHelpers.RunClassConstructor(typeof(IDotNet).TypeHandle);
     }
 
     [Fact]
@@ -48,6 +51,29 @@ public class AgentInterfaceResolverTests
     public void Resolve_Unknown_ReturnsNull()
     {
         var result = AgentInterfaceResolver.Resolve("INonExistent");
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void ResolveByDisplayName_FindsShellAgent()
+    {
+        var result = AgentInterfaceResolver.ResolveByDisplayName("Shell");
+        Assert.NotNull(result);
+        Assert.Equal("IShell", result!.Name);
+    }
+
+    [Fact]
+    public void ResolveByDisplayName_CaseInsensitive()
+    {
+        var result = AgentInterfaceResolver.ResolveByDisplayName("dotnet");
+        Assert.NotNull(result);
+        Assert.Equal("IDotNet", result!.Name);
+    }
+
+    [Fact]
+    public void ResolveByDisplayName_ReturnsNull_ForUnknown()
+    {
+        var result = AgentInterfaceResolver.ResolveByDisplayName("NonExistentAgent");
         Assert.Null(result);
     }
 }

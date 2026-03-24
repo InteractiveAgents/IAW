@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core;
 using Core.Context;
 using Core.Contracts;
@@ -7,6 +6,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Qdrant.Client;
+using System.Text.Json;
 using AgentResponse = global::Core.UI.AgentResponse;
 
 namespace IAW.Agents.Orchestration;
@@ -49,17 +49,61 @@ public class ThreadAgent(
     protected override IReadOnlyList<AITool> DefineAdditionalTools()
     {
         return [
-            AIFunctionFactory.Create(DelegateAsync, "Delegate",
-                "Delegate a task to the IAW agent system. Use this for any request that requires " +
-                "code execution, system operations, builds, git, file operations, or specialized agent skills. " +
-                "Describe WHAT needs to be done.")
+            AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
+                "Send a task to a specific agent by name. The agent handles it autonomously " +
+                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire."),
+
+            AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
+                "For complex multi-step tasks requiring coordination across multiple agents. " +
+                "NOT needed for single build/run/read/git tasks — use SendToAgent instead.")
         ];
     }
 
-    private async Task<string> DelegateAsync(string request, CancellationToken ct = default)
+    private async Task<string> SendToAgentAsync(string agentName, string request, CancellationToken ct = default)
+    {
+        logger.LogInformation("SendToAgent: {Agent} for: {Request}",
+            agentName, request[..Math.Min(80, request.Length)]);
+
+        var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
+                         ?? AgentInterfaceResolver.Resolve(agentName);
+        if (interfaceType is null)
+            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire.";
+
+        var threadId = this.GetPrimaryKeyString();
+        var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
+
+        try
+        {
+            var result = await agent.GetResponse(request, ct);
+            return result.Length > 4000
+                ? result[..4000] + "\n...(truncated)"
+                : result;
+        }
+        catch (OperationCanceledException)
+        {
+            return $"Agent {agentName} timed out. Try a simpler request or a different agent.";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "SendToAgent: {Agent} failed", agentName);
+            var suggestion = agentName switch
+            {
+                "DotNet" => "Try Shell agent for raw dotnet CLI commands, or check the project path.",
+                "Shell" => "Check command syntax. For .NET operations, use DotNet agent instead.",
+                "FileSystem" => "Check file path exists. Use absolute paths.",
+                "Git" => "Check repository path. Ensure it's a valid git repo.",
+                "Aspire" => "Aspire MCP may not be connected. Try again after restart.",
+                "Roslyn" => "Check that the workspace is set and contains C# code.",
+                _ => "Try a different agent or rephrase the request."
+            };
+            return $"Agent {agentName} failed: {ex.Message}\nSuggestion: {suggestion}";
+        }
+    }
+
+    private async Task<string> OrchestrateAsync(string request, CancellationToken ct = default)
     {
         var taskId = $"dlg-{Guid.NewGuid().ToString("N")[..8]}";
-        logger.LogInformation("Delegate: executing {TaskId} for: {Request}",
+        logger.LogInformation("Orchestrate: executing {TaskId} for: {Request}",
             taskId, request[..Math.Min(80, request.Length)]);
 
         return await ExecuteDelegation(taskId, request, ct);

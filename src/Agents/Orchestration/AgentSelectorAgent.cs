@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Core;
 using Core.AI;
 using Core.AI.Models;
@@ -6,6 +5,7 @@ using Core.Contracts;
 using Core.Registry;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.Text.Json;
 
 namespace IAW.Agents.Orchestration;
 
@@ -23,6 +23,9 @@ public class AgentSelectorAgent(
         try
         {
             candidates = await registry.SearchAsync(userRequest, ct: ct);
+            candidates = candidates
+                .Where(c => !string.Equals(c.Namespace, "models", StringComparison.OrdinalIgnoreCase))
+                .ToList();
         }
         catch
         {

@@ -1,7 +1,6 @@
 using Aspire.IAW;
-using Orleans.Dashboard;
-
 using Core.Registry;
+using Orleans.Dashboard;
 
 Microsoft.Build.Locator.MSBuildLocator.RegisterDefaults();
 

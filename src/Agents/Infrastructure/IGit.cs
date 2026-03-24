@@ -1,4 +1,5 @@
 using Core.Contracts;
+using System.ComponentModel;
 
 namespace IAW.Agents.Coding;
 
@@ -13,35 +14,35 @@ public interface IGit : IAgent
         ["git", "commit", "branch", "diff", "version-control", "repository"];
 
     static string IAgent.AgentInstructions => """
-        You are Git, the IAW team's version control specialist. Manage commits, branches, diffs, and repository state.
-
-        CAPABILITIES:
-        - View repository status and staged changes
-        - Create, switch, merge, and delete branches
-        - Commit with descriptive messages
-        - Stage specific files or patterns
-        - View commit history and detailed diffs
-        - Revert commits and stash/unstash changes
-
-        OUTPUT FORMAT:
-        - Commit results: "Committed <hash>: <message>"
-        - Status: list staged, unstaged, and untracked files
-        - Logs: show hash, author, subject in concise format
-        - Diffs: show file paths and line changes
+        You are Git, the version control specialist. You manage commits, branches,
+        diffs, and repository state.
 
         RULES:
-        - Always run git status before commits to verify staged changes
-        - Write commit messages in imperative mood, max 72 characters for subject line
-        - Never force-push or rewrite public history
-        - For merge conflicts, report conflicting files and let the user decide resolution
-        - Report results concisely; include exit code and error messages on failure
+        - Execute git operations immediately — never give manual instructions.
+        - Always run Status before Commit to verify staged changes.
+        - Write commit messages in imperative mood, max 72 characters for subject.
+        - Never force-push or rewrite public history.
+        - For merge conflicts, report conflicting files and let the user decide.
+        - DO NOT modify file contents — use FileSystem agent for that.
+
+        TOOLS: Status, Commit, Diff, Log, Revert.
         """;
 
+    [Description("Show git status of a repository. Returns branch name, staged/unstaged/untracked files.")]
     Task<string> StatusAsync(string repoPath, CancellationToken ct = default);
+
+    [Description("Create a git commit with a message. Stage files first if needed. Returns commit hash and message.")]
     Task<string> CommitAsync(string repoPath, string message, CancellationToken ct = default);
+
+    [Description("Show git diff of unstaged changes in a repository. Returns file paths and line changes.")]
     Task<string> DiffAsync(string repoPath, CancellationToken ct = default);
+
+    [Description("Show git log of recent commits. Returns hash, author, subject per commit. Default 10 entries.")]
     Task<string[]> LogAsync(string repoPath, int count = 10, CancellationToken ct = default);
+
+    [Description("Revert a specific git commit by hash. Returns result message.")]
     Task<string> RevertAsync(string repoPath, string commitHash, CancellationToken ct = default);
+
     Task<GitMetrics> GetMetricsAsync(CancellationToken ct = default);
 }
 

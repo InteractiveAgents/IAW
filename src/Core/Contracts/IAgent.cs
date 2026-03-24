@@ -10,7 +10,9 @@ public interface IAgent : IGrainWithStringKey
     static virtual string AgentInstructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
 
     // Conversation
+    [ResponseTimeout("00:05:00")]
     IAsyncEnumerable<string> GetResponseStream(string prompt, CancellationToken ct);
+    [ResponseTimeout("00:05:00")]
     IAsyncEnumerable<string> GetResponseStream(ChatMessage message, CancellationToken ct);
 
     [ResponseTimeout("00:05:00")]

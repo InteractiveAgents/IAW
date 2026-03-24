@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-using System.Text;
 using Core;
 using Core.AI;
 using Core.Contracts;
@@ -8,6 +6,8 @@ using Core.Services;
 using Core.UI;
 using IAW.Agents.Orchestration;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
+using System.Text;
 using Telegram;
 using Telegram.BotAPI;
 using Telegram.BotAPI.AvailableMethods;
@@ -713,6 +713,11 @@ public sealed class TelegramBotService(
                     lastEditAt = DateTimeOffset.UtcNow;
                 }
             }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Streaming cancelled for user {TelegramId}", telegramId);
+            if (buffer.Length == 0) buffer.Append("[Request timed out]");
         }
         catch (Exception ex)
         {

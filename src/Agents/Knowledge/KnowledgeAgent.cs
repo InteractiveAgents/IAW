@@ -1,11 +1,11 @@
-using System.ComponentModel;
-using System.Text;
-using System.Text.Json;
 using Core.AI;
 using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using System.ComponentModel;
+using System.Text;
+using System.Text.Json;
 
 namespace IAW.Agents.Memory;
 

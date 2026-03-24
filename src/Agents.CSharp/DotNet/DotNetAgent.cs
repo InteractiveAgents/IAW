@@ -1,18 +1,19 @@
-using System.Diagnostics;
-using System.Text.RegularExpressions;
-using IAW.Core;
-using Microsoft.Extensions.AI;
-using Core.Contracts;
 using Core.AI;
 using Core.AI.Models;
 using Core.Communication;
 using Core.Communication.Messages;
+using Core.Contracts;
+using IAW.Agents.System;
+using IAW.Core;
+using Microsoft.Extensions.AI;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace IAW.Agents.Coding;
 
 public partial class DotNetAgent(
     [AgentState] AgentDurableState durableState,
-    IChatClient chatClient,
+    [Llm<Sonnet46>] IChatClient chatClient,
     IHttpClientFactory httpClientFactory)
     : Agent<IDotNet>(durableState, chatClient), IDotNet
 {
@@ -22,8 +23,9 @@ public partial class DotNetAgent(
     public async Task<BuildRunResult> BuildAsync(
         string projectPath, string configuration = "Debug", CancellationToken ct = default)
     {
+        var resolvedPath = ResolveProjectPath(projectPath);
         var sw = Stopwatch.StartNew();
-        var psi = new ProcessStartInfo("dotnet", $"build \"{projectPath}\" -c {configuration}")
+        var psi = new ProcessStartInfo("dotnet", $"build \"{resolvedPath}\" -c {configuration}")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -78,6 +80,66 @@ public partial class DotNetAgent(
 
         var result = await RunFormatAsync(solutionPath, ct);
         return result.Summary;
+    }
+
+    public async Task<CommandResult> RunAsync(
+        string projectPath, string? arguments = null, CancellationToken ct = default)
+    {
+        var resolvedPath = ResolveProjectPath(projectPath);
+        var sw = Stopwatch.StartNew();
+
+        var args = $"run --project \"{resolvedPath}\"";
+        if (!string.IsNullOrEmpty(arguments))
+            args += $" -- {arguments}";
+
+        var psi = new ProcessStartInfo("dotnet", args)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi);
+        if (process is null)
+        {
+            sw.Stop();
+            return new CommandResult(-1, "", "Failed to start dotnet run", sw.Elapsed);
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(120_000);
+
+        try
+        {
+            var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var errorTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await Task.WhenAll(outputTask, errorTask);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            sw.Stop();
+            return new CommandResult(process.ExitCode, outputTask.Result, errorTask.Result, sw.Elapsed);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            sw.Stop();
+            return new CommandResult(-1, "", "dotnet run timed out after 120s", sw.Elapsed);
+        }
+    }
+
+    public Task<string[]> ListProjectsAsync(string directory, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!Directory.Exists(directory))
+            return Task.FromResult(Array.Empty<string>());
+
+        var projects = Directory.GetFiles(directory, "*.csproj", SearchOption.AllDirectories)
+            .Concat(Directory.GetFiles(directory, "*.sln", SearchOption.AllDirectories))
+            .Concat(Directory.GetFiles(directory, "*.slnx", SearchOption.AllDirectories))
+            .OrderBy(p => p)
+            .ToArray();
+
+        return Task.FromResult(projects);
     }
 
     public async Task<MessageReceipt> ReceiveAsync(CodeChangedMessage message, CancellationToken ct = default)
@@ -241,6 +303,13 @@ public partial class DotNetAgent(
         return files;
     }
 
+    private string ResolveProjectPath(string projectPath)
+    {
+        if (File.Exists(projectPath)) return projectPath;
+        if (!Directory.Exists(projectPath)) return projectPath;
+        return FindSolutionPath(projectPath) ?? projectPath;
+    }
+
     private string? FindSolutionFromWorkspace()
     {
         var workspace = GetWorkspacePath();
@@ -257,6 +326,8 @@ public partial class DotNetAgent(
             if (slnFiles.Length > 0) return slnFiles[0];
             var slnxFiles = Directory.GetFiles(dir, "*.slnx");
             if (slnxFiles.Length > 0) return slnxFiles[0];
+            var csprojFiles = Directory.GetFiles(dir, "*.csproj");
+            if (csprojFiles.Length > 0) return csprojFiles[0];
             dir = Path.GetDirectoryName(dir);
         }
         return null;

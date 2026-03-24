@@ -1,6 +1,6 @@
-using System.Reflection;
 using Core.Messages;
 using Core.Messages.Events;
+using System.Reflection;
 using Xunit;
 
 namespace IAW.Core.Tests.Communication;

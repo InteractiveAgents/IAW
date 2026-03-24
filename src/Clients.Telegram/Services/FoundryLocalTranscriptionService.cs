@@ -1,7 +1,6 @@
-using System.Text;
-using Microsoft.AI.Foundry.Local;
-
 using Core.AI;
+using Microsoft.AI.Foundry.Local;
+using System.Text;
 
 namespace TelegramClient.Services;
 

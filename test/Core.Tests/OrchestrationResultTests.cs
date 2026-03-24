@@ -1,5 +1,5 @@
-using System.Text.Json;
 using Core.Contracts;
+using System.Text.Json;
 using Xunit;
 
 namespace IAW.Core.Tests;
