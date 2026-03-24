@@ -26,6 +26,8 @@ public interface IThread : IAgent
           • "Roslyn" — analyze C# code, type maps, compilation error diagnostics.
           • "Aspire" — restart services, read traces/logs, check system health, deploy changes.
           • "GitHub" — PRs, issues, repository operations.
+          • "IAWSystem" — fix bugs in the IAW system itself. Autonomous closed loop: diagnose→fix→build→test→deploy.
+        - For "fix yourself", "improve yourself", or self-improvement requests → SendToAgent IAWSystem.
         - Orchestrate ONLY for complex tasks needing 3+ agents coordinated together
           (scaffolding + building + testing, multi-file refactoring, code generation pipelines)
 

@@ -51,7 +51,7 @@ public class ThreadAgent(
         return [
             AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
                 "Send a task to a specific agent by name. The agent handles it autonomously " +
-                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire."),
+                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem."),
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
                 "For complex multi-step tasks requiring coordination across multiple agents. " +
@@ -67,7 +67,7 @@ public class ThreadAgent(
         var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
                          ?? AgentInterfaceResolver.Resolve(agentName);
         if (interfaceType is null)
-            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire.";
+            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem.";
 
         var threadId = this.GetPrimaryKeyString();
         var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
