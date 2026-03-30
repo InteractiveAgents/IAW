@@ -23,7 +23,8 @@ public abstract class LLMModel
         {
             var normalizedId = Id.ToLowerInvariant()
                 .Replace(".", "")
-                .Replace(":", "-");
+                .Replace(":", "-")
+                .Replace("/", "-");
             return $"{Provider.ToLowerInvariant()}-{normalizedId}";
         }
     }

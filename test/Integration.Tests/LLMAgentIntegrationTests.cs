@@ -1,4 +1,4 @@
-using Core.AI.Models;
+using Core.AI.Models.Anthropic;
 using Core.Contracts;
 using IAW.Agents.Models;
 using IAW.Testing;

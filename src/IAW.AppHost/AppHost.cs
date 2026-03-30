@@ -1,19 +1,35 @@
 using Core.AI.Models;
+using OpenAIModels = Core.AI.Models.OpenAI;
+using AnthropicModels = Core.AI.Models.Anthropic;
+using GitHubModels = Core.AI.Models.GitHub;
+using OllamaModels = Core.AI.Models.Ollama;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    //.WithLLM<Gpt54Mini>().AsBalanced()
-    //.WithLLM<Qwen25_7B>()
-    //.WithLLM<Claude45Haiku>()
-    //.WithLLM<Gpt54Nano>().AsFast()
-    //.WithLLM<Sonnet46>()
-    //.WithLLM<Opus46>().AsReasoning()
-    //.WithLLM<GitHubGpt4oMini>()
+
+    // --- OpenAI (direct API) ---
+    //.WithLLM<OpenAIModels.Gpt54Nano>().AsFast()
+    //.WithLLM<OpenAIModels.Gpt54Mini>().AsBalanced()
+    //.WithLLM<OpenAIModels.Gpt54>().AsReasoning()
+    //.WithEmbedding<OpenAIModels.TextEmbedding3Small>()
+
+    // --- Anthropic (no embedding API — uses OpenAI embedding) ---
+    //.WithLLM<AnthropicModels.Claude45Haiku>().AsFast()
+    //.WithLLM<AnthropicModels.Sonnet46>().AsBalanced()
+    //.WithLLM<AnthropicModels.Opus46>().AsReasoning()
+    //.WithEmbedding<OpenAIModels.TextEmbedding3Small>()
+
+    // --- GitHub Models (free/cheap, full tool calling) ---
+    //.WithLLM<GitHubModels.Gpt41Nano>().AsFast()
+    //.WithLLM<GitHubModels.Gpt41Mini>().AsBalanced()
+    //.WithLLM<GitHubModels.O4Mini>().AsReasoning()
+    //.WithEmbedding<GitHubModels.TextEmbedding3Small>()
+
+    // --- Ollama (local, 3060 Ti / 8GB VRAM) ---
+    .WithLLM<OllamaModels.Qwen25_7B>()
+    .WithEmbedding<OllamaModels.MxbaiEmbedLarge>()
     .WithVoice2Text<WhisperLargeV3Turbo>()
-    // Local-only mode (3060 Ti / 8GB VRAM) — all tiers auto-fallback to the single model:
-    .WithLLM<Qwen25_7B>()
-    .WithEmbedding<MxbaiEmbedLarge>()
     .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI(op => op.WithLifetime(ContainerLifetime.Persistent)));
 
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")

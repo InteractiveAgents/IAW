@@ -1,5 +1,6 @@
 using Core.AI;
-using Core.AI.Models;
+using Core.AI.Models.Ollama;
+using Core.AI.Models.OpenAI;
 using Xunit;
 
 namespace IAW.Core.Tests;

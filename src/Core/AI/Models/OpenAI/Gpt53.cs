@@ -1,6 +1,6 @@
 using Core.Contracts;
 
-namespace Core.AI.Models;
+namespace Core.AI.Models.OpenAI;
 
 public sealed class Gpt53 : LLMModel
 {

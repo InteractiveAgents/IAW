@@ -1,6 +1,6 @@
 using Core.Contracts;
 
-namespace Core.AI.Models;
+namespace Core.AI.Models.Anthropic;
 
 public sealed class Claude45Haiku : LLMModel
 {

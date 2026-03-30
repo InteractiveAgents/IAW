@@ -1,5 +1,9 @@
 using Core.AI;
-using Core.AI.Models;
+using Core.AI.Models.Anthropic;
+using Core.AI.Models.Google;
+using Core.AI.Models.Ollama;
+using Core.AI.Models.OpenAI;
+using Core.AI.Models.XAI;
 using Xunit;
 
 namespace IAW.Core.Tests.Models;
