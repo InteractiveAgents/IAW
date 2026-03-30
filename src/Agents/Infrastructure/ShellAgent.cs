@@ -1,5 +1,4 @@
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using Core.Tools;
 using IAW.Core;
@@ -11,7 +10,7 @@ namespace IAW.Agents.System;
 
 public class ShellAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Claude45Haiku>] IChatClient chatClient)
+    [Llm<Fast>] IChatClient chatClient)
     : Agent<IShell>(durableState, chatClient), IShell
 {
     private static readonly string[] BlockedPatterns =

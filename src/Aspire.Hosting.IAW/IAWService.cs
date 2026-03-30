@@ -14,6 +14,7 @@ public class IAWService(OrleansService orleans, IDistributedApplicationBuilder a
     internal IResourceBuilder<OllamaResource>? OllamaResource { get; set; }
     internal List<IResourceBuilder<OllamaModelResource>> OllamaModelResources { get; } = [];
     internal WhisperModel? WhisperModel { get; set; }
+    internal EmbeddingModel? DeclaredEmbeddingModel { get; set; }
 
     internal IResourceBuilder<AzureStorageResource> Storage { get; set; } = null!;
     internal IResourceBuilder<AzureBlobStorageResource> Blobs { get; set; } = null!;

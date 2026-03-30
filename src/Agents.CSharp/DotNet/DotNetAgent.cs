@@ -1,5 +1,4 @@
 using Core.AI;
-using Core.AI.Models;
 using Core.Communication;
 using Core.Communication.Messages;
 using Core.Contracts;
@@ -13,7 +12,7 @@ namespace IAW.Agents.Coding;
 
 public partial class DotNetAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient,
+    [Llm<Balanced>] IChatClient chatClient,
     IHttpClientFactory httpClientFactory)
     : Agent<IDotNet>(durableState, chatClient), IDotNet
 {

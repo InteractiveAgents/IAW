@@ -135,8 +135,14 @@ internal static class LlmRegistration
     }
 
     private static string? FindOllamaModelConnectionString(IConfiguration config, LLMModel model)
+        => FindOllamaModelConnectionString(config, model.Id);
+
+    private static string? FindOllamaModelConnectionString(IConfiguration config, string modelId)
     {
-        var sanitizedId = model.Id.Replace(".", "-").Replace(":", "-");
+        // Aspire strips the tag (e.g. ":7b") from the model ID when creating resource names,
+        // then replaces dots with hyphens: "qwen2.5:7b" → resource "ollama-qwen2-5"
+        var baseId = modelId.Contains(':') ? modelId[..modelId.IndexOf(':')] : modelId;
+        var sanitizedId = baseId.Replace(".", "-");
         return config[$"ConnectionStrings:ollama-{sanitizedId}"];
     }
 
@@ -186,29 +192,46 @@ internal static class LlmRegistration
     {
         var config = builder.Configuration;
 
-        if (!string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]))
+        var declaredProvider = config[LlmConfig.EmbeddingProvider];
+        var declaredModelId = config[LlmConfig.EmbeddingModelId];
+
+        if (string.Equals(declaredProvider, "ollama", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(declaredModelId))
+        {
+            var modelConnectionString = FindOllamaModelConnectionString(config, declaredModelId);
+            var endpoint = ParseOllamaEndpoint(modelConnectionString)
+                ?? config[LlmConfig.OllamaEndpoint]
+                ?? config["ConnectionStrings:ollama"]
+                ?? "http://localhost:11434";
+
+            builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
+                new OllamaApiClient(new Uri(endpoint), declaredModelId));
+        }
+        else if (!string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]))
         {
             var token = config[LlmConfig.GitHubModelsApiKey]!;
+            var modelId = declaredModelId ?? "text-embedding-3-small";
             builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
                 _ => new OpenAI.OpenAIClient(
                         new ApiKeyCredential(token),
                         new OpenAI.OpenAIClientOptions { Endpoint = new Uri(LlmConfig.GitHubModelsEndpoint) })
-                    .GetEmbeddingClient("text-embedding-3-small")
+                    .GetEmbeddingClient(modelId)
                     .AsIEmbeddingGenerator());
         }
         else if (!string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]))
         {
             var apiKey = config[LlmConfig.OpenAiApiKey]!;
+            var modelId = declaredModelId ?? "text-embedding-3-small";
             builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
                 _ => new OpenAI.OpenAIClient(apiKey)
-                    .GetEmbeddingClient("text-embedding-3-small")
+                    .GetEmbeddingClient(modelId)
                     .AsIEmbeddingGenerator());
         }
         else
         {
+            var dimensions = int.TryParse(config[LlmConfig.EmbeddingDimensions], out var d) ? d : 384;
             builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(
-                _ => throw new InvalidOperationException(
-                    "No embedding provider configured. Set AI:LLM:GitHubToken or AI:LLM:OpenAiApiKey."));
+                new NoOpEmbeddingGenerator(dimensions));
         }
 
         return builder;

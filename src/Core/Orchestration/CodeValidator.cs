@@ -10,7 +10,8 @@ public static class CodeValidator
         "IAW.Agents.Memory",
         "IAW.Agents.Orchestration",
         "IAW.Agents.Models",
-        "IAW.Agents.Messages"
+        "IAW.Agents.Messages",
+        "IAW.Agents.Fun"
     ];
 
     static readonly string[] InvalidNamespacePatterns =
@@ -42,7 +43,7 @@ public static class CodeValidator
 
         for (var i = 0; i < lines.Count; i++)
         {
-            var trimmed = lines[i].TrimStart();
+            var trimmed = lines[i].Trim();
 
             if (trimmed.StartsWith("using ") && trimmed.EndsWith(';') && !trimmed.Contains('('))
             {

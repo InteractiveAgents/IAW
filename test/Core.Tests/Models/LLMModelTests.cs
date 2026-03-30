@@ -87,6 +87,8 @@ public class LLMModelTests
         Assert.Contains("gpt-5.3", allIds);
         Assert.Contains("gemini-3.1", allIds);
         Assert.Contains("grok-latest", allIds);
+        Assert.Contains("qwen2.5:7b", allIds);
+        Assert.Contains("qwen2.5:14b", allIds);
     }
 
     [Fact]
@@ -97,6 +99,43 @@ public class LLMModelTests
         Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is Gpt53).Capabilities);
         Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is Gemini31).Capabilities);
         Assert.Equal(ModelCapabilities.FullyCapable, LLMModel.All.First(m => m is GrokLatest).Capabilities);
+    }
+
+    [Fact]
+    public void Qwen25_7B_has_correct_ollama_tag()
+    {
+        var model = LLMModel.All.First(m => m is Qwen25_7B);
+        Assert.Equal("qwen2.5:7b", model.Id);
+        Assert.Equal("ollama", model.Provider);
+        Assert.True(model.IsLocal);
+        Assert.Equal("ollama-qwen25-7b", model.ServiceKey);
+    }
+
+    [Fact]
+    public void Qwen25_14B_has_correct_ollama_tag()
+    {
+        var model = LLMModel.All.First(m => m is Qwen25_14B);
+        Assert.Equal("qwen2.5:14b", model.Id);
+        Assert.Equal("ollama", model.Provider);
+        Assert.True(model.IsLocal);
+        Assert.Equal("ollama-qwen25-14b", model.ServiceKey);
+    }
+
+    [Fact]
+    public void Qwen25_sized_variants_are_chat_only()
+    {
+        Assert.Equal(ModelCapabilities.ChatOnly, LLMModel.All.First(m => m is Qwen25_7B).Capabilities);
+        Assert.Equal(ModelCapabilities.ChatOnly, LLMModel.All.First(m => m is Qwen25_14B).Capabilities);
+    }
+
+    [Fact]
+    public void Qwen25_sized_variants_have_unique_service_keys()
+    {
+        var keys = LLMModel.All
+            .Where(m => m is Qwen25 or Qwen25_7B or Qwen25_14B)
+            .Select(m => m.ServiceKey)
+            .ToList();
+        Assert.Equal(keys.Count, keys.Distinct().Count());
     }
 
     [Fact]

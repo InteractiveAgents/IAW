@@ -51,7 +51,7 @@ public class ThreadAgent(
         return [
             AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
                 "Send a task to a specific agent by name. The agent handles it autonomously " +
-                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire."),
+                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem."),
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
                 "For complex multi-step tasks requiring coordination across multiple agents. " +
@@ -67,7 +67,7 @@ public class ThreadAgent(
         var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
                          ?? AgentInterfaceResolver.Resolve(agentName);
         if (interfaceType is null)
-            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire.";
+            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem.";
 
         var threadId = this.GetPrimaryKeyString();
         var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
@@ -272,6 +272,34 @@ public class ThreadAgent(
         var targetGrainId = Orleans.Runtime.GrainId.Create(grainType, grainId);
         var targetAgent = GrainFactory.GetGrain<IAgent>(targetGrainId);
         return await targetAgent.HandleCallback(callbackId, value, ct);
+    }
+
+    public async Task<string?> GetTitle(CancellationToken ct)
+    {
+        if (State.TryGetValue("title", out var entry))
+            return entry.Value.ToString();
+
+        if (History.Count < 2)
+            return null;
+
+        var firstUser = History.FirstOrDefault(m => m.Role == "user")?.Text;
+        var firstAssistant = History.FirstOrDefault(m => m.Role == "assistant")?.Text;
+        if (firstUser is null) return null;
+
+        var userSnippet = firstUser[..Math.Min(200, firstUser.Length)];
+        var assistantSnippet = firstAssistant?[..Math.Min(200, firstAssistant.Length)] ?? "";
+        var prompt = $"Generate a 2-5 word title for this conversation. Reply with ONLY the title, nothing else.\n\nUser: {userSnippet}\nAssistant: {assistantSnippet}";
+
+        var messages = new List<Microsoft.Extensions.AI.ChatMessage>
+        {
+            new(ChatRole.User, prompt)
+        };
+        var response = await ChatClient.GetResponseAsync(messages, cancellationToken: ct);
+        var title = response.Text?.Trim().Trim('"') ?? "Chat";
+
+        State["title"] = new StateEntry("title", title);
+        await WriteStateAsync(ct);
+        return title;
     }
 
 }

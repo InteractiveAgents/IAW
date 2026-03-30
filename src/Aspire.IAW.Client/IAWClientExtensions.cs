@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Orleans.Runtime;
 
 namespace Aspire.IAW;
 
@@ -30,6 +32,9 @@ public static class IAWClientExtensions
                 msg.ResponseTimeout = TimeSpan.FromMinutes(5));
         });
 
+        // Retry gateway connection until the silo is ready
+        builder.Services.AddSingleton<IClientConnectionRetryFilter, GatewayConnectionRetryFilter>();
+
         return builder;
     }
 
@@ -53,5 +58,15 @@ public static class IAWClientExtensions
         }
 
         return app;
+    }
+}
+
+sealed class GatewayConnectionRetryFilter(ILogger<GatewayConnectionRetryFilter> logger) : IClientConnectionRetryFilter
+{
+    public async Task<bool> ShouldRetryConnectionAttempt(Exception exception, CancellationToken cancellationToken)
+    {
+        logger.LogWarning(exception, "Orleans gateway connection failed, retrying in 2s...");
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        return true;
     }
 }

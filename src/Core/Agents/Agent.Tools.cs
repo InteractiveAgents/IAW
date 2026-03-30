@@ -32,6 +32,7 @@ public abstract partial class Agent
                 _cachedTools = null;
             });
         RegisterToolMethods(tools, workspaceTools);
+        RegisterSchedulingTools(tools);
 
         DiscoverInterfaceTools(tools);
 
@@ -113,6 +114,8 @@ public abstract partial class Agent
             foreach (var method in baseIface.GetMethods())
                 excluded.Add(method.Name);
 
+        excluded.Add("GetTitle");
+
         return excluded;
     }
 
@@ -139,6 +142,26 @@ public abstract partial class Agent
         {
             if (method.GetCustomAttributes(typeof(DescriptionAttribute), false).Length > 0)
                 tools.Add(AIFunctionFactory.Create(method, toolSource));
+        }
+    }
+
+    private void RegisterSchedulingTools(List<AITool> tools)
+    {
+        var methods = typeof(Agent).GetMethods(
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+        foreach (var method in methods)
+        {
+            if (method.GetCustomAttributes(typeof(DescriptionAttribute), false).Length > 0)
+            {
+                try
+                {
+                    tools.Add(AIFunctionFactory.Create(method, this));
+                }
+                catch
+                {
+                    // method signature incompatible — skip silently (matches DiscoverInterfaceTools pattern)
+                }
+            }
         }
     }
 }

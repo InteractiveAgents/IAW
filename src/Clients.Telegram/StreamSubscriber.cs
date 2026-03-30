@@ -17,9 +17,6 @@ public sealed class StreamSubscriber(
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        // Wait for Orleans client to connect
-        await Task.Delay(TimeSpan.FromSeconds(2), ct);
-
         try
         {
             var streamProvider = clusterClient.GetStreamProvider(IAWConstants.StreamProvider);

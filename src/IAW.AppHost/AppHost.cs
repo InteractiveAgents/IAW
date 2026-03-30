@@ -3,15 +3,18 @@ using Core.AI.Models;
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
-    .WithLLM<Gpt54Mini>().AsBalanced()
-    .WithLLM<Claude45Haiku>()
-    .WithLLM<Gpt54Nano>().AsFast()
-    .WithLLM<Sonnet46>()
-    .WithLLM<Opus46>().AsReasoning()
-    .WithLLM<GitHubGpt4oMini>()
-    .WithVoice2Text<WhisperLargeV3Turbo>();
-//.WithLLM<Qwen25>()
-//.WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI())
+    //.WithLLM<Gpt54Mini>().AsBalanced()
+    //.WithLLM<Qwen25_7B>()
+    //.WithLLM<Claude45Haiku>()
+    //.WithLLM<Gpt54Nano>().AsFast()
+    //.WithLLM<Sonnet46>()
+    //.WithLLM<Opus46>().AsReasoning()
+    //.WithLLM<GitHubGpt4oMini>()
+    .WithVoice2Text<WhisperLargeV3Turbo>()
+    // Local-only mode (3060 Ti / 8GB VRAM) — all tiers auto-fallback to the single model:
+    .WithLLM<Qwen25_7B>()
+    .WithEmbedding<MxbaiEmbedLarge>()
+    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI(op => op.WithLifetime(ContainerLifetime.Persistent)));
 
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
     .WithReference(iaw)

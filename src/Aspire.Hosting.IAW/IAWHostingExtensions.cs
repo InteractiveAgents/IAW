@@ -88,6 +88,24 @@ public static class IAWHostingExtensions
         return iaw;
     }
 
+    public static IAWService WithEmbedding<TModel>(this IAWService iaw)
+        where TModel : EmbeddingModel
+    {
+        EmbeddingModel.EnsureAllModelsLoaded();
+        var model = EmbeddingModel.All.OfType<TModel>().First();
+
+        iaw.DeclaredEmbeddingModel = model;
+
+        if (model.Provider.Equals("ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            iaw.OllamaResource ??= iaw.AppBuilder.AddOllama("ollama");
+            var modelResource = iaw.OllamaResource.AddModel(model.Id);
+            iaw.OllamaModelResources.Add(modelResource);
+        }
+
+        return iaw;
+    }
+
     public static IAWService WithStorage(
         this IAWService iaw,
         Action<IResourceBuilder<AzureStorageResource>> configure)
@@ -168,6 +186,14 @@ public static class IAWHostingExtensions
 
         if (iaw.WhisperModel is not null)
             builder.WithEnvironment("AI__Whisper__ModelId", iaw.WhisperModel.Id);
+
+        if (iaw.DeclaredEmbeddingModel is { } embeddingModel)
+        {
+            builder.WithEnvironment("AI__Embedding__ModelId", embeddingModel.Id);
+            builder.WithEnvironment("AI__Embedding__Provider", embeddingModel.Provider);
+            builder.WithEnvironment("AI__Embedding__ServiceKey", embeddingModel.ServiceKey);
+            builder.WithEnvironment("AI__Embedding__Dimensions", embeddingModel.Dimensions.ToString());
+        }
 
         if (!string.IsNullOrEmpty(iaw.WorkspacePath))
             builder.WithEnvironment("IAW__Workspace", iaw.WorkspacePath);

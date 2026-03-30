@@ -481,6 +481,16 @@ public class AgentSchedulingTests : AgentTest<SchedulingTestAgent>
         var response = await agent.GetResponse("Are you alive?", ct);
         Assert.Equal("mock-response", response);
     }
+
+    [Fact]
+    public async Task SchedulingTools_AreRegisteredAsAITools()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var agent = Agent(UniqueId("sched-tools"));
+        var response = await agent.GetResponse("List all scheduled jobs", ct);
+        var jobs = await agent.ListJobs(ct);
+        Assert.Empty(jobs);
+    }
 }
 
 #endregion

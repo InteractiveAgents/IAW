@@ -1,5 +1,5 @@
+using Core;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
@@ -10,7 +10,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class AspireAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient,
+    [Llm<Balanced>] IChatClient chatClient,
     ILogger<AspireAgent> logger)
     : Agent<IAspire>(durableState, chatClient), IAspire
 {
@@ -194,16 +194,30 @@ public class AspireAgent(
         catch (Exception ex) { return $"Failed to get logs: {ex.Message}"; }
     }
 
-    public Task<string> CleanLogsAsync(string resourceName, CancellationToken ct = default)
+    public Task<string> GetHealthLogsAsync(string resourceName, CancellationToken ct = default)
     {
         return GetLogsAsync(resourceName, ct);
     }
 
     public async Task<string> DeployAsync(CancellationToken ct = default)
     {
-        // TODO: Implement via Aspire SDK WithCommand("deploy") in AppHost
-        // The AppHost has ResourceCommandService which can stop→build→start
-        // This agent will call execute_resource_command(assistant, deploy) via MCP
-        return await RestartResourceAsync("assistant", ct);
+        logger.LogInformation("Deploy: building solution then restarting assistant");
+
+        // build first — Aspire runs dotnet run --no-build on start, so pre-build is required
+        var dotnetType = AgentInterfaceResolver.ResolveByDisplayName("DotNet");
+        if (dotnetType is null) return "Deploy failed: DotNet agent not found.";
+
+        var dotnet = (IAgent)GrainFactory.GetGrain(dotnetType, $"{this.GetPrimaryKeyString()}/{dotnetType.Name}");
+        var buildResult = await dotnet.GetResponse(@"Build E:\IAW\IAW.slnx", ct);
+
+        if (buildResult.Contains("Build FAILED", StringComparison.OrdinalIgnoreCase))
+            return $"Deploy aborted — build failed: {buildResult}";
+
+        var restartResult = await RestartResourceAsync("assistant", ct);
+
+        await ScheduleJob("deploy-verify", TimeSpan.FromMinutes(2),
+            "Verify deployment health after restart", ct);
+
+        return $"Deploy complete — build succeeded, {restartResult}";
     }
 }

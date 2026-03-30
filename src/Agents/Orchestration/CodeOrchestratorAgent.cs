@@ -1,6 +1,5 @@
 using Core;
 using Core.AI;
-using Core.AI.Models;
 using Core.Communication.Messages;
 using Core.Contracts;
 using Core.Orchestration;
@@ -15,7 +14,7 @@ namespace IAW.Agents.Orchestration;
 [GrainType(IAWConstants.GrainTypes.CodeOrchestrator)]
 public class CodeOrchestratorAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Opus46>] IChatClient chatClient)
+    [Llm<Reasoning>] IChatClient chatClient)
     : Agent<ICodeOrchestrator>(durableState, chatClient), ICodeOrchestrator
 {
     static readonly TimeSpan ExecutionTimeout = TimeSpan.FromMinutes(10);
@@ -124,14 +123,18 @@ public class CodeOrchestratorAgent(
         var shell = iaw.Get<IShell>(taskId);
         var dotnet = iaw.Get<IDotNet>(taskId);
         var roslyn = iaw.Get<IRoslyn>(taskId);
+        var fs = iaw.Get<IFileSystem>(taskId);
 
         // Step 1: Scaffold
         var scaffold = await shell.RunDotnetAsync("new console -n MyApp -o {{workspacePath}}/MyApp", null, default);
         Console.WriteLine("Scaffold exit: " + scaffold.ExitCode);
 
-        // Step 2: Modify generated files
-        var programPath = Path.Combine("{{workspacePath}}", "MyApp", "Program.cs");
-        File.WriteAllText(programPath, @"Console.WriteLine(""Hello from IAW!"");");
+        // Step 2: Discover and modify files — NEVER assume file names like Program.cs
+        // Projects may use different entry point names (e.g. AppHost.cs, App.cs)
+        var csFiles = await fs.ListFilesAsync("{{workspacePath}}/MyApp", "*.cs", default);
+        var entryFile = csFiles.FirstOrDefault(f => f.EndsWith(".cs"));
+        if (entryFile is not null)
+            await fs.WriteFileAsync(entryFile, @"Console.WriteLine(""Hello from IAW!"");", default);
 
         // Step 3: Build
         var build = await dotnet.BuildAsync("{{workspacePath}}/MyApp/MyApp.csproj", "Debug", default);
@@ -166,6 +169,7 @@ public class CodeOrchestratorAgent(
         - CRITICAL: Target framework is ALWAYS net11.0 (or net11.0 for WinForms/WPF). NEVER use net6.0, net7.0, net8.0, net9.0 — they are not installed. Example: --framework net11.0
         - ALWAYS call Directory.CreateDirectory(projectDir) before File.WriteAllText to ensure the directory exists
         - NEVER call Directory.Delete on user-specified paths — only clean workspace paths
+        - NEVER hardcode file names like Program.cs — use fs.ListFilesAsync to discover actual files. Projects may use AppHost.cs, App.cs, or other entry point names.
 
         {{agentCatalog}}
         """;
@@ -289,6 +293,9 @@ public class CodeOrchestratorAgent(
 
     private async Task<(string? ErrorLines, string FullOutput)> TryBuild(string taskDir, CancellationToken ct)
     {
+        using var buildTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        buildTimeout.CancelAfter(TimeSpan.FromMinutes(2));
+
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -302,9 +309,9 @@ public class CodeOrchestratorAgent(
 
         using var process = new Process { StartInfo = psi };
         process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync(ct);
-        var error = await process.StandardError.ReadToEndAsync(ct);
-        await process.WaitForExitAsync(ct);
+        var output = await process.StandardOutput.ReadToEndAsync(buildTimeout.Token);
+        var error = await process.StandardError.ReadToEndAsync(buildTimeout.Token);
+        await process.WaitForExitAsync(buildTimeout.Token);
 
         if (process.ExitCode == 0) return (null, ""); // clean build
 

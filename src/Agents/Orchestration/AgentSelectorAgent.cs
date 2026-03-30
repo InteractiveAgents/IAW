@@ -1,6 +1,5 @@
 using Core;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using Core.Registry;
 using IAW.Core;
@@ -12,7 +11,7 @@ namespace IAW.Agents.Orchestration;
 [GrainType(IAWConstants.GrainTypes.Agent)]
 public class AgentSelectorAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient)
+    [Llm<Balanced>] IChatClient chatClient)
     : Agent<IAgentSelector>(durableState, chatClient), IAgentSelector
 {
     public async Task<SelectionResult> SelectAsync(string userRequest, CancellationToken ct = default)

@@ -1,4 +1,5 @@
 using Core.AI;
+using Core.AI.Models;
 using Xunit;
 
 namespace IAW.Core.Tests;
@@ -31,5 +32,38 @@ public class EmbeddingModelTests
         EmbeddingModel.EnsureAllModelsLoaded();
         var model = EmbeddingModel.All.First(m => m.Id == "text-embedding-3-small");
         Assert.Equal("openai-text-embedding-3-small", model.ServiceKey);
+    }
+
+    [Fact]
+    public async Task NoOpEmbeddingGenerator_returns_zero_vectors()
+    {
+        var generator = new NoOpEmbeddingGenerator();
+        var result = await generator.GenerateAsync(["hello", "world"], cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(2, result.Count);
+        Assert.All(result, e => Assert.True(e.Vector.Span.ToArray().All(f => f == 0f)));
+    }
+
+    [Fact]
+    public async Task NoOpEmbeddingGenerator_returns_configurable_dimensions()
+    {
+        var generator = new NoOpEmbeddingGenerator(768);
+        var result = await generator.GenerateAsync(["test"], cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(768, result[0].Vector.Length);
+    }
+
+    [Fact]
+    public void MxbaiEmbedLarge_has_correct_service_key()
+    {
+        var model = EmbeddingModel.All.First(m => m is MxbaiEmbedLarge);
+        Assert.Equal("ollama-mxbai-embed-large", model.ServiceKey);
+        Assert.True(model.IsLocal);
+    }
+
+    [Fact]
+    public void TextEmbedding3Small_has_correct_service_key()
+    {
+        var model = EmbeddingModel.All.First(m => m is TextEmbedding3Small);
+        Assert.Equal("openai-text-embedding-3-small", model.ServiceKey);
+        Assert.False(model.IsLocal);
     }
 }

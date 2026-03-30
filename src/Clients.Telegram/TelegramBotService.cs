@@ -79,6 +79,10 @@ public sealed class TelegramBotService(
             try
             {
                 text = await TranscribeVoiceAsync(message.Voice.FileId, ct);
+                if (!string.IsNullOrEmpty(text))
+                    await botClient.SendMessageAsync(chatId, $"\ud83c\udfA4 {text}",
+                        replyParameters: new ReplyParameters { MessageId = message.MessageId },
+                        messageThreadId: message.MessageThreadId);
             }
             catch (Exception ex)
             {
@@ -126,13 +130,13 @@ public sealed class TelegramBotService(
             // Future: route to UISession free-text handler
         }
 
-        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
+        var (thread, slug) = await ResolveThreadAsync(telegramId, topicId, ct);
         var chatMessage = BuildChatMessage(text);
 
         logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
         var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
+        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct, slug);
     }
 
     private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
@@ -233,6 +237,10 @@ public sealed class TelegramBotService(
             case "status" when action == "show":
                 await HandleStatusCommandAsync(chatId, from.Id, null, ct);
                 break;
+            case "cleanup":
+                var cleanupTopicId = (callbackQuery.Message as Message)?.MessageThreadId;
+                await HandleCleanupDeleteAsync(chatId, from.Id, action, cleanupTopicId, ct);
+                break;
         }
     }
 
@@ -249,6 +257,12 @@ public sealed class TelegramBotService(
                 break;
             case "/status":
                 await HandleStatusCommandAsync(chatId, telegramId, topicId, ct);
+                break;
+            case "/newchat":
+                await HandleNewChatCommandAsync(chatId, telegramId, ct);
+                break;
+            case "/cleanup":
+                await HandleCleanupCommandAsync(chatId, telegramId, topicId, ct);
                 break;
         }
     }
@@ -336,6 +350,87 @@ public sealed class TelegramBotService(
         if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active threads.");
 
         await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
+    }
+
+    private async Task HandleNewChatCommandAsync(long chatId, long telegramId, CancellationToken ct)
+    {
+        var slug = $"chat-{Guid.NewGuid().ToString("N")[..6]}";
+
+        try
+        {
+            var topic = await botClient.CreateForumTopicAsync(chatId, "New Chat");
+            var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+            await userProfile.SetTopicId(slug, topic.MessageThreadId, ct);
+            await botClient.SendMessageAsync(chatId, "What would you like to work on?",
+                messageThreadId: topic.MessageThreadId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to create new chat topic");
+            await botClient.SendMessageAsync(chatId, "Could not create topic. Make sure the group has Topics enabled.");
+        }
+    }
+
+    private async Task HandleCleanupCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
+    {
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+        var projects = await userProfile.GetProjects(ct);
+
+        var sb = new StringBuilder("Your topics:\n\n");
+        var buttons = new List<InlineKeyboardButton[]>();
+
+        foreach (var proj in projects)
+        {
+            if (proj.Slug is "general" or "personal" or "iaw") continue;
+
+            var grainId = $"{telegramId}/{proj.Slug}";
+            var thread = clusterClient.GetGrain<IThread>(grainId);
+            try
+            {
+                var history = await thread.GetHistory(ct);
+                var title = await thread.GetTitle(ct) ?? proj.Slug;
+                sb.AppendLine($"- {title} ({history.Count} messages)");
+                buttons.Add([new InlineKeyboardButton($"Delete: {title}")
+                    { CallbackData = $"cmd:cleanup:{proj.Slug}" }]);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to get info for topic {Slug}", proj.Slug);
+            }
+        }
+
+        if (buttons.Count == 0)
+        {
+            sb.AppendLine("No custom topics to clean up.");
+            await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
+            return;
+        }
+
+        var keyboard = new InlineKeyboardMarkup([.. buttons]);
+        await botClient.SendMessageAsync(chatId, sb.ToString(), replyMarkup: keyboard, messageThreadId: topicId);
+    }
+
+    private async Task HandleCleanupDeleteAsync(long chatId, long telegramId, string slug, int? replyTopicId, CancellationToken ct)
+    {
+        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+
+        var topicId = await userProfile.GetTopicId(slug, ct);
+        if (topicId.HasValue)
+        {
+            try { await botClient.DeleteForumTopicAsync(chatId, topicId.Value); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete topic {Slug}", slug);
+                await botClient.SendMessageAsync(chatId, $"Could not delete topic: {slug}", messageThreadId: replyTopicId);
+                return;
+            }
+        }
+
+        var thread = clusterClient.GetGrain<IThread>($"{telegramId}/{slug}");
+        await thread.ClearHistory(ct);
+        await userProfile.RemoveProject(slug, ct);
+
+        await botClient.SendMessageAsync(chatId, $"Deleted topic: {slug}", messageThreadId: replyTopicId);
     }
 
     private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
@@ -683,7 +778,7 @@ public sealed class TelegramBotService(
     }
 
     private async Task StreamResponseAsync(
-        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct)
+        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct, string? slug = null)
     {
         const int maxChars = 4000;
         var buffer = new StringBuilder();
@@ -732,6 +827,7 @@ public sealed class TelegramBotService(
         {
             if (finalText.Length > 0)
                 await EditSafe(chatId, currentMessageId, finalText);
+            await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
             return;
         }
 
@@ -759,7 +855,35 @@ public sealed class TelegramBotService(
             if (finalText.Length > 0)
                 await EditSafe(chatId, currentMessageId, finalText);
         }
+
+        await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
     }
+
+    private async Task TryAutoRenameTopicAsync(long chatId, int? topicId, IThread thread, string? slug, CancellationToken ct)
+    {
+        if (slug is null || !slug.StartsWith("chat-") || !topicId.HasValue)
+            return;
+
+        // only rename once — check if title is already cached (avoids repeated API calls)
+        if (_renamedTopics.ContainsKey(slug))
+            return;
+
+        try
+        {
+            var title = await thread.GetTitle(ct);
+            if (title is not null)
+            {
+                await botClient.EditForumTopicAsync(chatId, topicId.Value, name: title);
+                _renamedTopics.TryAdd(slug, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Best-effort topic rename failed");
+        }
+    }
+
+    private readonly ConcurrentDictionary<string, bool> _renamedTopics = new();
 
     private async Task RenderRichOutput(long chatId, int messageId, int? topicId, RichOutput richOutput, long telegramId, CancellationToken ct)
     {

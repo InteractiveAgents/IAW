@@ -1,15 +1,20 @@
 {
   "mcpServers": {
     "iaw": {
+      "type": "http",
       "url": "http://localhost:5300"
     },
     "aspire": {
       "command": "aspire",
-      "args": ["mcp", "start", "--non-interactive"]
+      "args": ["agent", "mcp"]
     },
     "context7": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@upstash/context7-mcp@latest"]
+    },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
     }
   }
 }
