@@ -58,10 +58,10 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
 
     public async Task StopAsync(CancellationToken ct)
     {
-        if (IsReady && _model is not null)
+        if (_model is not null)
         {
             _logger.LogInformation("Unloading Whisper model {ModelId}", _model.Id);
-            try { await _model.UnloadAsync(); }
+            try { await _model.UnloadAsync(); _model = null; }
             catch (Exception ex) { _logger.LogWarning(ex, "Error unloading Whisper model"); }
         }
     }
@@ -135,6 +135,9 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         throw new InvalidOperationException("Whisper model is still initializing");
     }
 
+    // DownloadAsync/LoadAsync don't accept CancellationToken, so we race against Task.Delay.
+    // On timeout the underlying task keeps running in the background — acceptable since
+    // the service is marked as failed and won't serve transcription requests.
     private static async Task WithTimeout(Task task, TimeSpan timeout, string operation, CancellationToken ct)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
