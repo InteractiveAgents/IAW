@@ -39,6 +39,9 @@ public class LLMModelBuilder(IAWService iaw, LLMModel lastModel)
     public IAWService WithVoice2Text<TModel>() where TModel : WhisperModel
         => IAW.WithVoice2Text<TModel>();
 
+    public IAWService WithEmbedding<TModel>() where TModel : EmbeddingModel
+        => IAW.WithEmbedding<TModel>();
+
     public IAWService WithStorage(Action<IResourceBuilder<AzureStorageResource>> configure)
         => IAW.WithStorage(configure);
 
