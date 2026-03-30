@@ -237,13 +237,6 @@ internal static class LlmRegistration
         return builder;
     }
 
-    public static IHostApplicationBuilder AddWhisperProvider<TService>(this IHostApplicationBuilder builder)
-        where TService : class, IAudioTranscriptionService
-    {
-        builder.Services.AddSingleton<IAudioTranscriptionService, TService>();
-        return builder;
-    }
-
     private sealed class AnthropicProviderFactory : ILlmProviderFactory
     {
         public string ProviderName => "anthropic";

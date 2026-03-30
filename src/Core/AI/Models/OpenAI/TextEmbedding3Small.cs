@@ -1,4 +1,4 @@
-namespace Core.AI.Models;
+namespace Core.AI.Models.OpenAI;
 
 public sealed class TextEmbedding3Small : EmbeddingModel
 {

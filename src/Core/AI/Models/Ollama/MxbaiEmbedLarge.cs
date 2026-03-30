@@ -1,4 +1,4 @@
-namespace Core.AI.Models;
+namespace Core.AI.Models.Ollama;
 
 public sealed class MxbaiEmbedLarge : EmbeddingModel
 {

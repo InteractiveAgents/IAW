@@ -6,7 +6,7 @@ using Microsoft.Extensions.AI;
 
 namespace IAW.Agents.Models;
 
-public class Gpt4oAgent(
+public class Gpt54Agent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Gpt4o>] IChatClient chatClient)
-    : LlmAgentBase<IGpt4o>(durableState, chatClient), IGpt4o;
+    [Llm<Gpt54>] IChatClient chatClient)
+    : LlmAgentBase<IGpt54>(durableState, chatClient), IGpt54;

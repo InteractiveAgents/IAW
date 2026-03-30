@@ -39,9 +39,13 @@ public static class IAWClientExtensions
     }
 
     public static IHostApplicationBuilder AddWhisperProvider<TService>(this IHostApplicationBuilder builder)
-        where TService : class, IAudioTranscriptionService
+        where TService : class, IAudioTranscriptionService, IHostedService
     {
-        builder.Services.AddSingleton<IAudioTranscriptionService, TService>();
+        builder.Services.AddSingleton<TService>();
+        builder.Services.AddSingleton<IAudioTranscriptionService>(sp => sp.GetRequiredService<TService>());
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<TService>());
+        builder.Services.AddHealthChecks()
+            .AddCheck<WhisperHealthCheck>("whisper", tags: ["live"]);
         return builder;
     }
 

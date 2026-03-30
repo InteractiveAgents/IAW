@@ -23,7 +23,8 @@ public abstract class EmbeddingModel
         {
             var normalizedId = Id.ToLowerInvariant()
                 .Replace(".", "")
-                .Replace(":", "-");
+                .Replace(":", "-")
+                .Replace("/", "-");
             return $"{Provider.ToLowerInvariant()}-{normalizedId}";
         }
     }

@@ -1,6 +1,6 @@
 using Core.Contracts;
 
-namespace Core.AI.Models;
+namespace Core.AI.Models.Google;
 
 public sealed class Gemini31 : LLMModel
 {
