@@ -79,6 +79,10 @@ public sealed class TelegramBotService(
             try
             {
                 text = await TranscribeVoiceAsync(message.Voice.FileId, ct);
+                if (!string.IsNullOrEmpty(text))
+                    await botClient.SendMessageAsync(chatId, $"\ud83c\udfA4 {text}",
+                        replyParameters: new ReplyParameters { MessageId = message.MessageId },
+                        messageThreadId: message.MessageThreadId);
             }
             catch (Exception ex)
             {
@@ -413,8 +417,13 @@ public sealed class TelegramBotService(
         var topicId = await userProfile.GetTopicId(slug, ct);
         if (topicId.HasValue)
         {
-            try { await botClient.CloseForumTopicAsync(chatId, topicId.Value); }
-            catch (Exception ex) { logger.LogWarning(ex, "Failed to close topic {Slug}", slug); }
+            try { await botClient.DeleteForumTopicAsync(chatId, topicId.Value); }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete topic {Slug}", slug);
+                await botClient.SendMessageAsync(chatId, $"Could not delete topic: {slug}", messageThreadId: replyTopicId);
+                return;
+            }
         }
 
         var thread = clusterClient.GetGrain<IThread>($"{telegramId}/{slug}");
