@@ -86,7 +86,11 @@
       "Bash(npx -y @microsoft/learn-cli@latest doctor)",
       "Bash(xargs grep:*)",
       "mcp__iaw__agent_list_all",
-      "mcp__iaw__agent_send_message"
+      "mcp__iaw__agent_send_message",
+      "mcp__microsoft-learn__microsoft_docs_search",
+      "mcp__microsoft-learn__microsoft_docs_fetch",
+      "mcp__microsoft-learn__microsoft_code_sample_search",
+      "WebFetch(domain:docs.github.com)"
     ]
   },
   "enableAllProjectMcpServers": true,
