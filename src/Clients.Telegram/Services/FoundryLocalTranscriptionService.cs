@@ -40,18 +40,10 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
             _model = await ResolveModelAsync(catalog);
 
             _logger.LogInformation("Downloading Whisper model {ModelId}...", _model.Id);
-            using (var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
-            {
-                downloadCts.CancelAfter(DownloadTimeout);
-                await _model.DownloadAsync();
-            }
+            await WithTimeout(_model.DownloadAsync(), DownloadTimeout, "Whisper model download", ct);
 
             _logger.LogInformation("Loading Whisper model {ModelId}...", _model.Id);
-            using (var loadCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
-            {
-                loadCts.CancelAfter(LoadTimeout);
-                await _model.LoadAsync();
-            }
+            await WithTimeout(_model.LoadAsync(), LoadTimeout, "Whisper model load", ct);
 
             IsReady = true;
             _logger.LogInformation("Whisper model ready: {ModelId}", _model.Id);
@@ -141,6 +133,16 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         if (InitializationFailed)
             throw new InvalidOperationException($"Whisper is not available: {ErrorMessage}");
         throw new InvalidOperationException("Whisper model is still initializing");
+    }
+
+    private static async Task WithTimeout(Task task, TimeSpan timeout, string operation, CancellationToken ct)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(timeout);
+        var completed = await Task.WhenAny(task, Task.Delay(Timeout.Infinite, cts.Token));
+        if (completed != task)
+            throw new TimeoutException($"{operation} timed out after {timeout.TotalMinutes:F0} minutes");
+        await task; // propagate any exception
     }
 
     private async Task InitializeFoundryManagerAsync(CancellationToken ct)
