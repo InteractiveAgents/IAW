@@ -1,6 +1,5 @@
 using Core;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
@@ -10,7 +9,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class IAWSystemAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient,
+    [Llm<Balanced>] IChatClient chatClient,
     ILogger<IAWSystemAgent> logger)
     : Agent<IIAWSystem>(durableState, chatClient), IIAWSystem
 {

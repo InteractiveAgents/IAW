@@ -135,8 +135,14 @@ internal static class LlmRegistration
     }
 
     private static string? FindOllamaModelConnectionString(IConfiguration config, LLMModel model)
+        => FindOllamaModelConnectionString(config, model.Id);
+
+    private static string? FindOllamaModelConnectionString(IConfiguration config, string modelId)
     {
-        var sanitizedId = model.Id.Replace(".", "-").Replace(":", "-");
+        // Aspire strips the tag (e.g. ":7b") from the model ID when creating resource names,
+        // then replaces dots with hyphens: "qwen2.5:7b" → resource "ollama-qwen2-5"
+        var baseId = modelId.Contains(':') ? modelId[..modelId.IndexOf(':')] : modelId;
+        var sanitizedId = baseId.Replace(".", "-");
         return config[$"ConnectionStrings:ollama-{sanitizedId}"];
     }
 
@@ -192,8 +198,7 @@ internal static class LlmRegistration
         if (string.Equals(declaredProvider, "ollama", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrEmpty(declaredModelId))
         {
-            var sanitizedId = declaredModelId.Replace(".", "-").Replace(":", "-");
-            var modelConnectionString = config[$"ConnectionStrings:ollama-{sanitizedId}"];
+            var modelConnectionString = FindOllamaModelConnectionString(config, declaredModelId);
             var endpoint = ParseOllamaEndpoint(modelConnectionString)
                 ?? config[LlmConfig.OllamaEndpoint]
                 ?? config["ConnectionStrings:ollama"]

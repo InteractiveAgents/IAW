@@ -1,6 +1,5 @@
 using Core;
 using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using IAW.Core;
 using Microsoft.Extensions.AI;
@@ -11,7 +10,7 @@ namespace IAW.Agents.Infrastructure;
 
 public class AspireAgent(
     [AgentState] AgentDurableState durableState,
-    [Llm<Sonnet46>] IChatClient chatClient,
+    [Llm<Balanced>] IChatClient chatClient,
     ILogger<AspireAgent> logger)
     : Agent<IAspire>(durableState, chatClient), IAspire
 {
