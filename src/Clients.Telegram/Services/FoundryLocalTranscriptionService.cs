@@ -4,16 +4,20 @@ using System.Text;
 
 namespace TelegramClient.Services;
 
-public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionService
+public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionService, IHostedService, IWhisperReadiness
 {
     private static readonly string[] OggExtensions = [".ogg", ".opus", ".oga"];
+    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan LoadTimeout = TimeSpan.FromMinutes(2);
 
     private readonly IConfiguration _configuration;
     private readonly IAudioConverter? _audioConverter;
     private readonly ILogger<FoundryLocalTranscriptionService> _logger;
-    private readonly SemaphoreSlim _initLock = new(1, 1);
     private Model? _model;
-    private bool _initialized;
+
+    public bool IsReady { get; private set; }
+    public bool InitializationFailed { get; private set; }
+    public string? ErrorMessage { get; private set; }
 
     public FoundryLocalTranscriptionService(
         IConfiguration configuration,
@@ -25,10 +29,55 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         _audioConverter = audioConverter;
     }
 
+    public async Task StartAsync(CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Initializing Foundry Local for Whisper...");
+            await InitializeFoundryManagerAsync(ct);
+
+            var catalog = await FoundryLocalManager.Instance.GetCatalogAsync(ct);
+            _model = await ResolveModelAsync(catalog);
+
+            _logger.LogInformation("Downloading Whisper model {ModelId}...", _model.Id);
+            using (var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                downloadCts.CancelAfter(DownloadTimeout);
+                await _model.DownloadAsync();
+            }
+
+            _logger.LogInformation("Loading Whisper model {ModelId}...", _model.Id);
+            using (var loadCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                loadCts.CancelAfter(LoadTimeout);
+                await _model.LoadAsync();
+            }
+
+            IsReady = true;
+            _logger.LogInformation("Whisper model ready: {ModelId}", _model.Id);
+        }
+        catch (Exception ex)
+        {
+            InitializationFailed = true;
+            ErrorMessage = ex.Message;
+            _logger.LogError(ex, "Whisper initialization failed");
+        }
+    }
+
+    public async Task StopAsync(CancellationToken ct)
+    {
+        if (IsReady && _model is not null)
+        {
+            _logger.LogInformation("Unloading Whisper model {ModelId}", _model.Id);
+            try { await _model.UnloadAsync(); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Error unloading Whisper model"); }
+        }
+    }
+
     public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(audioFilePath);
-        await EnsureInitializedAsync(ct);
+        EnsureReady();
 
         var extension = Path.GetExtension(audioFilePath).ToLowerInvariant();
         var fileToTranscribe = audioFilePath;
@@ -77,36 +126,35 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         }
     }
 
-    private async Task EnsureInitializedAsync(CancellationToken ct)
+    public async ValueTask DisposeAsync()
     {
-        if (_initialized) return;
+        if (IsReady && _model is not null)
+        {
+            try { await _model.UnloadAsync(); }
+            catch { /* best-effort cleanup */ }
+        }
+    }
 
-        await _initLock.WaitAsync(ct);
+    private void EnsureReady()
+    {
+        if (IsReady) return;
+        if (InitializationFailed)
+            throw new InvalidOperationException($"Whisper is not available: {ErrorMessage}");
+        throw new InvalidOperationException("Whisper model is still initializing");
+    }
+
+    private async Task InitializeFoundryManagerAsync(CancellationToken ct)
+    {
         try
         {
-            if (_initialized) return;
-
-            _logger.LogInformation("Initializing Foundry Local for Whisper...");
-
-            try { _ = FoundryLocalManager.Instance; }
-            catch (FoundryLocalException)
-            {
-                var config = new Configuration { AppName = "iaw" };
-                await FoundryLocalManager.CreateAsync(config, _logger);
-            }
-
-            var catalog = await FoundryLocalManager.Instance.GetCatalogAsync(ct);
-            _model = await ResolveModelAsync(catalog);
-
-            await _model.DownloadAsync();
-            await _model.LoadAsync();
-
-            _initialized = true;
-            _logger.LogInformation("Whisper model loaded: {ModelId}", _model.Id);
+            _ = FoundryLocalManager.Instance;
+            _logger.LogDebug("Foundry Local manager already initialized");
         }
-        finally
+        catch (FoundryLocalException)
         {
-            _initLock.Release();
+            _logger.LogInformation("Creating new Foundry Local manager...");
+            var config = new Configuration { AppName = "iaw" };
+            await FoundryLocalManager.CreateAsync(config, _logger);
         }
     }
 
@@ -117,36 +165,26 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
         if (!string.IsNullOrEmpty(configuredId))
         {
             var configured = await catalog.GetModelAsync(configuredId);
-            if (configured is not null) return configured;
-            _logger.LogWarning("Configured whisper model '{ModelId}' not found, falling back", configuredId);
+            if (configured is not null)
+            {
+                _logger.LogInformation("Using configured Whisper model: {ModelId}", configuredId);
+                return configured;
+            }
+            _logger.LogWarning("Configured whisper model '{ModelId}' not found in catalog, falling back", configuredId);
         }
 
         foreach (var whisperModel in WhisperModel.All.OrderByDescending(m => m.Priority))
         {
             var found = await catalog.GetModelAsync(whisperModel.Id);
-            if (found is not null) return found;
+            if (found is not null)
+            {
+                _logger.LogInformation("Resolved Whisper model via fallback: {ModelId}", found.Id);
+                return found;
+            }
         }
 
         throw new InvalidOperationException(
             "No whisper model found in Foundry Local catalog. " +
             $"Expected one of: {string.Join(", ", WhisperModel.All.Select(m => m.Id))}");
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await _initLock.WaitAsync();
-        try
-        {
-            if (_initialized && _model is not null)
-            {
-                _logger.LogInformation("Unloading Whisper model {ModelId}", _model.Id);
-                await _model.UnloadAsync();
-            }
-        }
-        finally
-        {
-            _initLock.Release();
-            _initLock.Dispose();
-        }
     }
 }
