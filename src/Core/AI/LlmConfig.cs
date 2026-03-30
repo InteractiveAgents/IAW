@@ -10,4 +10,9 @@ public static class LlmConfig
     public const string GitHubToken = "GitHub:Token";
     public const string WhisperEndpoint = "AI:Whisper:Endpoint";
     public const string WhisperModelId = "AI:Whisper:ModelId";
+
+    public const string EmbeddingModelId = "AI:Embedding:ModelId";
+    public const string EmbeddingProvider = "AI:Embedding:Provider";
+    public const string EmbeddingServiceKey = "AI:Embedding:ServiceKey";
+    public const string EmbeddingDimensions = "AI:Embedding:Dimensions";
 }
