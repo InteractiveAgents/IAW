@@ -2,6 +2,8 @@ using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Telegram;
 using Telegram.BotAPI;
+using Telegram.BotAPI.AvailableMethods;
+using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
 
 namespace TelegramClient;
@@ -36,10 +38,33 @@ public sealed class WebhookSetupService(
                 cancellationToken: ct);
 
             logger.LogInformation("Webhook registered: {Url}", webhookUrl);
+
+            await RegisterBotCommandsAsync(ct);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to set webhook at {Url}", webhookUrl);
+        }
+    }
+
+    private async Task RegisterBotCommandsAsync(CancellationToken ct)
+    {
+        try
+        {
+            BotCommand[] commands =
+            [
+                new("/start", "Set up topics and get started"),
+                new("/newchat", "Start a fresh conversation"),
+                new("/clear", "Reset conversation in current topic"),
+                new("/status", "Show agent and system status"),
+                new("/cleanup", "Clean up old messages"),
+            ];
+            await botClient.SetMyCommandsAsync(commands, cancellationToken: ct);
+            logger.LogInformation("Registered {Count} bot commands", commands.Length);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to register bot commands");
         }
     }
 
