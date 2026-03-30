@@ -83,7 +83,10 @@
       "Bash(npm search:*)",
       "Bash(npx -y @microsoft/learn-cli@latest)",
       "Bash(npx -y @microsoft/learn-cli@latest --help)",
-      "Bash(npx -y @microsoft/learn-cli@latest doctor)"
+      "Bash(npx -y @microsoft/learn-cli@latest doctor)",
+      "Bash(xargs grep:*)",
+      "mcp__iaw__agent_list_all",
+      "mcp__iaw__agent_send_message"
     ]
   },
   "enableAllProjectMcpServers": true,
