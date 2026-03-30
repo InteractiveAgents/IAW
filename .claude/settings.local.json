@@ -90,7 +90,11 @@
       "mcp__microsoft-learn__microsoft_docs_search",
       "mcp__microsoft-learn__microsoft_docs_fetch",
       "mcp__microsoft-learn__microsoft_code_sample_search",
-      "WebFetch(domain:docs.github.com)"
+      "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:github.blog)",
+      "Skill(code-review:code-review)",
+      "Bash(sed 's/^diff --git a\\\\\\(.*\\\\\\) b\\\\1$/\\\\1/')",
+      "Bash(gh repo:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
