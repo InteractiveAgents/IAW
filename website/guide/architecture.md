@@ -2,6 +2,8 @@
 
 This page covers the v0.2.0 agent class hierarchy, communication patterns, orchestration pipeline, persistence, context providers, and the agent registry.
 
+<ArchitectureDiagram />
+
 ## Three-Tier Hierarchy
 
 ```

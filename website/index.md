@@ -18,7 +18,7 @@ hero:
 
 ---
 
-<BehaviorTabs />
+<ArchitectureDiagram />
 
 ## Quick Start
 
