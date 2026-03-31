@@ -12,7 +12,8 @@ interface ArrowDef {
   y1: number
   x2: number
   y2: number
-  nodes: string[]
+  from: string
+  to: string
   label?: string
   labelX?: number
   labelY?: number
@@ -122,24 +123,24 @@ const nodes: Record<string, DiagramNode> = {
 }
 
 const arrows: ArrowDef[] = [
-  { x1: 140, y1: 58, x2: 330, y2: 98, nodes: ['telegram', 'thread'] },
-  { x1: 410, y1: 58, x2: 400, y2: 98, nodes: ['mcp', 'thread'] },
-  { x1: 680, y1: 58, x2: 470, y2: 98, nodes: ['devui', 'thread'] },
+  { x1: 140, y1: 58, x2: 330, y2: 98, from: 'telegram', to: 'thread' },
+  { x1: 410, y1: 58, x2: 400, y2: 98, from: 'mcp', to: 'thread' },
+  { x1: 680, y1: 58, x2: 470, y2: 98, from: 'devui', to: 'thread' },
   {
-    x1: 290, y1: 158, x2: 162, y2: 210, nodes: ['thread', 'direct'],
+    x1: 290, y1: 158, x2: 162, y2: 210, from: 'thread', to: 'direct',
     label: 'SendToAgent (1 agent)', labelX: 190, labelY: 177,
   },
   {
-    x1: 460, y1: 158, x2: 445, y2: 210, nodes: ['thread', 'selector'],
+    x1: 460, y1: 158, x2: 445, y2: 210, from: 'thread', to: 'selector',
     label: 'Orchestrate (N agents)', labelX: 520, labelY: 177,
   },
-  { x1: 540, y1: 245, x2: 575, y2: 245, nodes: ['selector', 'orchestrator'] },
-  { x1: 620, y1: 128, x2: 650, y2: 128, nodes: ['thread', 'telegramui'], dashed: true },
-  { x1: 162, y1: 280, x2: 162, y2: 320, nodes: ['direct'] },
-  { x1: 680, y1: 280, x2: 680, y2: 320, nodes: ['orchestrator'] },
-  { x1: 150, y1: 480, x2: 150, y2: 520, nodes: ['aspire'] },
-  { x1: 410, y1: 480, x2: 410, y2: 520, nodes: ['providers'] },
-  { x1: 670, y1: 480, x2: 670, y2: 520, nodes: ['state'] },
+  { x1: 540, y1: 245, x2: 575, y2: 245, from: 'selector', to: 'orchestrator' },
+  { x1: 620, y1: 128, x2: 650, y2: 128, from: 'thread', to: 'telegramui', dashed: true },
+  { x1: 162, y1: 280, x2: 162, y2: 320, from: 'direct', to: 'cluster' },
+  { x1: 680, y1: 280, x2: 680, y2: 320, from: 'orchestrator', to: 'cluster' },
+  { x1: 150, y1: 480, x2: 150, y2: 520, from: 'cluster', to: 'aspire' },
+  { x1: 410, y1: 480, x2: 410, y2: 520, from: 'cluster', to: 'providers' },
+  { x1: 670, y1: 480, x2: 670, y2: 520, from: 'cluster', to: 'state' },
 ]
 
 const wrapperRef = ref<HTMLElement | null>(null)
@@ -185,15 +186,17 @@ function nodeClass(id: string): string {
   return a === id ? 'node node-active' : 'node node-dimmed'
 }
 
-function arrowMod(connectedNodes: string[]): string {
+function arrowMod(from: string, to: string): string {
   const a = activeNode.value
   if (!a) return ''
-  return connectedNodes.includes(a) ? 'arrow-active' : 'arrow-dimmed'
+  if (a === from) return 'arrow-active'
+  if (a === to) return 'arrow-incoming'
+  return 'arrow-dimmed'
 }
 
-function arrowMarker(connectedNodes: string[]): string {
+function arrowMarker(from: string): string {
   const a = activeNode.value
-  return a && connectedNodes.includes(a) ? 'url(#ah-brand)' : 'url(#ah)'
+  return a === from ? 'url(#ah-brand)' : 'url(#ah)'
 }
 </script>
 
@@ -209,17 +212,13 @@ function arrowMarker(connectedNodes: string[]): string {
           markerWidth="8" markerHeight="6" orient="auto">
           <path d="M0,0 L10,3.5 L0,7Z" class="marker-brand" />
         </marker>
-        <linearGradient id="active-grad" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="var(--vp-c-brand-soft)" />
-          <stop offset="100%" stop-color="var(--vp-c-bg-soft)" />
-        </linearGradient>
       </defs>
 
       <!-- Arrows (painted first, behind nodes) -->
       <g class="row row-arrows">
-        <g v-for="(a, i) in arrows" :key="i" :class="['arrow-group', arrowMod(a.nodes)]">
+        <g v-for="(a, i) in arrows" :key="i" :class="['arrow-group', arrowMod(a.from, a.to)]">
           <line :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2"
-            class="arrow-line" :marker-end="arrowMarker(a.nodes)"
+            class="arrow-line" :marker-end="arrowMarker(a.from)"
             :stroke-dasharray="a.dashed ? '5 3' : undefined" />
           <text v-if="a.label" :x="a.labelX" :y="a.labelY"
             class="arrow-label">{{ a.label }}</text>
@@ -481,6 +480,10 @@ function arrowMarker(connectedNodes: string[]): string {
   font-weight: 500;
 }
 
+.arrow-incoming {
+  opacity: 0.45;
+}
+
 .arrow-dimmed {
   opacity: 0.2;
 }
@@ -549,7 +552,6 @@ function arrowMarker(connectedNodes: string[]): string {
 }
 
 .node-active rect {
-  fill: url(#active-grad);
   stroke: var(--vp-c-brand-1);
   stroke-width: 2;
   animation: glowPulse 2.2s ease-in-out infinite;
