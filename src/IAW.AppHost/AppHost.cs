@@ -29,8 +29,10 @@ var iaw = builder.AddIAW("iaw")
     // --- Ollama (local, 3060 Ti / 8GB VRAM) ---
     .WithLLM<OllamaModels.Qwen25_7B>()
     .WithEmbedding<OllamaModels.MxbaiEmbedLarge>()
-    .WithVoice2Text<WhisperLargeV3Turbo>()
-    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI(op => op.WithLifetime(ContainerLifetime.Persistent)));
+    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI(op => op.WithLifetime(ContainerLifetime.Persistent)))
+
+    // --- Local voice to text via Whisper with fallback to CPU in case of CUDA runtime issues ---
+    .WithVoice2Text<WhisperLargeV3Turbo>();
 
 var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
     .WithReference(iaw)
