@@ -94,7 +94,12 @@
       "WebFetch(domain:github.blog)",
       "Skill(code-review:code-review)",
       "Bash(sed 's/^diff --git a\\\\\\(.*\\\\\\) b\\\\1$/\\\\1/')",
-      "Bash(gh repo:*)"
+      "Bash(gh repo:*)",
+      "Bash(nslookup iaw.dev.localhost)",
+      "Bash(nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv,noheader)",
+      "Bash(pip show:*)",
+      "Bash(foundry model:*)",
+      "Bash(foundry-local model:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
