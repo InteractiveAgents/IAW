@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 
 interface DiagramNode {
   label: string
@@ -142,9 +142,24 @@ const arrows: ArrowDef[] = [
   { x1: 670, y1: 480, x2: 670, y2: 520, nodes: ['state'] },
 ]
 
+const wrapperRef = ref<HTMLElement | null>(null)
+const visible = ref(false)
 const hoveredNode = ref<string | null>(null)
 const lockedNode = ref<string | null>(null)
 const activeNode = computed(() => lockedNode.value ?? hoveredNode.value)
+
+onMounted(() => {
+  const observer = new IntersectionObserver(
+    ([entry]) => {
+      if (entry.isIntersecting) {
+        visible.value = true
+        observer.disconnect()
+      }
+    },
+    { threshold: 0.15 },
+  )
+  if (wrapperRef.value) observer.observe(wrapperRef.value)
+})
 
 function onEnter(id: string) {
   if (!lockedNode.value) hoveredNode.value = id
@@ -183,7 +198,7 @@ function arrowMarker(connectedNodes: string[]): string {
 </script>
 
 <template>
-  <div class="arch-wrapper">
+  <div ref="wrapperRef" class="arch-wrapper" :class="{ visible }">
     <svg class="arch-svg" viewBox="0 0 820 590" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <marker id="ah" viewBox="0 0 10 7" refX="10" refY="3.5"
@@ -194,186 +209,204 @@ function arrowMarker(connectedNodes: string[]): string {
           markerWidth="8" markerHeight="6" orient="auto">
           <path d="M0,0 L10,3.5 L0,7Z" class="marker-brand" />
         </marker>
+        <linearGradient id="active-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="var(--vp-c-brand-soft)" />
+          <stop offset="100%" stop-color="var(--vp-c-bg-soft)" />
+        </linearGradient>
       </defs>
 
       <!-- Arrows (painted first, behind nodes) -->
-      <g v-for="(a, i) in arrows" :key="i" :class="['arrow-group', arrowMod(a.nodes)]">
-        <line :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2"
-          class="arrow-line" :marker-end="arrowMarker(a.nodes)"
-          :stroke-dasharray="a.dashed ? '5 3' : undefined" />
-        <text v-if="a.label" :x="a.labelX" :y="a.labelY"
-          class="arrow-label">{{ a.label }}</text>
+      <g class="row row-arrows">
+        <g v-for="(a, i) in arrows" :key="i" :class="['arrow-group', arrowMod(a.nodes)]">
+          <line :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2"
+            class="arrow-line" :marker-end="arrowMarker(a.nodes)"
+            :stroke-dasharray="a.dashed ? '5 3' : undefined" />
+          <text v-if="a.label" :x="a.labelX" :y="a.labelY"
+            class="arrow-label">{{ a.label }}</text>
+        </g>
       </g>
-
-      <!-- ROW 4 cluster border (behind inner boxes) -->
-      <rect class="cluster-bg" x="15" y="320" width="790" height="160" rx="10" />
-      <rect class="cluster-border" x="15" y="320" width="790" height="160" rx="10" />
-      <rect class="cluster-label-bg" x="310" y="311" width="200" height="18" rx="3" />
-      <text x="410" y="324" class="cluster-title">Agent Cluster (Orleans Silo)</text>
 
       <!-- ==================== ROW 1: Entry Points ==================== -->
-      <g :class="nodeClass('telegram')"
-        @mouseenter="onEnter('telegram')" @mouseleave="onLeave"
-        @click="onClick('telegram')">
-        <rect x="40" y="10" width="200" height="48" rx="8" />
-        <text x="140" y="38" class="node-title">Telegram Bot</text>
-      </g>
+      <g class="row row-1">
+        <g :class="nodeClass('telegram')"
+          @mouseenter="onEnter('telegram')" @mouseleave="onLeave"
+          @click="onClick('telegram')">
+          <rect x="40" y="10" width="200" height="48" rx="8" />
+          <text x="140" y="38" class="node-title">Telegram Bot</text>
+        </g>
 
-      <g :class="nodeClass('mcp')"
-        @mouseenter="onEnter('mcp')" @mouseleave="onLeave"
-        @click="onClick('mcp')">
-        <rect x="310" y="10" width="200" height="48" rx="8" />
-        <text x="410" y="30" class="node-title">MCP Server</text>
-        <text x="410" y="48" class="node-sub">:5300</text>
-      </g>
+        <g :class="nodeClass('mcp')"
+          @mouseenter="onEnter('mcp')" @mouseleave="onLeave"
+          @click="onClick('mcp')">
+          <rect x="310" y="10" width="200" height="48" rx="8" />
+          <text x="410" y="30" class="node-title">MCP Server</text>
+          <text x="410" y="48" class="node-sub">:5300</text>
+        </g>
 
-      <g :class="nodeClass('devui')"
-        @mouseenter="onEnter('devui')" @mouseleave="onLeave"
-        @click="onClick('devui')">
-        <rect x="580" y="10" width="200" height="48" rx="8" />
-        <text x="680" y="30" class="node-title">DevUI</text>
-        <text x="680" y="48" class="node-sub">Blazor</text>
+        <g :class="nodeClass('devui')"
+          @mouseenter="onEnter('devui')" @mouseleave="onLeave"
+          @click="onClick('devui')">
+          <rect x="580" y="10" width="200" height="48" rx="8" />
+          <text x="680" y="30" class="node-title">DevUI</text>
+          <text x="680" y="48" class="node-sub">Blazor</text>
+        </g>
       </g>
 
       <!-- ==================== ROW 2: Orchestration ==================== -->
-      <g :class="nodeClass('thread')"
-        @mouseenter="onEnter('thread')" @mouseleave="onLeave"
-        @click="onClick('thread')">
-        <rect x="180" y="98" width="440" height="60" rx="8" />
-        <text x="400" y="122" class="node-title">ThreadAgent (Orleans Grain)</text>
-        <text x="400" y="142" class="node-sub">context: User \u00b7 RAG \u00b7 Memory</text>
-      </g>
+      <g class="row row-2">
+        <g :class="nodeClass('thread')"
+          @mouseenter="onEnter('thread')" @mouseleave="onLeave"
+          @click="onClick('thread')">
+          <rect x="180" y="98" width="440" height="60" rx="8" />
+          <text x="400" y="122" class="node-title">ThreadAgent (Orleans Grain)</text>
+          <text x="400" y="142" class="node-sub">context: User &#xb7; RAG &#xb7; Memory</text>
+        </g>
 
-      <g :class="nodeClass('telegramui')"
-        @mouseenter="onEnter('telegramui')" @mouseleave="onLeave"
-        @click="onClick('telegramui')">
-        <rect x="650" y="98" width="140" height="60" rx="8" />
-        <text x="720" y="122" class="node-title-sm">TelegramUI</text>
-        <text x="720" y="142" class="node-sub">Formatter</text>
+        <g :class="nodeClass('telegramui')"
+          @mouseenter="onEnter('telegramui')" @mouseleave="onLeave"
+          @click="onClick('telegramui')">
+          <rect x="650" y="98" width="140" height="60" rx="8" />
+          <text x="720" y="122" class="node-title-sm">TelegramUI</text>
+          <text x="720" y="142" class="node-sub">Formatter</text>
+        </g>
       </g>
 
       <!-- ==================== ROW 3: Routing ==================== -->
-      <g :class="nodeClass('direct')"
-        @mouseenter="onEnter('direct')" @mouseleave="onLeave"
-        @click="onClick('direct')">
-        <rect x="25" y="210" width="275" height="70" rx="8" />
-        <text x="162" y="238" class="node-title">Direct Call</text>
-        <text x="162" y="258" class="node-sub-mono">IAgent.GetResponse()</text>
-      </g>
+      <g class="row row-3">
+        <g :class="nodeClass('direct')"
+          @mouseenter="onEnter('direct')" @mouseleave="onLeave"
+          @click="onClick('direct')">
+          <rect x="25" y="210" width="275" height="70" rx="8" />
+          <text x="162" y="238" class="node-title">Direct Call</text>
+          <text x="162" y="258" class="node-sub-mono">IAgent.GetResponse()</text>
+        </g>
 
-      <g :class="nodeClass('selector')"
-        @mouseenter="onEnter('selector')" @mouseleave="onLeave"
-        @click="onClick('selector')">
-        <rect x="345" y="210" width="195" height="70" rx="8" />
-        <text x="442" y="238" class="node-title">AgentSelector</text>
-        <text x="442" y="258" class="node-sub">LLM-based routing</text>
-      </g>
+        <g :class="nodeClass('selector')"
+          @mouseenter="onEnter('selector')" @mouseleave="onLeave"
+          @click="onClick('selector')">
+          <rect x="345" y="210" width="195" height="70" rx="8" />
+          <text x="442" y="238" class="node-title">AgentSelector</text>
+          <text x="442" y="258" class="node-sub">LLM-based routing</text>
+        </g>
 
-      <g :class="nodeClass('orchestrator')"
-        @mouseenter="onEnter('orchestrator')" @mouseleave="onLeave"
-        @click="onClick('orchestrator')">
-        <rect x="575" y="210" width="210" height="70" rx="8" />
-        <text x="680" y="232" class="node-title-sm">CodeOrchestrator</text>
-        <text x="680" y="252" class="node-sub">ScriptGen \u2192 Roslyn</text>
-        <text x="680" y="268" class="node-sub">\u2192 dotnet run</text>
+        <g :class="nodeClass('orchestrator')"
+          @mouseenter="onEnter('orchestrator')" @mouseleave="onLeave"
+          @click="onClick('orchestrator')">
+          <rect x="575" y="210" width="210" height="70" rx="8" />
+          <text x="680" y="232" class="node-title-sm">CodeOrchestrator</text>
+          <text x="680" y="252" class="node-sub">ScriptGen &#x2192; Roslyn</text>
+          <text x="680" y="268" class="node-sub">&#x2192; dotnet run</text>
+        </g>
       </g>
 
       <!-- ==================== ROW 4: Agent Cluster ==================== -->
-      <g :class="nodeClass('infrastructure')"
-        @mouseenter="onEnter('infrastructure')" @mouseleave="onLeave"
-        @click="onClick('infrastructure')">
-        <rect x="30" y="350" width="148" height="115" rx="6" />
-        <text x="104" y="380" class="node-title-sm">Infrastructure</text>
-        <text x="104" y="400" class="node-sub-sm">Shell \u00b7 FS \u00b7 Git</text>
-        <text x="104" y="416" class="node-sub-sm">Aspire \u00b7 IAWSystem</text>
-      </g>
+      <g class="row row-4">
+        <rect class="cluster-bg" x="15" y="320" width="790" height="160" rx="10" />
+        <rect class="cluster-border" x="15" y="320" width="790" height="160" rx="10" />
+        <rect class="cluster-label-bg" x="310" y="311" width="200" height="18" rx="3" />
+        <text x="410" y="324" class="cluster-title">Agent Cluster (Orleans Silo)</text>
 
-      <g :class="nodeClass('csharp')"
-        @mouseenter="onEnter('csharp')" @mouseleave="onLeave"
-        @click="onClick('csharp')">
-        <rect x="193" y="350" width="140" height="115" rx="6" />
-        <text x="263" y="380" class="node-title-sm">C#</text>
-        <text x="263" y="400" class="node-sub-sm">Roslyn \u00b7 DotNet</text>
-        <text x="263" y="416" class="node-sub-sm">GitHub \u00b7 NuGet</text>
-      </g>
+        <g :class="nodeClass('infrastructure')"
+          @mouseenter="onEnter('infrastructure')" @mouseleave="onLeave"
+          @click="onClick('infrastructure')">
+          <rect x="30" y="350" width="148" height="115" rx="6" />
+          <text x="104" y="380" class="node-title-sm">Infrastructure</text>
+          <text x="104" y="400" class="node-sub-sm">Shell &#xb7; FS &#xb7; Git</text>
+          <text x="104" y="416" class="node-sub-sm">Aspire &#xb7; IAWSystem</text>
+        </g>
 
-      <g :class="nodeClass('memory')"
-        @mouseenter="onEnter('memory')" @mouseleave="onLeave"
-        @click="onClick('memory')">
-        <rect x="348" y="350" width="140" height="115" rx="6" />
-        <text x="418" y="380" class="node-title-sm">Memory</text>
-        <text x="418" y="400" class="node-sub-sm">5 agents</text>
-        <text x="418" y="416" class="node-sub-sm">Qdrant embeddings</text>
-      </g>
+        <g :class="nodeClass('csharp')"
+          @mouseenter="onEnter('csharp')" @mouseleave="onLeave"
+          @click="onClick('csharp')">
+          <rect x="193" y="350" width="140" height="115" rx="6" />
+          <text x="263" y="380" class="node-title-sm">C#</text>
+          <text x="263" y="400" class="node-sub-sm">Roslyn &#xb7; DotNet</text>
+          <text x="263" y="416" class="node-sub-sm">GitHub &#xb7; NuGet</text>
+        </g>
 
-      <g :class="nodeClass('llm')"
-        @mouseenter="onEnter('llm')" @mouseleave="onLeave"
-        @click="onClick('llm')">
-        <rect x="503" y="350" width="148" height="115" rx="6" />
-        <text x="577" y="380" class="node-title-sm">LLM Wrappers</text>
-        <text x="577" y="400" class="node-sub-sm">14 model agents</text>
-        <text x="577" y="416" class="node-sub-sm">Sonnet \u00b7 GPT \u00b7 \u2026</text>
-      </g>
+        <g :class="nodeClass('memory')"
+          @mouseenter="onEnter('memory')" @mouseleave="onLeave"
+          @click="onClick('memory')">
+          <rect x="348" y="350" width="140" height="115" rx="6" />
+          <text x="418" y="380" class="node-title-sm">Memory</text>
+          <text x="418" y="400" class="node-sub-sm">5 agents</text>
+          <text x="418" y="416" class="node-sub-sm">Qdrant embeddings</text>
+        </g>
 
-      <g :class="nodeClass('knowledge')"
-        @mouseenter="onEnter('knowledge')" @mouseleave="onLeave"
-        @click="onClick('knowledge')">
-        <rect x="666" y="350" width="125" height="52" rx="6" />
-        <text x="728" y="380" class="node-title-sm">Knowledge</text>
-      </g>
+        <g :class="nodeClass('llm')"
+          @mouseenter="onEnter('llm')" @mouseleave="onLeave"
+          @click="onClick('llm')">
+          <rect x="503" y="350" width="148" height="115" rx="6" />
+          <text x="577" y="380" class="node-title-sm">LLM Wrappers</text>
+          <text x="577" y="400" class="node-sub-sm">14 model agents</text>
+          <text x="577" y="416" class="node-sub-sm">Sonnet &#xb7; GPT &#xb7; &#x2026;</text>
+        </g>
 
-      <g :class="nodeClass('userprofile')"
-        @mouseenter="onEnter('userprofile')" @mouseleave="onLeave"
-        @click="onClick('userprofile')">
-        <rect x="666" y="413" width="125" height="52" rx="6" />
-        <text x="728" y="443" class="node-title-sm">UserProfile</text>
+        <g :class="nodeClass('knowledge')"
+          @mouseenter="onEnter('knowledge')" @mouseleave="onLeave"
+          @click="onClick('knowledge')">
+          <rect x="666" y="350" width="125" height="52" rx="6" />
+          <text x="728" y="380" class="node-title-sm">Knowledge</text>
+        </g>
+
+        <g :class="nodeClass('userprofile')"
+          @mouseenter="onEnter('userprofile')" @mouseleave="onLeave"
+          @click="onClick('userprofile')">
+          <rect x="666" y="413" width="125" height="52" rx="6" />
+          <text x="728" y="443" class="node-title-sm">UserProfile</text>
+        </g>
       </g>
 
       <!-- ==================== ROW 5: Infrastructure ==================== -->
-      <g :class="nodeClass('aspire')"
-        @mouseenter="onEnter('aspire')" @mouseleave="onLeave"
-        @click="onClick('aspire')">
-        <rect x="35" y="520" width="230" height="55" rx="8" />
-        <text x="150" y="542" class="node-title">Aspire + OTel</text>
-        <text x="150" y="560" class="node-sub">Distributed orchestration</text>
-      </g>
+      <g class="row row-5">
+        <g :class="nodeClass('aspire')"
+          @mouseenter="onEnter('aspire')" @mouseleave="onLeave"
+          @click="onClick('aspire')">
+          <rect x="35" y="520" width="230" height="55" rx="8" />
+          <text x="150" y="542" class="node-title">Aspire + OTel</text>
+          <text x="150" y="560" class="node-sub">Distributed orchestration</text>
+        </g>
 
-      <g :class="nodeClass('providers')"
-        @mouseenter="onEnter('providers')" @mouseleave="onLeave"
-        @click="onClick('providers')">
-        <rect x="295" y="520" width="230" height="55" rx="8" />
-        <text x="410" y="538" class="node-title">LLM Providers</text>
-        <text x="410" y="558" class="node-sub">OpenAI \u00b7 Anthropic \u00b7 Ollama</text>
-      </g>
+        <g :class="nodeClass('providers')"
+          @mouseenter="onEnter('providers')" @mouseleave="onLeave"
+          @click="onClick('providers')">
+          <rect x="295" y="520" width="230" height="55" rx="8" />
+          <text x="410" y="538" class="node-title">LLM Providers</text>
+          <text x="410" y="558" class="node-sub">OpenAI &#xb7; Anthropic &#xb7; Ollama</text>
+        </g>
 
-      <g :class="nodeClass('state')"
-        @mouseenter="onEnter('state')" @mouseleave="onLeave"
-        @click="onClick('state')">
-        <rect x="555" y="520" width="230" height="55" rx="8" />
-        <text x="670" y="538" class="node-title">Durable State</text>
-        <text x="670" y="558" class="node-sub">JournaledGrain + Qdrant</text>
+        <g :class="nodeClass('state')"
+          @mouseenter="onEnter('state')" @mouseleave="onLeave"
+          @click="onClick('state')">
+          <rect x="555" y="520" width="230" height="55" rx="8" />
+          <text x="670" y="538" class="node-title">Durable State</text>
+          <text x="670" y="558" class="node-sub">JournaledGrain + Qdrant</text>
+        </g>
       </g>
     </svg>
 
     <!-- Description Panel -->
     <div class="desc-panel" :class="{ 'desc-active': activeNode }">
-      <template v-if="activeNode">
-        <div class="desc-header">
-          <h3>{{ nodes[activeNode].label }}</h3>
-          <span v-if="lockedNode" class="desc-unlock">click to unlock</span>
+      <Transition name="panel" mode="out-in">
+        <div v-if="activeNode" :key="activeNode" class="panel-content">
+          <div class="desc-header">
+            <h3>{{ nodes[activeNode].label }}</h3>
+            <span v-if="lockedNode" class="desc-unlock">click to unlock</span>
+          </div>
+          <p>{{ nodes[activeNode].description }}</p>
+          <a v-if="nodes[activeNode].link" :href="nodes[activeNode].link"
+            class="desc-link">Learn more &rarr;</a>
         </div>
-        <p>{{ nodes[activeNode].description }}</p>
-        <a v-if="nodes[activeNode].link" :href="nodes[activeNode].link"
-          class="desc-link">Learn more &rarr;</a>
-      </template>
-      <p v-else class="desc-default">
-        &#x1F446; Hover any component to explore &middot; click to lock
-      </p>
+        <p v-else key="default" class="desc-default">
+          &#x1F446; Hover any component to explore &#xb7; click to lock
+        </p>
+      </Transition>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ==================== Layout ==================== */
 .arch-wrapper {
   max-width: 900px;
   margin: 32px auto;
@@ -387,11 +420,40 @@ function arrowMarker(connectedNodes: string[]): string {
   display: block;
 }
 
-/* ---- Arrow styles ---- */
+/* ==================== Entrance animation ==================== */
+.row {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+.visible .row {
+  animation: fadeSlideUp 0.55s ease-out forwards;
+}
+
+.visible .row-1 { animation-delay: 0s; }
+.visible .row-2 { animation-delay: 0.1s; }
+.visible .row-3 { animation-delay: 0.2s; }
+.visible .row-4 { animation-delay: 0.32s; }
+.visible .row-5 { animation-delay: 0.44s; }
+.visible .row-arrows { animation-delay: 0.55s; }
+
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==================== Arrow styles ==================== */
 .arrow-line {
   stroke: var(--vp-c-divider);
   stroke-width: 1.5;
   fill: none;
+  transition: stroke 0.25s ease, stroke-width 0.25s ease;
 }
 
 .arrow-label {
@@ -400,26 +462,34 @@ function arrowMarker(connectedNodes: string[]): string {
   font-size: 10px;
   text-anchor: middle;
   pointer-events: none;
+  transition: fill 0.25s ease;
 }
 
 .arrow-group {
-  transition: opacity 0.2s ease;
+  transition: opacity 0.3s ease;
 }
 
 .arrow-active .arrow-line {
   stroke: var(--vp-c-brand-1);
   stroke-width: 2;
+  stroke-dasharray: 8 4;
+  animation: arrowFlow 0.5s linear infinite;
 }
 
 .arrow-active .arrow-label {
   fill: var(--vp-c-brand-1);
+  font-weight: 500;
 }
 
 .arrow-dimmed {
-  opacity: 0.25;
+  opacity: 0.2;
 }
 
-/* ---- Marker fills ---- */
+@keyframes arrowFlow {
+  to { stroke-dashoffset: -12; }
+}
+
+/* ==================== Marker fills ==================== */
 .marker-fill {
   fill: var(--vp-c-divider);
 }
@@ -428,10 +498,10 @@ function arrowMarker(connectedNodes: string[]): string {
   fill: var(--vp-c-brand-1);
 }
 
-/* ---- Cluster frame ---- */
+/* ==================== Cluster frame ==================== */
 .cluster-bg {
   fill: var(--vp-c-bg-soft);
-  opacity: 0.35;
+  opacity: 0.4;
 }
 
 .cluster-border {
@@ -439,6 +509,11 @@ function arrowMarker(connectedNodes: string[]): string {
   stroke: var(--vp-c-divider);
   stroke-width: 1.5;
   stroke-dasharray: 6 4;
+  animation: clusterDash 12s linear infinite;
+}
+
+@keyframes clusterDash {
+  to { stroke-dashoffset: -40; }
 }
 
 .cluster-label-bg {
@@ -453,32 +528,48 @@ function arrowMarker(connectedNodes: string[]): string {
   font-weight: 500;
   text-anchor: middle;
   pointer-events: none;
+  letter-spacing: 0.3px;
 }
 
-/* ---- Node boxes ---- */
+/* ==================== Node boxes ==================== */
 .node {
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.3s ease;
 }
 
 .node rect {
   fill: var(--vp-c-bg-soft);
   stroke: var(--vp-c-divider);
   stroke-width: 1.5;
-  transition: stroke 0.2s ease, filter 0.2s ease;
+  transition: stroke 0.25s ease, filter 0.3s ease, fill 0.3s ease, stroke-width 0.25s ease;
+}
+
+.node:hover rect {
+  stroke: var(--vp-c-text-3);
 }
 
 .node-active rect {
+  fill: url(#active-grad);
   stroke: var(--vp-c-brand-1);
   stroke-width: 2;
-  filter: drop-shadow(0 0 6px var(--vp-c-brand-soft));
+  animation: glowPulse 2.2s ease-in-out infinite;
 }
 
 .node-dimmed {
-  opacity: 0.3;
+  opacity: 0.25;
 }
 
-/* ---- Node text ---- */
+@keyframes glowPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px var(--vp-c-brand-soft));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px var(--vp-c-brand-soft))
+           drop-shadow(0 0 3px var(--vp-c-brand-1));
+  }
+}
+
+/* ==================== Node text ==================== */
 .node-title {
   fill: var(--vp-c-text-1);
   font-family: var(--vp-font-family-base);
@@ -521,19 +612,26 @@ function arrowMarker(connectedNodes: string[]): string {
   pointer-events: none;
 }
 
-/* ---- Description panel ---- */
+/* ==================== Description panel ==================== */
 .desc-panel {
   margin-top: 16px;
   padding: 16px 20px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--vp-c-divider);
   background: var(--vp-c-bg-soft);
   min-height: 72px;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.visible .desc-panel {
+  animation: fadeSlideUp 0.5s ease-out 0.7s forwards;
 }
 
 .desc-active {
   border-color: var(--vp-c-brand-1);
+  box-shadow: 0 0 16px -4px var(--vp-c-brand-soft);
 }
 
 .desc-header {
@@ -563,6 +661,7 @@ function arrowMarker(connectedNodes: string[]): string {
   color: var(--vp-c-brand-1);
   text-decoration: none;
   font-weight: 500;
+  transition: color 0.2s ease;
 }
 
 .desc-link:hover {
@@ -580,5 +679,23 @@ function arrowMarker(connectedNodes: string[]): string {
   color: var(--vp-c-text-3) !important;
   font-size: 14px;
   padding: 8px 0;
+}
+
+/* ==================== Panel transitions ==================== */
+.panel-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.panel-leave-active {
+  transition: opacity 0.12s ease;
+}
+
+.panel-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.panel-leave-to {
+  opacity: 0;
 }
 </style>
