@@ -14,6 +14,7 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
     private readonly IAudioConverter? _audioConverter;
     private readonly ILogger<FoundryLocalTranscriptionService> _logger;
     private Model? _model;
+    private ModelVariant? _cpuFallbackVariant;
     private bool _cudaFailed;
 
     public bool IsReady { get; private set; }
@@ -59,12 +60,18 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
 
     public async Task StopAsync(CancellationToken ct)
     {
-        if (_model is not null)
+        var activeId = _cpuFallbackVariant?.Id ?? _model?.Id;
+        if (activeId is null) return;
+
+        _logger.LogInformation("Unloading Whisper model {ModelId}", activeId);
+        try
         {
-            _logger.LogInformation("Unloading Whisper model {ModelId}", _model.Id);
-            try { await _model.UnloadAsync(); _model = null; }
-            catch (Exception ex) { _logger.LogWarning(ex, "Error unloading Whisper model"); }
+            if (_cpuFallbackVariant is not null) await _cpuFallbackVariant.UnloadAsync();
+            else if (_model is not null) await _model.UnloadAsync();
+            _model = null;
+            _cpuFallbackVariant = null;
         }
+        catch (Exception ex) { _logger.LogWarning(ex, "Error unloading Whisper model"); }
     }
 
     public async Task<string> TranscribeAsync(string audioFilePath, CancellationToken ct = default)
@@ -119,11 +126,13 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
 
     public async ValueTask DisposeAsync()
     {
-        if (IsReady && _model is not null)
+        if (!IsReady) return;
+        try
         {
-            try { await _model.UnloadAsync(); }
-            catch { /* best-effort cleanup */ }
+            if (_cpuFallbackVariant is not null) await _cpuFallbackVariant.UnloadAsync();
+            else if (_model is not null) await _model.UnloadAsync();
         }
+        catch { /* best-effort cleanup */ }
     }
 
     private void EnsureReady()
@@ -165,7 +174,9 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
     private async Task<string> RunTranscription(string filePath, CancellationToken ct)
     {
         _logger.LogDebug("Transcribing: {Path}", filePath);
-        var client = await _model!.GetAudioClientAsync();
+        var client = _cpuFallbackVariant is not null
+            ? await _cpuFallbackVariant.GetAudioClientAsync()
+            : await _model!.GetAudioClientAsync();
         var result = new StringBuilder();
 
         await foreach (var chunk in client.TranscribeAudioStreamingAsync(filePath, ct))
@@ -179,30 +190,32 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
     private async Task FallbackToCpuVariantAsync(CancellationToken ct)
     {
         var currentId = _model!.Id;
-        var cpuId = currentId.Replace("-cuda-gpu", "-generic-cpu")
-                             .Replace("-generic-gpu", "-generic-cpu")
-                             .Replace("-openvino-gpu", "-generic-cpu");
-
-        if (cpuId == currentId)
-        {
-            _logger.LogWarning("Cannot determine CPU variant for model {ModelId}", currentId);
-            throw new InvalidOperationException($"CUDA inference failed and no CPU fallback available for {currentId}");
-        }
-
-        _logger.LogInformation("Unloading CUDA model {OldId}, loading CPU variant {NewId}", currentId, cpuId);
+        _logger.LogInformation("Unloading CUDA model {ModelId}, searching for CPU variant", currentId);
 
         try { await _model.UnloadAsync(); } catch { /* best-effort */ }
 
+        // Find a CPU variant from the model's variant list (populated by GetModelAsync)
+        var cpuVariant = _model.Variants
+            .FirstOrDefault(v => v.Id.Contains("generic-cpu", StringComparison.OrdinalIgnoreCase));
+
+        if (cpuVariant is null)
+            throw new InvalidOperationException(
+                $"CUDA inference failed and no CPU variant found for {_model.Alias ?? currentId}");
+
+        // GetModelVariantAsync resolves by full variant ID (including version)
         var catalog = await FoundryLocalManager.Instance.GetCatalogAsync(ct);
-        var cpuModel = await catalog.GetModelAsync(cpuId);
+        var cpuModel = await catalog.GetModelVariantAsync(cpuVariant.Id, ct);
 
         if (cpuModel is null)
-            throw new InvalidOperationException($"CPU variant {cpuId} not found in Foundry Local catalog");
+            throw new InvalidOperationException($"CPU variant {cpuVariant.Id} not found in Foundry Local catalog");
 
+        _logger.LogInformation("Downloading CPU variant {ModelId}...", cpuModel.Id);
         await WithTimeout(cpuModel.DownloadAsync(), DownloadTimeout, "CPU model download", ct);
+
+        _logger.LogInformation("Loading CPU variant {ModelId}...", cpuModel.Id);
         await WithTimeout(cpuModel.LoadAsync(), LoadTimeout, "CPU model load", ct);
 
-        _model = cpuModel;
+        _cpuFallbackVariant = cpuModel;
         _logger.LogInformation("CPU fallback model ready: {ModelId}", cpuModel.Id);
     }
 
