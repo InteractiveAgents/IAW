@@ -14,6 +14,7 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
     private readonly IAudioConverter? _audioConverter;
     private readonly ILogger<FoundryLocalTranscriptionService> _logger;
     private Model? _model;
+    private bool _cudaFailed;
 
     public bool IsReady { get; private set; }
     public bool InitializationFailed { get; private set; }
@@ -84,16 +85,14 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
 
         try
         {
-            _logger.LogDebug("Transcribing: {Path}", fileToTranscribe);
-            var client = await _model!.GetAudioClientAsync();
-            var result = new StringBuilder();
-
-            await foreach (var chunk in client.TranscribeAudioStreamingAsync(fileToTranscribe, ct))
-                result.Append(chunk.Text);
-
-            var transcription = result.ToString().Trim();
-            _logger.LogInformation("Transcription complete: {Length} chars", transcription.Length);
-            return transcription;
+            return await RunTranscription(fileToTranscribe, ct);
+        }
+        catch (Exception ex) when (!_cudaFailed && IsCudaError(ex))
+        {
+            _logger.LogWarning(ex, "CUDA inference failed on {ModelId}, falling back to CPU variant", _model!.Id);
+            _cudaFailed = true;
+            await FallbackToCpuVariantAsync(ct);
+            return await RunTranscription(fileToTranscribe, ct);
         }
         finally
         {
@@ -162,6 +161,55 @@ public sealed class FoundryLocalTranscriptionService : IAudioTranscriptionServic
             await FoundryLocalManager.CreateAsync(config, _logger);
         }
     }
+
+    private async Task<string> RunTranscription(string filePath, CancellationToken ct)
+    {
+        _logger.LogDebug("Transcribing: {Path}", filePath);
+        var client = await _model!.GetAudioClientAsync();
+        var result = new StringBuilder();
+
+        await foreach (var chunk in client.TranscribeAudioStreamingAsync(filePath, ct))
+            result.Append(chunk.Text);
+
+        var transcription = result.ToString().Trim();
+        _logger.LogInformation("Transcription complete: {Length} chars", transcription.Length);
+        return transcription;
+    }
+
+    private async Task FallbackToCpuVariantAsync(CancellationToken ct)
+    {
+        var currentId = _model!.Id;
+        var cpuId = currentId.Replace("-cuda-gpu", "-generic-cpu")
+                             .Replace("-generic-gpu", "-generic-cpu")
+                             .Replace("-openvino-gpu", "-generic-cpu");
+
+        if (cpuId == currentId)
+        {
+            _logger.LogWarning("Cannot determine CPU variant for model {ModelId}", currentId);
+            throw new InvalidOperationException($"CUDA inference failed and no CPU fallback available for {currentId}");
+        }
+
+        _logger.LogInformation("Unloading CUDA model {OldId}, loading CPU variant {NewId}", currentId, cpuId);
+
+        try { await _model.UnloadAsync(); } catch { /* best-effort */ }
+
+        var catalog = await FoundryLocalManager.Instance.GetCatalogAsync(ct);
+        var cpuModel = await catalog.GetModelAsync(cpuId);
+
+        if (cpuModel is null)
+            throw new InvalidOperationException($"CPU variant {cpuId} not found in Foundry Local catalog");
+
+        await WithTimeout(cpuModel.DownloadAsync(), DownloadTimeout, "CPU model download", ct);
+        await WithTimeout(cpuModel.LoadAsync(), LoadTimeout, "CPU model load", ct);
+
+        _model = cpuModel;
+        _logger.LogInformation("CPU fallback model ready: {ModelId}", cpuModel.Id);
+    }
+
+    private static bool IsCudaError(Exception ex) =>
+        ex.ToString().Contains("CUDNN", StringComparison.OrdinalIgnoreCase) ||
+        ex.ToString().Contains("CUDA", StringComparison.OrdinalIgnoreCase) ||
+        ex.GetType().Name.Contains("OnnxRuntimeGenAI", StringComparison.OrdinalIgnoreCase);
 
     private async Task<Model> ResolveModelAsync(ICatalog catalog)
     {
