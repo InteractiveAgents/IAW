@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IAW v0.0.3 — Event-Driven Architecture Review</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242836;
+  --border: #2e3348;
+  --text: #e1e4ed;
+  --text-muted: #8b90a5;
+  --accent: #6c7bff;
+  --accent2: #00d4aa;
+  --accent3: #ff6b9d;
+  --accent4: #ffd93d;
+  --accent5: #4ecdc4;
+  --success: #00d4aa;
+  --warning: #ffd93d;
+  --error: #ff6b6b;
+  --info: #6c7bff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+.container { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+
+/* Navigation */
+nav { position: sticky; top: 0; z-index: 100; background: rgba(15,17,23,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 12px 0; }
+nav .container { display: flex; align-items: center; gap: 32px; }
+nav h1 { font-size: 18px; color: var(--accent); white-space: nowrap; }
+nav .tabs { display: flex; gap: 4px; overflow-x: auto; }
+nav .tab { padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text-muted); border: none; background: none; transition: all 0.2s; white-space: nowrap; }
+nav .tab:hover { color: var(--text); background: var(--surface); }
+nav .tab.active { color: var(--accent); background: var(--surface2); }
+
+/* Sections */
+.section { display: none; padding: 32px 0; }
+.section.active { display: block; }
+h2 { font-size: 28px; margin-bottom: 8px; }
+h3 { font-size: 20px; margin: 24px 0 12px; color: var(--accent2); }
+h4 { font-size: 16px; margin: 16px 0 8px; color: var(--accent); }
+p { color: var(--text-muted); margin-bottom: 12px; }
+.subtitle { font-size: 16px; color: var(--text-muted); margin-bottom: 32px; }
+
+/* Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; margin: 16px 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: all 0.2s; }
+.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.card-icon { font-size: 24px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; background: var(--surface2); border-radius: 10px; }
+.card-title { font-size: 16px; font-weight: 600; }
+.card-subtitle { font-size: 12px; color: var(--text-muted); }
+.card-body { font-size: 14px; color: var(--text-muted); }
+
+/* Scenario */
+.scenario { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 20px 0; overflow: hidden; }
+.scenario-header { padding: 20px; cursor: pointer; display: flex; align-items: center; gap: 16px; }
+.scenario-header:hover { background: var(--surface2); }
+.scenario-num { font-size: 32px; font-weight: 800; color: var(--accent); opacity: 0.5; min-width: 48px; }
+.scenario-meta { flex: 1; }
+.scenario-title { font-size: 18px; font-weight: 600; }
+.scenario-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.scenario-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.tag { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--surface2); color: var(--text-muted); }
+.tag.broadcast { background: #6c7bff22; color: var(--accent); }
+.tag.stream { background: #00d4aa22; color: var(--accent2); }
+.tag.ledger { background: #ffd93d22; color: var(--accent4); }
+.tag.router { background: #ff6b9d22; color: var(--accent3); }
+.tag.digest { background: #4ecdc422; color: var(--accent5); }
+.scenario-body { display: none; padding: 0 20px 20px; }
+.scenario.open .scenario-body { display: block; }
+.scenario-chevron { font-size: 20px; color: var(--text-muted); transition: transform 0.2s; }
+.scenario.open .scenario-chevron { transform: rotate(90deg); }
+
+/* Timeline */
+.timeline { position: relative; padding-left: 32px; margin: 16px 0; }
+.timeline::before { content: ''; position: absolute; left: 12px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.timeline-step { position: relative; margin-bottom: 16px; padding: 12px 16px; background: var(--surface2); border-radius: 8px; border-left: 3px solid var(--accent); }
+.timeline-step::before { content: ''; position: absolute; left: -26px; top: 16px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+.timeline-step.event-broadcast { border-left-color: var(--accent); }
+.timeline-step.event-broadcast::before { background: var(--accent); }
+.timeline-step.event-stream { border-left-color: var(--accent2); }
+.timeline-step.event-stream::before { background: var(--accent2); }
+.timeline-step.event-ledger { border-left-color: var(--accent4); }
+.timeline-step.event-ledger::before { background: var(--accent4); }
+.timeline-step.event-router { border-left-color: var(--accent3); }
+.timeline-step.event-router::before { background: var(--accent3); }
+.timeline-step.event-digest { border-left-color: var(--accent5); }
+.timeline-step.event-digest::before { background: var(--accent5); }
+.step-agent { font-weight: 600; font-size: 13px; }
+.step-action { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.step-event { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-top: 4px; }
+.step-event.broadcast { background: #6c7bff22; color: var(--accent); }
+.step-event.stream { background: #00d4aa22; color: var(--accent2); }
+.step-event.ledger { background: #ffd93d22; color: var(--accent4); }
+.step-tokens { font-size: 11px; color: var(--text-muted); margin-top: 4px; opacity: 0.7; }
+
+/* Architecture diagrams */
+.arch-diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 16px 0; }
+.arch-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.arch-flow { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; justify-content: center; padding: 12px 0; }
+.arch-node { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; text-align: center; min-width: 120px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.arch-node.highlight { border-color: var(--accent); box-shadow: 0 0 12px rgba(108,123,255,0.2); }
+.arch-node.green { border-color: var(--accent2); box-shadow: 0 0 12px rgba(0,212,170,0.2); }
+.arch-node.yellow { border-color: var(--accent4); }
+.arch-node.pink { border-color: var(--accent3); }
+.arch-node-label { font-size: 12px; font-weight: 600; }
+.arch-node-sub { font-size: 10px; color: var(--text-muted); }
+.arch-arrow { display: flex; align-items: center; font-size: 20px; color: var(--text-muted); }
+
+/* Stats */
+.stats-row { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; flex: 1; min-width: 160px; }
+.stat-value { font-size: 28px; font-weight: 700; }
+.stat-value.green { color: var(--accent2); }
+.stat-value.blue { color: var(--accent); }
+.stat-value.yellow { color: var(--accent4); }
+.stat-value.red { color: var(--error); }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+td { color: var(--text); }
+tr:hover td { background: var(--surface2); }
+
+/* BDD */
+.bdd-feature { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; overflow-x: auto; }
+.bdd-keyword { color: var(--accent); font-weight: 600; }
+.bdd-given { color: var(--accent2); }
+.bdd-when { color: var(--accent4); }
+.bdd-then { color: var(--accent3); }
+.bdd-and { color: var(--text-muted); }
+.bdd-comment { color: var(--text-muted); font-style: italic; opacity: 0.7; }
+
+/* Pattern comparison */
+.pattern-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+.pattern-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+.pattern-card h4 { margin-top: 0; font-size: 15px; }
+.pattern-card .use-for { font-size: 12px; color: var(--accent2); margin: 8px 0; }
+.pattern-card .avoid-for { font-size: 12px; color: var(--error); margin: 8px 0; }
+.pattern-card ul { margin: 8px 0; padding-left: 16px; font-size: 13px; color: var(--text-muted); }
+.pattern-card li { margin: 4px 0; }
+
+/* Comparison table highlight */
+.best { background: rgba(0,212,170,0.1); }
+.worst { background: rgba(255,107,107,0.1); }
+
+/* Token calculator */
+.calc { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; }
+.calc-row { display: flex; align-items: center; gap: 12px; margin: 8px 0; font-size: 14px; }
+.calc-label { min-width: 200px; color: var(--text-muted); }
+.calc-bar { flex: 1; height: 24px; background: var(--surface2); border-radius: 4px; overflow: hidden; position: relative; }
+.calc-fill { height: 100%; border-radius: 4px; transition: width 0.5s; display: flex; align-items: center; padding-left: 8px; font-size: 11px; font-weight: 600; }
+.calc-number { min-width: 80px; text-align: right; font-weight: 600; font-size: 13px; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .card-grid { grid-template-columns: 1fr; }
+  .arch-flow { flex-direction: column; align-items: center; }
+  .arch-arrow { transform: rotate(90deg); }
+  nav .container { flex-wrap: wrap; }
+  .stats-row { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="container">
+    <h1>IAW v0.0.3</h1>
+    <div class="tabs">
+      <button class="tab active" onclick="showSection('overview')">Overview</button>
+      <button class="tab" onclick="showSection('scenarios')">Scenarios (10)</button>
+      <button class="tab" onclick="showSection('patterns')">Communication Patterns</button>
+      <button class="tab" onclick="showSection('architecture')">Architecture Options</button>
+      <button class="tab" onclick="showSection('tokens')">Token Analysis</button>
+      <button class="tab" onclick="showSection('bdd')">BDD Specs</button>
+      <button class="tab" onclick="showSection('issues')">Issues & Gaps</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ==================== OVERVIEW ==================== -->
+<div class="section active" id="overview">
+  <div class="container">
+    <h2>Event-Driven Agent Architecture Review</h2>
+    <p class="subtitle">Designing IAW v0.0.3 — from coding assistant to universal intelligent agent platform</p>
+
+    <div class="stats-row">
+      <div class="stat"><div class="stat-value blue">34</div><div class="stat-label">Agent types today</div></div>
+      <div class="stat"><div class="stat-value green">50+</div><div class="stat-label">Projected for v0.0.3</div></div>
+      <div class="stat"><div class="stat-value yellow">1</div><div class="stat-label">Stream consumers (!) today</div></div>
+      <div class="stat"><div class="stat-value red">0</div><div class="stat-label">Broadcast channels today</div></div>
+    </div>
+
+    <h3>Current Agent Landscape</h3>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-header"><div class="card-icon">🔧</div><div><div class="card-title">Infrastructure (5)</div><div class="card-subtitle">Shell, Git, FileSystem, Aspire, IAWSystem</div></div></div>
+        <div class="card-body">Execute commands, manage files, monitor services. All use Fast/Balanced LLM tiers. Publish events but nobody listens.</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-icon">💻</div><div><div class="card-title">C# Coding (4)</div><div class="card-subtitle">DotNet, Roslyn, GitHub, NuGet</div></div></div>
+        <div class="card-body">Build, analyze, monitor. Roslyn is the only stream consumer in the entire system. DotNet receives P2P messages.</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-icon">🧠</div><div><div class="card-title">Memory (5)</div><div class="card-subtitle">Code, Episode, Pattern, Project, User</div></div></div>
+        <div class="card-body">Vector-search memory banks. Each schedules daily maintenance. Store/retrieve via Qdrant. Context providers for other agents.</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-icon">🤖</div><div><div class="card-title">LLM Models (14)</div><div class="card-subtitle">GPT, Claude, Gemini, Grok, Llama, Qwen</div></div></div>
+        <div class="card-body">Stateless pass-throughs. Wrap specific models for direct comparison or model-specific tasks. Zero state, zero events.</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-icon">🎯</div><div><div class="card-title">Orchestration (4)</div><div class="card-subtitle">Thread, Selector, CodeOrchestrator, TelegramUI</div></div></div>
+        <div class="card-body">The brain. Thread routes users, Selector picks teams, CodeOrchestrator generates execution code. TelegramUI formats output.</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-icon">📚</div><div><div class="card-title">Knowledge (1)</div><div class="card-subtitle">KnowledgeAgent</div></div></div>
+        <div class="card-body">Project decisions, patterns, conventions. Publishes updates but nobody subscribes. Useful context sits unused.</div>
+      </div>
+    </div>
+
+    <h3>v0.0.3 Vision — New Agent Categories</h3>
+    <div class="card-grid">
+      <div class="card" style="border-color: var(--accent2);">
+        <div class="card-header"><div class="card-icon">📊</div><div><div class="card-title">Document Agents</div><div class="card-subtitle">Excel, Word, PDF, Markdown</div></div></div>
+        <div class="card-body">Create and manipulate Office documents via official SDKs. Excel agent for spreadsheets, financial models, data analysis. Word for reports, proposals.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent2);">
+        <div class="card-header"><div class="card-icon">💰</div><div><div class="card-title">Finance Agents</div><div class="card-subtitle">Budget, Expenses, Forecasting</div></div></div>
+        <div class="card-body">Track personal/business finances. Categorize transactions, generate reports, predict cash flow. Uses Excel agent for output.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent2);">
+        <div class="card-header"><div class="card-icon">📅</div><div><div class="card-title">Productivity Agents</div><div class="card-subtitle">Calendar, Email, Tasks, Notes</div></div></div>
+        <div class="card-body">Manage schedules, draft emails, organize tasks. Integrates with Microsoft Graph API for Outlook/Calendar/Teams.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent2);">
+        <div class="card-header"><div class="card-icon">🌐</div><div><div class="card-title">Web Agents</div><div class="card-subtitle">Browser, Scraper, API Client</div></div></div>
+        <div class="card-body">Browse the web, scrape data, call REST APIs. Research agent for gathering information from multiple sources.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent2);">
+        <div class="card-header"><div class="card-icon">🛡️</div><div><div class="card-title">Quality Agents</div><div class="card-subtitle">Validator, Monitor, Reviewer</div></div></div>
+        <div class="card-body">Watches task streams. Validates agent outputs against requirements. Detects hallucinations, drift, and errors. The "adult in the room."</div>
+      </div>
+      <div class="card" style="border-color: var(--accent2);">
+        <div class="card-header"><div class="card-icon">📈</div><div><div class="card-title">Data Agents</div><div class="card-subtitle">SQL, Analytics, Visualization</div></div></div>
+        <div class="card-body">Query databases, analyze datasets, generate charts. Works with Excel agent for visual output. Understands schemas and relationships.</div>
+      </div>
+    </div>
+
+    <h3>The Core Problem</h3>
+    <div class="arch-diagram">
+      <div class="arch-title">Today: Agents Work in Isolation</div>
+      <div class="arch-flow">
+        <div class="arch-node pink"><div class="arch-node-label">User</div><div class="arch-node-sub">Telegram / DevUI</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node highlight"><div class="arch-node-label">Thread</div><div class="arch-node-sub">Routes to 1 agent</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node"><div class="arch-node-label">Agent A</div><div class="arch-node-sub">Works alone</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node highlight"><div class="arch-node-label">Thread</div><div class="arch-node-sub">Forwards FULL result</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node"><div class="arch-node-label">Agent B</div><div class="arch-node-sub">Gets huge context</div></div>
+      </div>
+      <p style="text-align: center; margin-top: 12px; font-size: 13px; color: var(--error);">
+        Each handoff copies full context → token explosion. No shared awareness. No progress monitoring. No quality gate.
+      </p>
+    </div>
+
+    <div class="arch-diagram" style="border-color: var(--accent2);">
+      <div class="arch-title" style="color: var(--accent2);">v0.0.3: Event-Driven Collaboration</div>
+      <div class="arch-flow">
+        <div class="arch-node pink"><div class="arch-node-label">User</div><div class="arch-node-sub">Request</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node highlight"><div class="arch-node-label">Thread</div><div class="arch-node-sub">Creates task</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node green"><div class="arch-node-label">Task Stream</div><div class="arch-node-sub">Shared event log</div></div>
+      </div>
+      <div class="arch-flow" style="margin-top: 8px;">
+        <div class="arch-node"><div class="arch-node-label">Agent A</div><div class="arch-node-sub">Publishes findings</div></div>
+        <div class="arch-arrow">↗</div>
+        <div class="arch-node green"><div class="arch-node-label">Task Stream</div><div class="arch-node-sub">~50 tokens/event</div></div>
+        <div class="arch-arrow">↘</div>
+        <div class="arch-node"><div class="arch-node-label">Agent B</div><div class="arch-node-sub">Reads log as context</div></div>
+      </div>
+      <div class="arch-flow" style="margin-top: 8px;">
+        <div class="arch-node yellow"><div class="arch-node-label">Validator</div><div class="arch-node-sub">Monitors stream</div></div>
+        <div class="arch-arrow" style="color: var(--accent4);">⚡</div>
+        <div class="arch-node" style="border-color: var(--accent)"><div class="arch-node-label">Broadcast</div><div class="arch-node-sub">UI updates</div></div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node pink"><div class="arch-node-label">Telegram</div><div class="arch-node-sub">Real-time progress</div></div>
+      </div>
+      <p style="text-align: center; margin-top: 12px; font-size: 13px; color: var(--accent2);">
+        Short events (50 tokens) replace full context forwarding (5000+ tokens). Validator catches drift. UI gets live updates.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SCENARIOS ==================== -->
+<div class="section" id="scenarios">
+  <div class="container">
+    <h2>Real-World Scenarios</h2>
+    <p class="subtitle">10 complex scenarios simulating full IAW v0.0.3 potential — from finance management to multi-project orchestration</p>
+
+    <!-- Scenario 1 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">01</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Personal Finance Management</div>
+          <div class="scenario-desc">"Analyze my bank statement, categorize expenses, create a monthly budget spreadsheet, and tell me where I'm overspending"</div>
+          <div class="scenario-tags">
+            <span class="tag stream">Task Stream</span>
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag broadcast">Broadcast → Telegram</span>
+            <span class="tag">Excel</span><span class="tag">Finance</span><span class="tag">FileSystem</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Agents Involved</h4>
+        <table>
+          <tr><th>Agent</th><th>Role</th><th>LLM Calls</th></tr>
+          <tr><td>Thread</td><td>Receives request, creates task, selects team</td><td>1 (routing)</td></tr>
+          <tr><td>AgentSelector</td><td>Picks: FileSystem, Finance, Excel, Validator</td><td>1</td></tr>
+          <tr><td>FileSystem</td><td>Reads bank statement PDF/CSV from workspace</td><td>1 (parse)</td></tr>
+          <tr><td>Finance Agent <em>(new)</em></td><td>Categorizes transactions, identifies patterns, computes totals</td><td>2 (categorize + analyze)</td></tr>
+          <tr><td>Excel Agent <em>(new)</em></td><td>Creates .xlsx with sheets: Transactions, Categories, Budget, Charts</td><td>2 (structure + generate)</td></tr>
+          <tr><td>Validator <em>(new)</em></td><td>Checks: totals match source, categories make sense, no hallucinated numbers</td><td>1 (validate)</td></tr>
+          <tr><td>TelegramUI</td><td>Formats summary for Telegram with download link</td><td>1</td></tr>
+        </table>
+
+        <h4>Event Flow</h4>
+        <div class="timeline">
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Thread → Task Stream</div>
+            <div class="step-action">Creates task "finance-march-2026", publishes plan</div>
+            <div class="step-event stream">STREAM: task.created { agents: [filesystem, finance, excel, validator] }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">FileSystem → Ledger</div>
+            <div class="step-action">Reads bank_march_2026.csv, extracts 147 transactions</div>
+            <div class="step-event ledger">LEDGER: { agent: "filesystem", action: "file.read", result: "147 transactions, €4,231.50 total" }</div>
+            <div class="step-tokens">~50 tokens (vs 3000+ if forwarding all transactions)</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Finance → Ledger</div>
+            <div class="step-action">Categorizes: Housing €1,200, Food €580, Transport €340, Entertainment €290...</div>
+            <div class="step-event ledger">LEDGER: { agent: "finance", action: "categorized", result: "8 categories, top: housing 28%, food 14%" }</div>
+          </div>
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Finance → Task Stream</div>
+            <div class="step-action">Flags overspending: Entertainment +45% vs 3-month average</div>
+            <div class="step-event stream">STREAM: step.completed { finding: "entertainment spending 45% above average" }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Excel → Ledger</div>
+            <div class="step-action">Creates budget_march_2026.xlsx with 4 sheets and 2 charts</div>
+            <div class="step-event ledger">LEDGER: { agent: "excel", action: "file.created", result: "budget_march_2026.xlsx, 4 sheets" }</div>
+          </div>
+          <div class="timeline-step event-router">
+            <div class="step-agent">Validator → Router (CRITICAL)</div>
+            <div class="step-action">Verifies: sum of categories (€4,231.50) matches source file total ✓</div>
+            <div class="step-event stream">STREAM: validation.passed { checks: 3/3, confidence: "high" }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">Thread → Broadcast</div>
+            <div class="step-action">Summary + file link pushed to all UI agents</div>
+            <div class="step-event broadcast">BROADCAST: task.completed { summary: "Budget created. Overspending: entertainment +45%" }</div>
+          </div>
+        </div>
+
+        <h4>Token Usage Comparison</h4>
+        <div class="calc">
+          <div class="calc-row">
+            <div class="calc-label">Today (context forwarding)</div>
+            <div class="calc-bar"><div class="calc-fill" style="width: 100%; background: var(--error);">~45,000 tokens</div></div>
+            <div class="calc-number" style="color: var(--error);">~45K</div>
+          </div>
+          <div class="calc-row">
+            <div class="calc-label">v0.0.3 (event-driven)</div>
+            <div class="calc-bar"><div class="calc-fill" style="width: 30%; background: var(--accent2);">~12,000 tokens</div></div>
+            <div class="calc-number" style="color: var(--accent2);">~12K</div>
+          </div>
+          <div class="calc-row" style="color: var(--accent2); font-weight: 600;">
+            <div class="calc-label">Savings</div>
+            <div class="calc-bar"></div>
+            <div class="calc-number">73% fewer tokens</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 2 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">02</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Full-Stack Feature Development</div>
+          <div class="scenario-desc">"Add a user settings page to the DevUI with theme toggle, notification preferences, and API key management"</div>
+          <div class="scenario-tags">
+            <span class="tag stream">Task Stream</span>
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag router">Smart Router (build failures)</span>
+            <span class="tag">Roslyn</span><span class="tag">DotNet</span><span class="tag">Git</span><span class="tag">FileSystem</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Agents Involved</h4>
+        <table>
+          <tr><th>Agent</th><th>Role</th><th>LLM Calls</th></tr>
+          <tr><td>Thread</td><td>Receives, plans via CodeOrchestrator</td><td>1</td></tr>
+          <tr><td>CodeOrchestrator</td><td>Generates multi-file implementation plan</td><td>1 (Opus-level)</td></tr>
+          <tr><td>Roslyn</td><td>Analyzes existing Blazor components, finds patterns</td><td>0 (tool-only)</td></tr>
+          <tr><td>FileSystem</td><td>Creates component files, CSS, models</td><td>3 (write calls)</td></tr>
+          <tr><td>DotNet</td><td>Build → test → format cycle</td><td>0 (tool-only)</td></tr>
+          <tr><td>Git</td><td>Creates feature branch, commits</td><td>1 (commit message)</td></tr>
+          <tr><td>Validator</td><td>Checks: build green, no warnings, patterns match existing code</td><td>1</td></tr>
+        </table>
+
+        <h4>Event Flow</h4>
+        <div class="timeline">
+          <div class="timeline-step event-stream">
+            <div class="step-agent">CodeOrchestrator → Stream</div>
+            <div class="step-action">Plan: 1) Analyze existing components 2) Create models 3) Create page 4) Build 5) Test</div>
+            <div class="step-event stream">STREAM: orchestration.plan { steps: 5, agents: [roslyn, filesystem, dotnet, git] }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Roslyn → Ledger</div>
+            <div class="step-action">Found: SettingsBase component, ThemeService, existing CSS variables</div>
+            <div class="step-event ledger">LEDGER: { patterns: ["SettingsBase component", "ThemeService DI"], cssVars: 23 }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">FileSystem → Ledger</div>
+            <div class="step-action">Created: UserSettings.razor, UserSettingsModel.cs, settings.css (3 files)</div>
+            <div class="step-event ledger">LEDGER: { files_created: 3, total_lines: 245 }</div>
+          </div>
+          <div class="timeline-step event-router">
+            <div class="step-agent">DotNet → Router (CRITICAL)</div>
+            <div class="step-action">Build FAILED: CS0246 — ThemeToggle component not found</div>
+            <div class="step-event stream">ROUTER → FileSystem: { error: "CS0246", missing: "ThemeToggle", suggestion: "create component" }</div>
+            <div class="step-tokens">Smart Router triggers FileSystem to fix — no LLM call for routing</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">FileSystem → Ledger</div>
+            <div class="step-action">Created ThemeToggle.razor, build now passes</div>
+            <div class="step-event ledger">LEDGER: { fix: "ThemeToggle.razor created", build: "pass" }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Git → Ledger</div>
+            <div class="step-action">Branch: feature/user-settings, commit: "feat: add user settings page"</div>
+            <div class="step-event ledger">LEDGER: { branch: "feature/user-settings", commit: "abc1234" }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">Thread → Broadcast</div>
+            <div class="step-event broadcast">BROADCAST: task.completed { files: 4, branch: "feature/user-settings" }</div>
+          </div>
+        </div>
+
+        <h4>Key Pattern: Smart Router for Build Failures</h4>
+        <p>When DotNet reports a build failure, the <strong>Smart Router</strong> (non-LLM grain) pattern-matches the error type and routes to the appropriate agent. CS0246 (missing type) → FileSystem. CS0103 (undefined name) → Roslyn for analysis. This avoids an LLM call just to decide "who should fix this."</p>
+      </div>
+    </div>
+
+    <!-- Scenario 3 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">03</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Weekly Expense Report Automation</div>
+          <div class="scenario-desc">"Every Friday at 5 PM, scan my receipts folder, generate an expense report in Excel, and send it to my Telegram"</div>
+          <div class="scenario-tags">
+            <span class="tag digest">Scheduled (Cron)</span>
+            <span class="tag stream">Task Stream</span>
+            <span class="tag broadcast">Broadcast → Telegram</span>
+            <span class="tag">Excel</span><span class="tag">FileSystem</span><span class="tag">Finance</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Cron Scheduling (AdvancedReminders future)</h4>
+        <p>This scenario requires <strong>cron-based scheduling</strong> — "every Friday at 17:00 CET". Today IAW has interval-based DurableJobs. With AdvancedReminders (Orleans PR #9903) or a custom cron evaluator, this becomes native.</p>
+
+        <h4>Event Flow</h4>
+        <div class="timeline">
+          <div class="timeline-step event-digest">
+            <div class="step-agent">Scheduler → Thread</div>
+            <div class="step-action">Cron fires: "0 17 * * 5" (Friday 5 PM CET). Creates task "expense-report-w13"</div>
+            <div class="step-event" style="background: #4ecdc422; color: var(--accent5);">CRON: weekly-expense-report triggered</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">FileSystem → Ledger</div>
+            <div class="step-action">Scans /receipts/2026-w13/, finds 12 images (photos of receipts)</div>
+            <div class="step-event ledger">LEDGER: { receipts: 12, formats: ["jpg", "png"], totalSize: "8.2 MB" }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Vision Agent <em>(new, uses GPT-4o)</em> → Ledger</div>
+            <div class="step-action">OCR extracts: merchant, amount, date, category from each receipt image</div>
+            <div class="step-event ledger">LEDGER: { extracted: 12, total: "€487.30", categories: ["food", "transport", "office"] }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Finance → Ledger</div>
+            <div class="step-action">Cross-references with budget, flags 2 duplicate entries</div>
+            <div class="step-event ledger">LEDGER: { deduplicated: 2, adjusted_total: "€453.10" }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Excel → Ledger</div>
+            <div class="step-action">Generates expense_report_w13.xlsx with receipt details, category totals, chart</div>
+            <div class="step-event ledger">LEDGER: { file: "expense_report_w13.xlsx", sheets: 2 }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">Thread → Broadcast</div>
+            <div class="step-action">Pushes report to Telegram with summary and file attachment</div>
+            <div class="step-event broadcast">BROADCAST: report.ready { file: "expense_report_w13.xlsx", total: "€453.10" }</div>
+          </div>
+        </div>
+        <p><strong>Zero user interaction required.</strong> Runs autonomously every Friday. User gets a Telegram notification with the attached Excel file and a summary.</p>
+      </div>
+    </div>
+
+    <!-- Scenario 4 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">04</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Multi-Repository Dependency Upgrade</div>
+          <div class="scenario-desc">"Upgrade Orleans to the latest version across all my .NET projects, fix breaking changes, and create PRs"</div>
+          <div class="scenario-tags">
+            <span class="tag stream">Task Stream</span>
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag router">Smart Router</span>
+            <span class="tag digest">Team Lead Digest</span>
+            <span class="tag">NuGet</span><span class="tag">DotNet</span><span class="tag">Roslyn</span><span class="tag">Git</span><span class="tag">GitHub</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Why This Needs All Patterns</h4>
+        <p>This is a <strong>multi-project, multi-hour</strong> task. Each project is independent but the overall effort needs coordination. The Team Lead pattern shines here — ThreadAgent periodically digests progress across all projects and decides what to do next.</p>
+
+        <h4>Event Flow (per project, 3 projects in parallel)</h4>
+        <div class="timeline">
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Thread (Team Lead) → Stream</div>
+            <div class="step-action">Fan-out: creates 3 sub-tasks, one per project. Each gets its own ledger.</div>
+            <div class="step-event stream">STREAM: orchestration.fanout { projects: ["iaw", "api-gateway", "shared-lib"], subtasks: 3 }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">NuGet → Ledger (per project)</div>
+            <div class="step-action">Detects: Orleans 10.0.1 → 10.1.0, 3 breaking changes in changelog</div>
+            <div class="step-event ledger">LEDGER: { upgrade: "10.0.1→10.1.0", breaking: 3, packages_affected: 8 }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Roslyn → Ledger</div>
+            <div class="step-action">Identifies 12 call sites using deprecated API, suggests replacements</div>
+            <div class="step-event ledger">LEDGER: { deprecated_usages: 12, auto_fixable: 9, manual_review: 3 }</div>
+          </div>
+          <div class="timeline-step event-router">
+            <div class="step-agent">DotNet → Router (CRITICAL)</div>
+            <div class="step-action">Build fails after upgrade — 4 errors. Router dispatches to Roslyn for fix.</div>
+            <div class="step-event stream">ROUTER → Roslyn: { errors: 4, type: "api_change" }</div>
+          </div>
+          <div class="timeline-step event-digest">
+            <div class="step-agent">Thread (Team Lead) reads all 3 ledgers</div>
+            <div class="step-action">Digest: "Project 1: done ✓, Project 2: 3 manual fixes needed, Project 3: in progress"</div>
+            <div class="step-event" style="background: #4ecdc422; color: var(--accent5);">DIGEST: 1 Haiku call summarizes 15 events across 3 projects</div>
+            <div class="step-tokens">1 cheap LLM call replaces 15 expensive context-forwarding calls</div>
+          </div>
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Thread → Stream (human-in-the-loop)</div>
+            <div class="step-action">3 manual fixes need approval. Pauses, sends approval request.</div>
+            <div class="step-event stream">STREAM: approval.requested { changes: 3, risk: "medium" }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">→ Broadcast</div>
+            <div class="step-action">Telegram shows approval buttons for each change</div>
+            <div class="step-event broadcast">BROADCAST: approval.requested → Telegram inline buttons</div>
+          </div>
+        </div>
+
+        <h4>Token Savings</h4>
+        <div class="calc">
+          <div class="calc-row">
+            <div class="calc-label">Without events (3 projects × full context per handoff)</div>
+            <div class="calc-bar"><div class="calc-fill" style="width: 100%; background: var(--error);">~180K tokens</div></div>
+            <div class="calc-number" style="color: var(--error);">~180K</div>
+          </div>
+          <div class="calc-row">
+            <div class="calc-label">With event-driven (ledger + digest + router)</div>
+            <div class="calc-bar"><div class="calc-fill" style="width: 20%; background: var(--accent2);">~35K tokens</div></div>
+            <div class="calc-number" style="color: var(--accent2);">~35K</div>
+          </div>
+          <div class="calc-row" style="color: var(--accent2); font-weight: 600;">
+            <div class="calc-label">Savings</div>
+            <div class="calc-bar"></div>
+            <div class="calc-number">80% fewer tokens</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 5 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">05</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Code Review with Context-Aware Feedback</div>
+          <div class="scenario-desc">"Review the latest PR, check for security issues, verify tests cover the changes, and post comments on GitHub"</div>
+          <div class="scenario-tags">
+            <span class="tag stream">Task Stream</span>
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag">Roslyn</span><span class="tag">DotNet</span><span class="tag">Git</span><span class="tag">GitHub</span><span class="tag">Knowledge</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Key Innovation: Knowledge Agent as Context Provider</h4>
+        <p>The Knowledge agent doesn't do the review — it provides context. When Roslyn analyzes the PR, the <strong>Shared Ledger</strong> already contains Knowledge agent's findings about project conventions and past decisions. Roslyn reads this context (50 tokens) instead of re-discovering it (5000+ tokens).</p>
+        <div class="timeline">
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Knowledge → Ledger (pre-populated)</div>
+            <div class="step-action">Project conventions: "No public setters on DTOs", "All endpoints require auth", "TreatWarningsAsErrors"</div>
+            <div class="step-event ledger">LEDGER: context injection — 0 LLM calls, pure state read</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Git → Ledger</div>
+            <div class="step-action">PR #42: 8 files changed, +230/-45 lines, 3 new endpoints</div>
+            <div class="step-event ledger">LEDGER: { pr: 42, files: 8, additions: 230, deletions: 45, endpoints: 3 }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Roslyn → Ledger</div>
+            <div class="step-action">Semantic analysis: 1 public setter on DTO (violation), 1 endpoint missing [Authorize]</div>
+            <div class="step-event ledger">LEDGER: { issues: 2, severity: ["warning", "critical"], convention_violations: 1 }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">DotNet → Ledger</div>
+            <div class="step-action">Tests: 42/42 pass, but 0 new tests for 3 new endpoints (coverage gap)</div>
+            <div class="step-event ledger">LEDGER: { tests: "42/42 pass", coverage_gap: "3 new endpoints have 0 tests" }</div>
+          </div>
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Validator → Stream</div>
+            <div class="step-action">Aggregates: 2 issues found, 1 critical (missing auth). Recommends: "Request Changes"</div>
+            <div class="step-event stream">STREAM: review.complete { verdict: "request_changes", issues: 2 }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">GitHub → Broadcast</div>
+            <div class="step-action">Posts review comments on PR #42 with inline suggestions</div>
+            <div class="step-event broadcast">BROADCAST: github.review_posted { pr: 42, comments: 3 }</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 6 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">06</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Research Report with Citations</div>
+          <div class="scenario-desc">"Research the latest .NET Aspire features, compare with Dapr, and write a technical report with a comparison table in Word"</div>
+          <div class="scenario-tags">
+            <span class="tag stream">Task Stream</span>
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag digest">Team Lead Digest</span>
+            <span class="tag">Web</span><span class="tag">Word</span><span class="tag">Knowledge</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Agents Involved</h4>
+        <table>
+          <tr><th>Agent</th><th>Role</th><th>Pattern Used</th></tr>
+          <tr><td>Web Agent <em>(new)</em></td><td>Scrapes official docs, release notes, blog posts</td><td>Ledger (publishes raw findings)</td></tr>
+          <tr><td>Knowledge</td><td>Provides existing project context on Aspire usage</td><td>Ledger (pre-populated context)</td></tr>
+          <tr><td>Opus46 (Reasoning)</td><td>Synthesizes research into structured analysis</td><td>Reads full ledger as context</td></tr>
+          <tr><td>Word Agent <em>(new)</em></td><td>Formats as .docx with TOC, tables, headers</td><td>Ledger (output)</td></tr>
+          <tr><td>Validator</td><td>Checks: citations exist, comparison is fair, no hallucinated features</td><td>Stream (critical validation)</td></tr>
+        </table>
+        <p><strong>Key insight:</strong> The Web Agent publishes SHORT findings to the ledger ("Aspire 9.2 added health checks dashboard, released 2026-02-15, source: blog.aspnethacks.com"). The Reasoning agent reads ALL ledger entries as structured context — much cheaper than forwarding raw scraped HTML.</p>
+      </div>
+    </div>
+
+    <!-- Scenario 7 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">07</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Incident Response Automation</div>
+          <div class="scenario-desc">Aspire health check detects API latency spike → IAW investigates, identifies root cause, applies fix, monitors recovery</div>
+          <div class="scenario-tags">
+            <span class="tag router">Smart Router (critical)</span>
+            <span class="tag stream">Task Stream</span>
+            <span class="tag broadcast">Broadcast → Telegram</span>
+            <span class="tag">Aspire</span><span class="tag">Shell</span><span class="tag">DotNet</span><span class="tag">Git</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Fully Autonomous — No Human Trigger</h4>
+        <div class="timeline">
+          <div class="timeline-step event-router">
+            <div class="step-agent">AspireAgent (scheduled health check) → Router</div>
+            <div class="step-action">CRITICAL: API response time >2s (threshold: 500ms). Auto-escalates.</div>
+            <div class="step-event stream">ROUTER → Thread: { severity: "critical", metric: "p99_latency", value: "2340ms" }</div>
+            <div class="step-tokens">Router activates Thread immediately — no LLM call for routing decision</div>
+          </div>
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Thread → Task Stream</div>
+            <div class="step-action">Creates incident task, selects: Aspire, Shell, Roslyn, DotNet</div>
+            <div class="step-event stream">STREAM: incident.opened { severity: "critical" }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">Thread → Broadcast</div>
+            <div class="step-action">Alerts user via Telegram: "🔴 API latency spike detected. Investigating..."</div>
+            <div class="step-event broadcast">BROADCAST: incident.alert { message: "API latency spike" }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Aspire → Ledger</div>
+            <div class="step-action">Checks traces: 90% of slow requests hit /api/reports endpoint</div>
+            <div class="step-event ledger">LEDGER: { bottleneck: "/api/reports", slow_requests: "90%" }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Roslyn → Ledger</div>
+            <div class="step-action">Analyzes ReportsController: N+1 query in GetAll(), missing .AsNoTracking()</div>
+            <div class="step-event ledger">LEDGER: { root_cause: "N+1 query", fix: "add Include() + AsNoTracking()" }</div>
+          </div>
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Thread → Stream (approval gate)</div>
+            <div class="step-action">Proposed fix found. Asks user: "Apply fix to ReportsController?" [Yes] [No] [Show Diff]</div>
+            <div class="step-event stream">STREAM: approval.requested { action: "apply_fix", risk: "low" }</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 8 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">08</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Personal Knowledge Base Builder</div>
+          <div class="scenario-desc">"Index all my project documentation, technical articles I've saved, and meeting notes. Make it searchable and suggest connections."</div>
+          <div class="scenario-tags">
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag stream">Task Stream</span>
+            <span class="tag digest">Digest for progress</span>
+            <span class="tag">FileSystem</span><span class="tag">Memory</span><span class="tag">Knowledge</span><span class="tag">Web</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Long-Running Background Task</h4>
+        <p>This processes 200+ files over 30+ minutes. The <strong>Team Lead Digest</strong> pattern is essential — ThreadAgent periodically reads the ledger and sends progress to Telegram. Without it, the user has no visibility for half an hour.</p>
+        <div class="timeline">
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">FileSystem → Ledger (batched)</div>
+            <div class="step-action">Scans 3 directories, finds 234 files (md, pdf, docx, txt)</div>
+            <div class="step-event ledger">LEDGER: { files_found: 234, types: { md: 120, pdf: 45, docx: 30, txt: 39 } }</div>
+          </div>
+          <div class="timeline-step event-digest">
+            <div class="step-agent">Thread (Digest) — every 5 minutes</div>
+            <div class="step-action">Reads ledger: "78/234 files indexed. Found 12 topic clusters. ETA: 20 min"</div>
+            <div class="step-event" style="background: #4ecdc422; color: var(--accent5);">DIGEST → Telegram: progress update (1 Haiku call)</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">Memory Agents → Ledger (continuous)</div>
+            <div class="step-action">Each file chunked, embedded, stored in Qdrant. Topic clusters emerging.</div>
+            <div class="step-event ledger">LEDGER: { indexed: 234, clusters: 18, connections: 42, duplicates: 7 }</div>
+          </div>
+          <div class="timeline-step event-broadcast">
+            <div class="step-agent">Knowledge → Broadcast</div>
+            <div class="step-action">Final report: "234 docs indexed, 18 topics, 42 cross-references found"</div>
+            <div class="step-event broadcast">BROADCAST: indexing.complete { docs: 234, topics: 18 }</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 9 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">09</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Cross-Platform App Scaffolding</div>
+          <div class="scenario-desc">"Create a .NET MAUI app with SQLite storage, REST API backend, and deploy config. Generate the full solution structure."</div>
+          <div class="scenario-tags">
+            <span class="tag stream">Task Stream</span>
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag router">Smart Router</span>
+            <span class="tag">CodeOrchestrator</span><span class="tag">DotNet</span><span class="tag">NuGet</span><span class="tag">FileSystem</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Complex Multi-Project Generation</h4>
+        <p>This creates 4 projects (MAUI app, API, Shared models, Tests) with 30+ files. The <strong>Validator agent</strong> is critical here — it monitors the stream for consistency: "API endpoints match MAUI service calls", "shared models are used everywhere", "no hardcoded strings".</p>
+        <div class="timeline">
+          <div class="timeline-step event-stream">
+            <div class="step-agent">CodeOrchestrator → Stream</div>
+            <div class="step-action">Generates solution blueprint: 4 projects, dependency graph, NuGet packages</div>
+            <div class="step-event stream">STREAM: blueprint.created { projects: 4, files: 32 }</div>
+          </div>
+          <div class="timeline-step event-ledger">
+            <div class="step-agent">FileSystem → Ledger (batched, 32 files)</div>
+            <div class="step-action">Creates files in parallel batches. Each batch logged as 1 ledger event.</div>
+            <div class="step-event ledger">LEDGER: { batch: 1, files: 8, project: "Shared" } ... { batch: 4, files: 10, project: "MAUI" }</div>
+          </div>
+          <div class="timeline-step event-stream">
+            <div class="step-agent">Validator → Stream (CRITICAL)</div>
+            <div class="step-action">DRIFT DETECTED: MAUI app calls /api/users but API only has /api/accounts</div>
+            <div class="step-event stream">STREAM: validation.failed { type: "endpoint_mismatch", details: "..." }</div>
+            <div class="step-tokens">Validator catches hallucination BEFORE the task completes</div>
+          </div>
+          <div class="timeline-step event-router">
+            <div class="step-agent">Router → CodeOrchestrator</div>
+            <div class="step-action">Routes validation failure back to orchestrator for correction</div>
+            <div class="step-event stream">ROUTER: retry with correction context</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario 10 -->
+    <div class="scenario" onclick="toggleScenario(this)">
+      <div class="scenario-header">
+        <div class="scenario-num">10</div>
+        <div class="scenario-meta">
+          <div class="scenario-title">Meeting Preparation Assistant</div>
+          <div class="scenario-desc">"I have a meeting with the CTO in 2 hours about IAW architecture. Prepare a briefing doc, generate an architecture diagram, and list the top 3 decisions I need input on."</div>
+          <div class="scenario-tags">
+            <span class="tag ledger">Shared Ledger</span>
+            <span class="tag stream">Task Stream</span>
+            <span class="tag broadcast">Broadcast → Telegram</span>
+            <span class="tag">Knowledge</span><span class="tag">Word</span><span class="tag">Memory</span><span class="tag">Web</span>
+          </div>
+        </div>
+        <div class="scenario-chevron">›</div>
+      </div>
+      <div class="scenario-body">
+        <h4>Agents Involved</h4>
+        <table>
+          <tr><th>Agent</th><th>Role</th><th>Pattern</th></tr>
+          <tr><td>Knowledge</td><td>Retrieves project decisions, open questions, tech stack</td><td>Ledger (context injection)</td></tr>
+          <tr><td>Memory (Episode)</td><td>Recalls past conversations about architecture decisions</td><td>Ledger (context injection)</td></tr>
+          <tr><td>Memory (User)</td><td>Recalls CTO's preferences and communication style</td><td>Ledger (context injection)</td></tr>
+          <tr><td>Git</td><td>Recent commit activity and contributors</td><td>Ledger</td></tr>
+          <tr><td>Opus46 (Reasoning)</td><td>Synthesizes all context into briefing document</td><td>Reads full ledger</td></tr>
+          <tr><td>Word Agent <em>(new)</em></td><td>Formats as polished .docx with agenda structure</td><td>Direct call</td></tr>
+        </table>
+        <p><strong>Key insight:</strong> Multiple memory and knowledge agents contribute context to the ledger <em>without LLM calls</em> — they just read their durable state and publish structured summaries. Only the Reasoning agent (Opus) makes an expensive LLM call, and it gets ALL context in one shot via the ledger.</p>
+        <h4>Total LLM calls: 3</h4>
+        <p>1 (Selector) + 1 (Opus synthesis) + 1 (Word formatting). Five agents contribute context via pure state reads — zero LLM overhead.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ==================== PATTERNS ==================== -->
+<div class="section" id="patterns">
+  <div class="container">
+    <h2>Communication Patterns</h2>
+    <p class="subtitle">Not one pattern fits all — each has its place. The key is knowing when to use which.</p>
+
+    <div class="pattern-grid">
+      <div class="pattern-card" style="border-color: var(--accent4);">
+        <h4 style="color: var(--accent4);">📋 Shared Ledger (Pull)</h4>
+        <p style="font-size: 13px;">Durable per-task event log. Agents append short structured events (~50 tokens). Other agents read the log as context when activated.</p>
+        <div class="use-for">✅ USE FOR: Multi-agent task coordination, providing collaborative context, progress tracking, audit trail</div>
+        <div class="avoid-for">❌ AVOID FOR: Real-time reactions, urgent notifications, UI updates</div>
+        <ul>
+          <li>Zero LLM overhead for publishing</li>
+          <li>Zero LLM overhead for reading (injected as prompt context)</li>
+          <li>Durable — survives crashes</li>
+          <li>Agents don't need to be active to contribute</li>
+        </ul>
+      </div>
+
+      <div class="pattern-card" style="border-color: var(--accent2);">
+        <h4 style="color: var(--accent2);">📡 Task Stream (Push)</h4>
+        <p style="font-size: 13px;">Orleans stream per task. Agents subscribe to tasks they're working on. Events flow in real-time for monitoring and reactive agents.</p>
+        <div class="use-for">✅ USE FOR: Validator monitoring, orchestration progress, step completion signals, approval gates</div>
+        <div class="avoid-for">❌ AVOID FOR: Routine progress (use ledger), broadcasting to unknown consumers</div>
+        <ul>
+          <li>Real-time — Validator can catch drift immediately</li>
+          <li>Targeted — only subscribed agents receive</li>
+          <li>Supports backpressure and sequencing</li>
+          <li>The "nervous system" of a running task</li>
+        </ul>
+      </div>
+
+      <div class="pattern-card" style="border-color: var(--accent);">
+        <h4 style="color: var(--accent);">📢 Broadcast Channel (Fan-out)</h4>
+        <p style="font-size: 13px;">Orleans BroadcastChannel with [ImplicitChannelSubscription]. All grains of a type receive the message. Fire-and-forget.</p>
+        <div class="use-for">✅ USE FOR: UI updates (Telegram, DevUI, Dashboard), system-wide notifications, task completion announcements</div>
+        <div class="avoid-for">❌ AVOID FOR: Agent-to-agent collaboration, anything requiring acknowledgment, LLM-heavy reactions</div>
+        <ul>
+          <li>Decoupled — sender doesn't know receivers</li>
+          <li>Perfect for UI agents that display results</li>
+          <li>No LLM cost — UI agents just format and render</li>
+          <li>Not persistent — for notifications, not state</li>
+        </ul>
+      </div>
+
+      <div class="pattern-card" style="border-color: var(--accent3);">
+        <h4 style="color: var(--accent3);">🔀 Smart Router (Rule-Based Push)</h4>
+        <p style="font-size: 13px;">Non-LLM grain that pattern-matches critical events and routes to specific agents. Zero token cost.</p>
+        <div class="use-for">✅ USE FOR: Build failures → fix agent, test failures → diagnostic agent, health alerts → incident response</div>
+        <div class="avoid-for">❌ AVOID FOR: Ambiguous situations, creative decisions, anything requiring judgment</div>
+        <ul>
+          <li>Zero LLM calls — pure pattern matching</li>
+          <li>Sub-millisecond routing</li>
+          <li>Handles critical events that need immediate action</li>
+          <li>Routing table is declarative and testable</li>
+        </ul>
+      </div>
+
+      <div class="pattern-card" style="border-color: var(--accent5);">
+        <h4 style="color: var(--accent5);">📝 Team Lead Digest (Batched)</h4>
+        <p style="font-size: 13px;">ThreadAgent periodically reads the ledger, summarizes with a cheap LLM (Haiku), and decides next actions. Compresses N events into 1 decision.</p>
+        <div class="use-for">✅ USE FOR: Long-running tasks, multi-project coordination, periodic user updates, deciding "what's next"</div>
+        <div class="avoid-for">❌ AVOID FOR: Time-critical events, simple linear workflows</div>
+        <ul>
+          <li>1 cheap LLM call per batch instead of N expensive ones</li>
+          <li>Provides human-readable progress summaries</li>
+          <li>Natural decision point for orchestration</li>
+          <li>ThreadAgent already has this role conceptually</li>
+        </ul>
+      </div>
+
+      <div class="pattern-card" style="border-color: var(--text-muted);">
+        <h4>🔗 Direct P2P (Existing)</h4>
+        <p style="font-size: 13px;">Direct grain-to-grain calls via IAgent.GetResponse() or IReceiver&lt;T&gt;. Synchronous, full context transfer.</p>
+        <div class="use-for">✅ USE FOR: Simple 1:1 delegation, tool-like operations (FileSystem.ReadFile), stateless queries</div>
+        <div class="avoid-for">❌ AVOID FOR: Multi-agent collaboration, anything where context would be copied repeatedly</div>
+        <ul>
+          <li>Simplest pattern — already works today</li>
+          <li>Fine for "command" operations (read file, run build)</li>
+          <li>Expensive for "conversation" operations</li>
+          <li>Keep for simple tool-like calls</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>When to Use Each Pattern — Decision Tree</h3>
+    <div class="arch-diagram">
+      <table>
+        <tr><th>Question</th><th>Answer</th><th>Pattern</th></tr>
+        <tr><td>Is this a UI notification? (display something to user)</td><td>Yes</td><td class="best">📢 Broadcast Channel</td></tr>
+        <tr><td>Is this a critical failure that needs immediate fix?</td><td>Yes</td><td class="best">🔀 Smart Router</td></tr>
+        <tr><td>Does a Validator need to see this in real-time?</td><td>Yes</td><td class="best">📡 Task Stream</td></tr>
+        <tr><td>Should other agents know this happened (for future context)?</td><td>Yes</td><td class="best">📋 Shared Ledger</td></tr>
+        <tr><td>Is this a long task needing periodic progress reports?</td><td>Yes</td><td class="best">📝 Team Lead Digest</td></tr>
+        <tr><td>Is this a simple "do X and return result"?</td><td>Yes</td><td>🔗 Direct P2P</td></tr>
+      </table>
+    </div>
+
+    <h3>Pattern Combinations per Scenario Type</h3>
+    <div class="arch-diagram">
+      <table>
+        <tr><th>Scenario Type</th><th>Primary</th><th>Secondary</th><th>Optional</th></tr>
+        <tr><td>Simple task (1-2 agents)</td><td>P2P</td><td>—</td><td>Broadcast (UI)</td></tr>
+        <tr><td>Multi-agent coding task</td><td>Ledger</td><td>Router (failures)</td><td>Stream (validator), Broadcast (UI)</td></tr>
+        <tr><td>Document generation</td><td>Ledger</td><td>P2P (tool calls)</td><td>Broadcast (UI)</td></tr>
+        <tr><td>Long-running background</td><td>Ledger</td><td>Digest (progress)</td><td>Broadcast (notifications)</td></tr>
+        <tr><td>Incident response</td><td>Router (trigger)</td><td>Ledger + Stream</td><td>Broadcast (alerts)</td></tr>
+        <tr><td>Multi-project coordination</td><td>Ledger (per project)</td><td>Digest (cross-project)</td><td>Stream (validation), Broadcast</td></tr>
+        <tr><td>Scheduled automation</td><td>Cron → P2P</td><td>Ledger</td><td>Broadcast (results)</td></tr>
+        <tr><td>Research & synthesis</td><td>Ledger (findings)</td><td>P2P (synthesis)</td><td>Broadcast (UI)</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ARCHITECTURE OPTIONS ==================== -->
+<div class="section" id="architecture">
+  <div class="container">
+    <h2>Architecture Options</h2>
+    <p class="subtitle">Three implementation approaches — from minimal to comprehensive</p>
+
+    <h3>Option A: Layered Event Bus</h3>
+    <div class="arch-diagram">
+      <div class="arch-title">Minimal viable architecture — 3 layers</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px;">
+        <div>
+          <h4 style="color: var(--accent4);">Layer 1: Task Ledger</h4>
+          <p style="font-size: 13px;">IDurableList&lt;TaskEvent&gt; per task grain. Append-only. Injected as context when agents are activated.</p>
+          <ul style="font-size: 12px; color: var(--text-muted); padding-left: 16px;">
+            <li>New: ITaskLedger grain</li>
+            <li>Events are structured records</li>
+            <li>~50 tokens per event</li>
+            <li>Read by orchestrator before each agent call</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="color: var(--accent);">Layer 2: Broadcast</h4>
+          <p style="font-size: 13px;">BroadcastChannel for UI notifications. TelegramUI and DevUI subscribe implicitly.</p>
+          <ul style="font-size: 12px; color: var(--text-muted); padding-left: 16px;">
+            <li>AddBroadcastChannel("ui-notifications")</li>
+            <li>[ImplicitChannelSubscription] on UI agents</li>
+            <li>Fire-and-forget, no persistence needed</li>
+            <li>Replaces current ad-hoc event publishing</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="color: var(--accent3);">Layer 3: Critical Router</h4>
+          <p style="font-size: 13px;">Non-LLM grain with routing table. Only handles failures and blockers.</p>
+          <ul style="font-size: 12px; color: var(--text-muted); padding-left: 16px;">
+            <li>New: IEventRouter grain</li>
+            <li>Pattern-match on event type + severity</li>
+            <li>Routes to pre-configured handlers</li>
+            <li>Zero LLM cost</li>
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 12px; background: var(--surface2); border-radius: 8px;">
+        <strong>Effort:</strong> Medium. ~2 weeks. Core changes: new ITaskLedger grain, BroadcastChannel config, Router grain, context injection in Agent base class.<br>
+        <strong>Risk:</strong> Low. Additive — doesn't break existing patterns.<br>
+        <strong>Token savings:</strong> ~50-60% on multi-agent tasks.
+      </div>
+    </div>
+
+    <h3>Option B: Full Event-Driven with Quality Gate</h3>
+    <div class="arch-diagram">
+      <div class="arch-title">Comprehensive — adds Validator agent and Task Stream monitoring</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+        <div>
+          <h4 style="color: var(--accent2);">Everything from Option A, plus:</h4>
+          <ul style="font-size: 13px; color: var(--text-muted); padding-left: 16px;">
+            <li><strong>Validator Agent</strong> — subscribes to task streams, monitors for hallucinations, drift, and errors. Uses cheap model (Haiku) for validation checks.</li>
+            <li><strong>Task Stream (Orleans Streams)</strong> — real-time event flow per task. Validator and UI agents subscribe.</li>
+            <li><strong>Team Lead Digest</strong> — ThreadAgent periodically reads ledger, produces summaries for long tasks.</li>
+            <li><strong>Approval Gates</strong> — orchestration pauses at defined checkpoints, sends approval via broadcast to Telegram.</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="color: var(--accent3);">New Core Components:</h4>
+          <ul style="font-size: 13px; color: var(--text-muted); padding-left: 16px;">
+            <li><code>ITaskLedger</code> — durable event log grain</li>
+            <li><code>IEventRouter</code> — rule-based routing grain</li>
+            <li><code>IValidator</code> — quality gate agent</li>
+            <li><code>TaskStreamProvider</code> — persistent streams per task</li>
+            <li><code>BroadcastChannel("ui")</code> — UI notification bus</li>
+            <li><code>ApprovalGate</code> — pause/resume pattern</li>
+            <li>History durability fix in DurableChatHistoryProvider</li>
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 12px; background: var(--surface2); border-radius: 8px;">
+        <strong>Effort:</strong> High. ~4-5 weeks. Significant core changes + new agent.<br>
+        <strong>Risk:</strong> Medium. Validator agent needs careful prompt engineering.<br>
+        <strong>Token savings:</strong> ~70-80% on multi-agent tasks. Plus catches errors early = fewer retries.
+      </div>
+    </div>
+
+    <h3>Option C: Adaptive Intelligence Platform</h3>
+    <div class="arch-diagram">
+      <div class="arch-title">The full vision — self-optimizing event architecture</div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+        <div>
+          <h4 style="color: var(--accent5);">Everything from Option B, plus:</h4>
+          <ul style="font-size: 13px; color: var(--text-muted); padding-left: 16px;">
+            <li><strong>Adaptive Routing</strong> — Router learns from past task outcomes. If Excel agent frequently fails on chart generation, route chart tasks to a different agent.</li>
+            <li><strong>Token Budget Manager</strong> — pre-allocates token budget per task based on complexity estimate. Agents get token allowances.</li>
+            <li><strong>Replay & Recovery</strong> — if a task fails mid-way, the ledger serves as a checkpoint. Replay from last successful event.</li>
+            <li><strong>Cross-Task Learning</strong> — Episode memory stores successful event patterns. Future similar tasks reuse proven flows.</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="color: var(--accent4);">Additional Components:</h4>
+          <ul style="font-size: 13px; color: var(--text-muted); padding-left: 16px;">
+            <li><code>ITokenBudgetManager</code> — grain-level token accounting</li>
+            <li><code>IAdaptiveRouter</code> — ML-enhanced routing (uses past outcomes)</li>
+            <li><code>IReplayEngine</code> — checkpoint + replay from ledger</li>
+            <li>Persistent Orleans Streams (Azure Event Hubs or equivalent)</li>
+            <li>Event schema registry with versioning</li>
+            <li>Full OpenTelemetry integration for event tracing</li>
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top: 16px; padding: 12px; background: var(--surface2); border-radius: 8px;">
+        <strong>Effort:</strong> Very high. ~8-10 weeks. Deep architectural changes.<br>
+        <strong>Risk:</strong> High. Complex, needs careful incremental delivery.<br>
+        <strong>Token savings:</strong> ~85-90% + self-improving over time.
+      </div>
+    </div>
+
+    <h3>Recommendation</h3>
+    <div class="arch-diagram" style="border-color: var(--accent2);">
+      <p style="font-size: 15px;"><strong>Start with Option B, designed to evolve into Option C.</strong></p>
+      <p>Option A is too minimal — without the Validator, you have no quality gate and agents can hallucinate unchecked. Option C is the goal but too much for one release. Option B gives you the full event-driven architecture with quality assurance, and the Ledger + Stream foundation makes Option C features additive.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== TOKEN ANALYSIS ==================== -->
+<div class="section" id="tokens">
+  <div class="container">
+    <h2>Token Usage Analysis</h2>
+    <p class="subtitle">Quantifying the waste and the savings</p>
+
+    <h3>Current Token Waste Patterns</h3>
+    <div class="card-grid">
+      <div class="card" style="border-color: var(--error);">
+        <div class="card-header"><div class="card-icon" style="color: var(--error);">1</div><div><div class="card-title">Context Forwarding</div></div></div>
+        <div class="card-body">When Thread forwards Agent A's full response to Agent B, it includes the entire conversation. A 5-step task copies context 5 times. By step 5, the prompt includes ALL previous outputs.<br><br><strong>Cost: ~5,000-20,000 tokens per handoff</strong></div>
+      </div>
+      <div class="card" style="border-color: var(--error);">
+        <div class="card-header"><div class="card-icon" style="color: var(--error);">2</div><div><div class="card-title">Redundant Discovery</div></div></div>
+        <div class="card-body">Each agent re-discovers project context. Roslyn analyzes the workspace. DotNet discovers the solution. FileSystem lists files. They all do this independently.<br><br><strong>Cost: ~2,000-5,000 tokens per agent per task</strong></div>
+      </div>
+      <div class="card" style="border-color: var(--error);">
+        <div class="card-header"><div class="card-icon" style="color: var(--error);">3</div><div><div class="card-title">Failed Retries</div></div></div>
+        <div class="card-body">When a build fails, the error + full context is sent to an LLM to decide what to do. Often the fix is mechanical (missing import, typo). A rule-based router could handle this for zero tokens.<br><br><strong>Cost: ~3,000-8,000 tokens per retry cycle</strong></div>
+      </div>
+      <div class="card" style="border-color: var(--error);">
+        <div class="card-header"><div class="card-icon" style="color: var(--error);">4</div><div><div class="card-title">Unused Agent Activation</div></div></div>
+        <div class="card-body">CodeOrchestrator generates C# code that calls agents. If it calls 5 agents and 2 aren't needed, those agents still activate, load context, and produce "nothing to do" responses.<br><br><strong>Cost: ~1,000-3,000 tokens per unnecessary activation</strong></div>
+      </div>
+    </div>
+
+    <h3>Token Budget: Scenario 1 (Personal Finance) — Detailed Breakdown</h3>
+    <div class="arch-diagram">
+      <table>
+        <tr><th>Step</th><th>Agent</th><th>Today (tokens)</th><th>v0.0.3 (tokens)</th><th>Savings</th></tr>
+        <tr><td>1. Route request</td><td>Thread + Selector</td><td>2,000</td><td>2,000</td><td>0%</td></tr>
+        <tr><td>2. Read bank file</td><td>FileSystem</td><td>4,000 (full file in context)</td><td>800 (tool call, ledger event)</td><td class="best">80%</td></tr>
+        <tr><td>3. Categorize</td><td>Finance</td><td>8,000 (file + thread context)</td><td>3,000 (instructions + ledger summary)</td><td class="best">62%</td></tr>
+        <tr><td>4. Forward to Excel</td><td>Thread → Excel</td><td>12,000 (all previous context)</td><td>0 (no forwarding, reads ledger)</td><td class="best">100%</td></tr>
+        <tr><td>5. Generate spreadsheet</td><td>Excel</td><td>10,000 (full categorization)</td><td>3,000 (instructions + ledger)</td><td class="best">70%</td></tr>
+        <tr><td>6. Validate</td><td>N/A today</td><td>0</td><td>1,500 (Haiku validation)</td><td class="worst">New cost</td></tr>
+        <tr><td>7. Format for Telegram</td><td>TelegramUI</td><td>5,000 (full result)</td><td>800 (summary from ledger)</td><td class="best">84%</td></tr>
+        <tr><td>8. Store episode</td><td>Memory</td><td>4,000</td><td>500 (ledger as episode)</td><td class="best">87%</td></tr>
+        <tr><th>TOTAL</th><th></th><th style="color: var(--error);">45,000</th><th style="color: var(--accent2);">11,600</th><th style="color: var(--accent2);">74%</th></tr>
+      </table>
+    </div>
+
+    <h3>Projected Monthly Token Savings</h3>
+    <div class="calc">
+      <div class="calc-row">
+        <div class="calc-label">Simple tasks (5/day × 30 days)</div>
+        <div class="calc-bar"><div class="calc-fill" style="width: 30%; background: var(--accent);">No change — P2P is fine</div></div>
+        <div class="calc-number">~0%</div>
+      </div>
+      <div class="calc-row">
+        <div class="calc-label">Multi-agent tasks (3/day × 30 days)</div>
+        <div class="calc-bar"><div class="calc-fill" style="width: 70%; background: var(--accent2);">Ledger + Router</div></div>
+        <div class="calc-number" style="color: var(--accent2);">~70% saved</div>
+      </div>
+      <div class="calc-row">
+        <div class="calc-label">Long-running tasks (1/day × 30 days)</div>
+        <div class="calc-bar"><div class="calc-fill" style="width: 80%; background: var(--accent2);">Ledger + Digest + Validator</div></div>
+        <div class="calc-number" style="color: var(--accent2);">~80% saved</div>
+      </div>
+      <div class="calc-row">
+        <div class="calc-label">Scheduled automations (2/week × 4 weeks)</div>
+        <div class="calc-bar"><div class="calc-fill" style="width: 60%; background: var(--accent2);">Cron + Ledger</div></div>
+        <div class="calc-number" style="color: var(--accent2);">~60% saved</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== BDD SPECS ==================== -->
+<div class="section" id="bdd">
+  <div class="container">
+    <h2>BDD Specifications</h2>
+    <p class="subtitle">Behavior-driven specs for complex scenarios — these become integration tests</p>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Personal Finance Management<br>
+      <span class="bdd-comment">  # Scenario 1: End-to-end expense analysis and budget creation</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Analyze bank statement and create budget spreadsheet<br>
+      <span class="bdd-given">    Given</span> the user has uploaded "bank_march_2026.csv" to the workspace<br>
+      <span class="bdd-and">    And</span> the file contains 147 transactions totaling €4,231.50<br>
+      <span class="bdd-and">    And</span> the agents "filesystem", "finance", "excel", "validator" are available<br><br>
+      <span class="bdd-when">    When</span> the user sends "Analyze my bank statement and create a monthly budget"<br><br>
+      <span class="bdd-then">    Then</span> a task ledger "finance-march-2026" should be created<br>
+      <span class="bdd-and">    And</span> FileSystem should publish a ledger event with "147 transactions"<br>
+      <span class="bdd-and">    And</span> Finance should categorize transactions into at least 5 categories<br>
+      <span class="bdd-and">    And</span> Finance should publish a ledger event with category totals<br>
+      <span class="bdd-and">    And</span> the sum of all categories should equal €4,231.50<br>
+      <span class="bdd-and">    And</span> Excel should create a file "budget_march_2026.xlsx"<br>
+      <span class="bdd-and">    And</span> the Excel file should contain at least 3 sheets<br>
+      <span class="bdd-and">    And</span> Validator should confirm totals match the source file<br>
+      <span class="bdd-and">    And</span> a broadcast event "task.completed" should be published<br>
+      <span class="bdd-and">    And</span> total LLM calls should be less than 10<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Event-Driven Agent Collaboration<br>
+      <span class="bdd-comment">  # Core infrastructure: Shared Ledger mechanics</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Agents share context via task ledger without LLM calls<br>
+      <span class="bdd-given">    Given</span> a task "build-calculator" with agents "filesystem", "dotnet", "roslyn"<br>
+      <span class="bdd-and">    And</span> a task ledger exists for "build-calculator"<br><br>
+      <span class="bdd-when">    When</span> FileSystem creates 3 files and publishes to the ledger<br>
+      <span class="bdd-and">    And</span> DotNet is activated to build the project<br><br>
+      <span class="bdd-then">    Then</span> DotNet should receive the ledger as context in its prompt<br>
+      <span class="bdd-and">    And</span> the context should contain FileSystem's event summaries<br>
+      <span class="bdd-and">    And</span> each ledger event should be under 100 tokens<br>
+      <span class="bdd-and">    And</span> DotNet should NOT receive the full file contents<br>
+      <span class="bdd-and">    And</span> zero additional LLM calls should be made for context sharing<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Quality Validation<br>
+      <span class="bdd-comment">  # Validator agent catches hallucinations in real-time</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Validator detects endpoint mismatch during app generation<br>
+      <span class="bdd-given">    Given</span> a task "scaffold-maui-app" is in progress<br>
+      <span class="bdd-and">    And</span> the Validator agent is subscribed to the task stream<br><br>
+      <span class="bdd-when">    When</span> FileSystem publishes "created MauiService.cs calling /api/users"<br>
+      <span class="bdd-and">    And</span> FileSystem publishes "created ApiController.cs with /api/accounts"<br><br>
+      <span class="bdd-then">    Then</span> Validator should detect the endpoint mismatch<br>
+      <span class="bdd-and">    And</span> Validator should publish "validation.failed" to the task stream<br>
+      <span class="bdd-and">    And</span> the Smart Router should route the failure to CodeOrchestrator<br>
+      <span class="bdd-and">    And</span> the mismatch should be corrected before the task completes<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Broadcast Channel UI Updates<br>
+      <span class="bdd-comment">  # UI agents receive notifications without LLM overhead</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Task completion broadcasts to all UI surfaces<br>
+      <span class="bdd-given">    Given</span> TelegramUI is subscribed to the "ui-notifications" broadcast channel<br>
+      <span class="bdd-and">    And</span> DevUI is subscribed to the "ui-notifications" broadcast channel<br><br>
+      <span class="bdd-when">    When</span> a task "finance-report" completes successfully<br>
+      <span class="bdd-and">    And</span> Thread publishes a broadcast with summary and file link<br><br>
+      <span class="bdd-then">    Then</span> TelegramUI should receive the broadcast<br>
+      <span class="bdd-and">    And</span> TelegramUI should format and send to the user's Telegram chat<br>
+      <span class="bdd-and">    And</span> DevUI should receive the broadcast<br>
+      <span class="bdd-and">    And</span> DevUI should update the task status in the web dashboard<br>
+      <span class="bdd-and">    And</span> no LLM calls should be made by either UI agent for this notification<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Smart Router for Build Failures<br>
+      <span class="bdd-comment">  # Zero-token routing of mechanical errors</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Build failure routes to fix agent without LLM<br>
+      <span class="bdd-given">    Given</span> a task "add-settings-page" is in progress<br>
+      <span class="bdd-and">    And</span> the Smart Router has rule: CS0246 → FileSystem<br><br>
+      <span class="bdd-when">    When</span> DotNet publishes "build.failed" with error "CS0246: ThemeToggle not found"<br><br>
+      <span class="bdd-then">    Then</span> the Smart Router should activate FileSystem<br>
+      <span class="bdd-and">    And</span> FileSystem should receive the error context<br>
+      <span class="bdd-and">    And</span> zero LLM calls should be used for the routing decision<br>
+      <span class="bdd-and">    And</span> the routing latency should be under 10ms<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Scheduled Expense Report<br>
+      <span class="bdd-comment">  # Fully autonomous weekly report generation</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Weekly expense report runs without user interaction<br>
+      <span class="bdd-given">    Given</span> a cron schedule "0 17 * * 5" (Friday 5 PM CET) for "weekly-expense-report"<br>
+      <span class="bdd-and">    And</span> the receipts folder contains 12 images from the past week<br><br>
+      <span class="bdd-when">    When</span> the cron job fires at Friday 17:00 CET<br><br>
+      <span class="bdd-then">    Then</span> a task should be created automatically<br>
+      <span class="bdd-and">    And</span> FileSystem should scan the receipts folder<br>
+      <span class="bdd-and">    And</span> a Vision agent should extract data from receipt images<br>
+      <span class="bdd-and">    And</span> Finance should categorize and deduplicate expenses<br>
+      <span class="bdd-and">    And</span> Excel should generate "expense_report_w13.xlsx"<br>
+      <span class="bdd-and">    And</span> the report should be sent to the user via Telegram<br>
+      <span class="bdd-and">    And</span> total execution time should be under 5 minutes<br>
+      <span class="bdd-and">    And</span> no user interaction should be required<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Conversation History Durability<br>
+      <span class="bdd-comment">  # Critical fix: history must survive grain deactivation</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Chat history persists through grain deactivation<br>
+      <span class="bdd-given">    Given</span> an agent with 5 messages in conversation history<br><br>
+      <span class="bdd-when">    When</span> the user sends a new message<br>
+      <span class="bdd-and">    And</span> the agent adds the message to history<br>
+      <span class="bdd-and">    And</span> the grain is deactivated before the response completes<br><br>
+      <span class="bdd-then">    Then</span> when the grain reactivates<br>
+      <span class="bdd-and">    And</span> GetHistory() should return 6 messages (including the new one)<br>
+      <span class="bdd-and">    And</span> no messages should be lost<br><br>
+      <span class="bdd-keyword">  Scenario:</span> History summarization state is durable<br>
+      <span class="bdd-given">    Given</span> an agent with 45 messages (above summarization threshold)<br>
+      <span class="bdd-and">    And</span> a summary has been generated for the first 25 messages<br><br>
+      <span class="bdd-when">    When</span> the grain is deactivated and reactivated<br><br>
+      <span class="bdd-then">    Then</span> the summary should be available without re-generation<br>
+      <span class="bdd-and">    And</span> no LLM call should be needed to reconstruct the summary<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Incident Response Automation<br>
+      <span class="bdd-comment">  # Autonomous detection, investigation, and fix proposal</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Health check triggers automated investigation<br>
+      <span class="bdd-given">    Given</span> AspireAgent has a recurring health check every 30 minutes<br>
+      <span class="bdd-and">    And</span> the API latency threshold is 500ms<br><br>
+      <span class="bdd-when">    When</span> the health check detects p99 latency at 2340ms<br><br>
+      <span class="bdd-then">    Then</span> the Smart Router should create an incident task<br>
+      <span class="bdd-and">    And</span> Thread should be notified as team lead<br>
+      <span class="bdd-and">    And</span> a broadcast alert should be sent to Telegram immediately<br>
+      <span class="bdd-and">    And</span> Aspire should analyze distributed traces<br>
+      <span class="bdd-and">    And</span> the investigation should identify the bottleneck endpoint<br>
+      <span class="bdd-and">    And</span> Roslyn should analyze the endpoint code<br>
+      <span class="bdd-and">    And</span> a fix proposal should be presented for user approval<br>
+      <span class="bdd-and">    And</span> the total investigation should complete within 3 minutes<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Multi-Project Coordination<br>
+      <span class="bdd-comment">  # Team Lead Digest pattern for cross-project visibility</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Dependency upgrade across 3 projects with digest<br>
+      <span class="bdd-given">    Given</span> 3 projects: "iaw", "api-gateway", "shared-lib"<br>
+      <span class="bdd-and">    And</span> each project has its own task ledger<br>
+      <span class="bdd-and">    And</span> Orleans needs upgrading from 10.0.1 to 10.1.0<br><br>
+      <span class="bdd-when">    When</span> the upgrade task starts with fan-out to all 3 projects<br>
+      <span class="bdd-and">    And</span> each project processes independently<br>
+      <span class="bdd-and">    And</span> Thread reads all 3 ledgers every 2 minutes<br><br>
+      <span class="bdd-then">    Then</span> the digest should summarize progress across all projects<br>
+      <span class="bdd-and">    And</span> the digest should use 1 cheap LLM call (Haiku) per read<br>
+      <span class="bdd-and">    And</span> total cross-project coordination LLM calls should be under 5<br>
+      <span class="bdd-and">    And</span> the user should receive progress updates via Telegram<br>
+    </div>
+
+    <div class="bdd-feature">
+      <span class="bdd-keyword">Feature:</span> Document Generation Pipeline<br>
+      <span class="bdd-comment">  # Excel + Word agents with structured data flow</span><br><br>
+      <span class="bdd-keyword">  Scenario:</span> Generate Excel report from structured agent data<br>
+      <span class="bdd-given">    Given</span> the Excel agent is available with OpenXML SDK<br>
+      <span class="bdd-and">    And</span> a task ledger contains categorized financial data<br><br>
+      <span class="bdd-when">    When</span> the Excel agent is activated<br><br>
+      <span class="bdd-then">    Then</span> it should read the ledger for structured data<br>
+      <span class="bdd-and">    And</span> it should create a valid .xlsx file<br>
+      <span class="bdd-and">    And</span> the file should contain named sheets matching the data categories<br>
+      <span class="bdd-and">    And</span> the file should be openable in Microsoft Excel without errors<br>
+      <span class="bdd-and">    And</span> the file should be stored in the task workspace<br>
+      <span class="bdd-and">    And</span> a ledger event should record the output file path<br>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ISSUES ==================== -->
+<div class="section" id="issues">
+  <div class="container">
+    <h2>Issues & Current Gaps</h2>
+    <p class="subtitle">What needs to be fixed before building on top</p>
+
+    <h3>Critical Bugs</h3>
+    <div class="card-grid">
+      <div class="card" style="border-color: var(--error);">
+        <div class="card-header"><div class="card-icon" style="color: var(--error);">🔴</div><div><div class="card-title">Conversation History Not Durable</div><div class="card-subtitle">CRITICAL — data loss risk</div></div></div>
+        <div class="card-body">
+          <code>StoreChatHistoryAsync()</code> adds messages to IDurableList but never calls <code>WriteStateAsync()</code>. Messages are only persisted when the full conversation turn completes. If the grain deactivates during an LLM call (10-30s window), all messages from that turn are lost.<br><br>
+          <strong>Fix:</strong> Pass a persistence callback to DurableChatHistoryProvider. Call <code>WriteStateAsync()</code> after each <code>history.Add()</code>.<br>
+          <strong>Also:</strong> Make <code>HistorySummarizer._lastSummary</code> durable (store in state dict).
+        </div>
+      </div>
+      <div class="card" style="border-color: var(--error);">
+        <div class="card-header"><div class="card-icon" style="color: var(--error);">🔴</div><div><div class="card-title">Memory-Only Stream Provider</div><div class="card-subtitle">All events lost on silo restart</div></div></div>
+        <div class="card-body">
+          Streams use <code>.WithMemoryStreaming()</code> — events exist only in RAM. On silo restart, all subscriptions and in-flight events vanish. Fine for dev, broken for production.<br><br>
+          <strong>Fix:</strong> Configure persistent stream provider (Azure Event Hubs, or at minimum queue-based).
+        </div>
+      </div>
+    </div>
+
+    <h3>Architecture Gaps</h3>
+    <div class="card-grid">
+      <div class="card" style="border-color: var(--accent4);">
+        <div class="card-header"><div class="card-icon" style="color: var(--accent4);">🟡</div><div><div class="card-title">No Shared Task Context</div></div></div>
+        <div class="card-body">Agents working on the same task have no shared awareness. Each gets context forwarded by the orchestrator, duplicating tokens. Need: Task Ledger grain with shared event log.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent4);">
+        <div class="card-header"><div class="card-icon" style="color: var(--accent4);">🟡</div><div><div class="card-title">No Broadcast Channels</div></div></div>
+        <div class="card-body">UI updates (Telegram, DevUI) use ad-hoc stream publishing. No <code>[ImplicitChannelSubscription]</code>. Adding a new UI surface requires code changes in every agent that publishes notifications.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent4);">
+        <div class="card-header"><div class="card-icon" style="color: var(--accent4);">🟡</div><div><div class="card-title">No Quality Gate</div></div></div>
+        <div class="card-body">No Validator agent monitors task output. Agents can hallucinate file paths, produce incorrect calculations, or generate code that doesn't match requirements. Nobody checks.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent4);">
+        <div class="card-header"><div class="card-icon" style="color: var(--accent4);">🟡</div><div><div class="card-title">No Event Schema</div></div></div>
+        <div class="card-body">Event names are scattered hardcoded strings ("build.failed", "file.written"). No centralized schema. No type safety. Adding new events is error-prone.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent4);">
+        <div class="card-header"><div class="card-icon" style="color: var(--accent4);">🟡</div><div><div class="card-title">Only 1 Stream Consumer</div></div></div>
+        <div class="card-body">Out of 34 agents, only RoslynAgent consumes streams. 11 agents publish events that nobody listens to. The streaming infrastructure exists but is barely used.</div>
+      </div>
+      <div class="card" style="border-color: var(--accent4);">
+        <div class="card-header"><div class="card-icon" style="color: var(--accent4);">🟡</div><div><div class="card-title">No Smart Routing</div></div></div>
+        <div class="card-body">All routing goes through LLM (AgentSelector). Mechanical decisions like "build failed → call DotNet" waste tokens on an LLM call. Need a non-LLM router for deterministic cases.</div>
+      </div>
+    </div>
+
+    <h3>Proposed GitHub Epic Structure</h3>
+    <div class="arch-diagram">
+      <table>
+        <tr><th>#</th><th>Issue</th><th>Type</th><th>Priority</th><th>Depends On</th></tr>
+        <tr><td>1</td><td><strong>Epic: Event-Driven Agent Architecture (v0.0.3)</strong></td><td>Epic</td><td>—</td><td>—</td></tr>
+        <tr><td>2</td><td>Fix conversation history durability</td><td>Bug</td><td>P0</td><td>—</td></tr>
+        <tr><td>3</td><td>Implement Task Ledger grain (ITaskLedger)</td><td>Feature</td><td>P0</td><td>—</td></tr>
+        <tr><td>4</td><td>Add BroadcastChannel for UI notifications</td><td>Feature</td><td>P1</td><td>—</td></tr>
+        <tr><td>5</td><td>Implement Smart Event Router grain</td><td>Feature</td><td>P1</td><td>#3</td></tr>
+        <tr><td>6</td><td>Create Validator agent</td><td>Feature</td><td>P1</td><td>#3</td></tr>
+        <tr><td>7</td><td>Define typed event schema (replace hardcoded strings)</td><td>Refactor</td><td>P1</td><td>—</td></tr>
+        <tr><td>8</td><td>Integrate Task Ledger as context provider in Agent base</td><td>Feature</td><td>P0</td><td>#3</td></tr>
+        <tr><td>9</td><td>Add Team Lead Digest to ThreadAgent</td><td>Feature</td><td>P2</td><td>#3</td></tr>
+        <tr><td>10</td><td>Implement Approval Gate pattern</td><td>Feature</td><td>P2</td><td>#4</td></tr>
+        <tr><td>11</td><td>Persistent stream provider (replace memory streams)</td><td>Infra</td><td>P2</td><td>—</td></tr>
+        <tr><td>12</td><td>Core library test coverage for event infrastructure</td><td>Test</td><td>P1</td><td>#3, #4, #5</td></tr>
+        <tr><td>13</td><td>BDD integration tests for complex scenarios</td><td>Test</td><td>P2</td><td>#3, #6</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function toggleScenario(el) {
+  if (event.target.closest('.scenario-body')) return;
+  el.classList.toggle('open');
+}
+</script>
+
+</body>
+</html>
