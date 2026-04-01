@@ -1,20 +1,45 @@
+using Core.Contracts;
 using Microsoft.Extensions.AI;
+using Orleans.Journaling;
 using ChatMessage = Core.Contracts.ChatMessage;
 
 namespace Core.Agents;
 
-internal sealed class HistorySummarizer(IChatClient chatClient)
+internal sealed class HistorySummarizer(
+    IChatClient chatClient,
+    IDurableDictionary<string, StateEntry>? durableState = null)
 {
     private const int SummarizationThreshold = 40;
     private const int RecentWindow = 20;
+    private const string SummaryStateKey = "__history_summary";
+    private const string SummaryEndKey = "__history_summary_end";
 
     private int _lastSummarizedOldEnd;
+    private ChatMessage? _cachedSummary;
 
     public async Task<ChatMessage?> SummarizeIfNeededAsync(
         IReadOnlyList<ChatMessage> history,
         ChatMessage? existingSummary,
         CancellationToken ct = default)
     {
+        // restore summary from durable state on first call after reactivation
+        if (_cachedSummary is null && existingSummary is null && durableState is not null)
+        {
+            if (durableState.TryGetValue(SummaryStateKey, out var entry))
+            {
+                _cachedSummary = new ChatMessage
+                {
+                    Role = "system",
+                    Content = entry.Value.ToString()!,
+                    Parts = [new Contracts.TextContent(entry.Value.ToString()!)]
+                };
+                if (durableState.TryGetValue(SummaryEndKey, out var endEntry)
+                    && int.TryParse(endEntry.Value.ToString(), out var savedEnd))
+                    _lastSummarizedOldEnd = savedEnd;
+                existingSummary = _cachedSummary;
+            }
+        }
+
         if (history.Count <= SummarizationThreshold)
             return existingSummary;
 
@@ -54,12 +79,21 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
             var summaryText = response.Text ?? "";
 
             _lastSummarizedOldEnd = oldEnd;
-            return new ChatMessage
+            var summary = new ChatMessage
             {
                 Role = "system",
                 Content = $"[Conversation summary] {summaryText}",
                 Parts = [new Contracts.TextContent($"[Conversation summary] {summaryText}")]
             };
+
+            if (durableState is not null)
+            {
+                durableState[SummaryStateKey] = new StateEntry(SummaryStateKey, summary.Content);
+                durableState[SummaryEndKey] = new StateEntry(SummaryEndKey, oldEnd);
+            }
+            _cachedSummary = summary;
+
+            return summary;
         }
         catch (OperationCanceledException)
         {

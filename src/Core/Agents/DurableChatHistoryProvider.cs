@@ -10,6 +10,7 @@ namespace Core.Agents;
 internal sealed class DurableChatHistoryProvider(
     IDurableList<ChatMessage> history,
     int maxMessages,
+    Func<CancellationToken, Task> persistCallback,
     BlobFileStorage? blobStorage = null,
     ChatReducer? reducer = null,
     HistorySummarizer? summarizer = null) : ChatHistoryProvider
@@ -100,7 +101,7 @@ internal sealed class DurableChatHistoryProvider(
             $"[Image: {ic.Caption ?? ic.MimeType}]"));
     }
 
-    protected override ValueTask StoreChatHistoryAsync(
+    protected override async ValueTask StoreChatHistoryAsync(
         InvokedContext context, CancellationToken cancellationToken = default)
     {
         foreach (var message in context.RequestMessages)
@@ -125,6 +126,6 @@ internal sealed class DurableChatHistoryProvider(
             });
         }
 
-        return ValueTask.CompletedTask;
+        await persistCallback(cancellationToken);
     }
 }

@@ -70,7 +70,7 @@ public abstract partial class Agent(
         {
             Name = this.GetPrimaryKeyString(),
             ChatOptions = _chatOptions,
-            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, blobStorage, new ChatReducer(), new HistorySummarizer(chatClient))
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, async ct => await WriteStateAsync(ct), blobStorage, new ChatReducer(), new HistorySummarizer(chatClient, durableState.State))
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);
