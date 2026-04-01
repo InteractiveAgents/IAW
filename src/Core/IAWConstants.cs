@@ -21,6 +21,7 @@ public static class IAWConstants
         public const string UserProfile = "user-profile";
         public const string UISession = "ui-session";
         public const string AgentRegistry = "agent-registry";
+        public const string TaskLedger = "task-ledger";
     }
 
     public static class StateKeys
