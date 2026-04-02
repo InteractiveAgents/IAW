@@ -1,9 +1,11 @@
 using Azure.Storage.Blobs;
+using Core;
 using Core.AI;
 using Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Orleans.Dashboard;
+using Orleans.BroadcastChannel;
 using Orleans.Journaling;
 
 namespace Aspire.IAW;
@@ -32,6 +34,7 @@ public static class IAWSiloExtensions
             silo.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
             silo.AddStateMachineStorage();
             silo.AddDashboard();
+            silo.AddBroadcastChannel(IAWConstants.UIBroadcastProvider);
             silo.UseAzureBlobDurableJobs(optionsBuilder =>
             {
                 optionsBuilder.Configure<IServiceProvider>((options, sp) =>

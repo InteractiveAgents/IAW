@@ -23,6 +23,7 @@
     <PackageReference Include="Microsoft.Orleans.Reminders" />
     <PackageReference Include="Microsoft.Orleans.DurableJobs" />
     <PackageReference Include="Microsoft.Orleans.DurableJobs.AzureStorage" />
+    <PackageReference Include="Microsoft.Orleans.BroadcastChannel" />
     <PackageReference Include="Microsoft.Orleans.Streaming" />
     <PackageReference Include="Aspire.Azure.Storage.Blobs" />
     <PackageReference Include="Aspire.Qdrant.Client" />

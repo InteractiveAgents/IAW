@@ -5,6 +5,7 @@ using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Orleans.BroadcastChannel;
 using Orleans.Journaling;
 using Orleans.TestingHost;
 using Xunit;
@@ -21,6 +22,8 @@ public sealed class AgentTestSiloConfigurator : ISiloConfigurator
             .AddMemoryStreams(IAWConstants.StreamProvider)
             .UseInMemoryReminderService()
             .UseInMemoryDurableJobs();
+
+        siloBuilder.AddBroadcastChannel(IAWConstants.UIBroadcastProvider);
 
         siloBuilder.Services.AddSingleton<IStateMachineStorageProvider, VolatileStateMachineStorageProvider>();
         siloBuilder.AddStateMachineStorage();
