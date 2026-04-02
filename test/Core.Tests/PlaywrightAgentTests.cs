@@ -45,12 +45,12 @@ public class PlaywrightAgentBasicTests : AgentTest<PlaywrightAgent>
     }
 
     [Fact]
-    public async Task ExtractDataAsync_ReturnsNonEmptyString()
+    public async Task ExtractDataAsync_ReturnsMeaningfulResult()
     {
         var ct = TestContext.Current.CancellationToken;
         var grain = Cluster.GrainFactory.GetGrain<IPlaywright>(UniqueId("pw-extract"));
         var result = await grain.ExtractDataAsync("https://example.com", "document.title", ct);
-        // returns "not connected" when MCP is unavailable, or actual data when connected
+        // "Playwright MCP not connected" when npx unavailable, or actual data when connected
         Assert.False(string.IsNullOrWhiteSpace(result));
     }
 
