@@ -40,4 +40,6 @@ public interface IThread : IAgent
         """;
 
     Task<string?> GetTitle(CancellationToken ct);
+    Task StartTaskDigestAsync(string taskId, TimeSpan interval, CancellationToken ct = default);
+    Task StopTaskDigestAsync(string taskId, CancellationToken ct = default);
 }

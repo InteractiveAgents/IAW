@@ -19,6 +19,7 @@ public class ThreadAgent(
     : Agent<IThread>(durableState, chatClient), IThread
 {
     private const string CallbackPrefix = "cb:";
+    private const string DigestJobPrefix = "digest:";
 
     protected override int MaxHistoryMessages => 20;
 
@@ -150,6 +151,13 @@ public class ThreadAgent(
 
     protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
+        if (job.Prompt.StartsWith(DigestJobPrefix))
+        {
+            var taskId = job.Prompt[DigestJobPrefix.Length..];
+            await ExecuteDigestAsync(taskId, ct);
+            return;
+        }
+
         if (!job.Prompt.StartsWith(IAWConstants.DelegationPrefix))
         {
             await base.OnScheduledJobDueAsync(job, ct);
@@ -300,6 +308,60 @@ public class ThreadAgent(
         State["title"] = new StateEntry("title", title);
         await WriteStateAsync(ct);
         return title;
+    }
+
+    public async Task StartTaskDigestAsync(string taskId, TimeSpan interval, CancellationToken ct = default)
+    {
+        var jobName = $"{DigestJobPrefix}{taskId}";
+        if (ScheduledJobs.ContainsKey(jobName))
+            return;
+
+        await ScheduleRecurringJob(jobName, interval, $"{DigestJobPrefix}{taskId}", ct);
+    }
+
+    public async Task StopTaskDigestAsync(string taskId, CancellationToken ct = default)
+    {
+        var jobName = $"{DigestJobPrefix}{taskId}";
+        if (ScheduledJobs.ContainsKey(jobName))
+            await CancelJob(jobName, ct);
+    }
+
+    private async Task ExecuteDigestAsync(string taskId, CancellationToken ct)
+    {
+        try
+        {
+            var ledger = GrainFactory.GetGrain<ITaskLedger>(taskId);
+            var contextBlock = await ledger.GetContextBlockAsync(maxEvents: 10, ct);
+
+            if (string.IsNullOrEmpty(contextBlock))
+                return;
+
+            var prompt = $"""
+                Summarize this task progress in 1-2 sentences for the user.
+                Be concise — this is a progress update, not a report.
+
+                {contextBlock}
+                """;
+
+            var response = await ChatClient.GetResponseAsync(
+                [new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, prompt)],
+                cancellationToken: ct);
+
+            var summary = response.Text ?? "Task in progress...";
+
+            logger.LogInformation("Digest for task {TaskId}: {Summary}", taskId, summary);
+
+            await PublishAsync(IAWConstants.Events.OrchestrationProgress, new Dictionary<string, string>
+            {
+                [IAWConstants.PayloadKeys.TaskId] = taskId,
+                [IAWConstants.PayloadKeys.Phase] = "digest",
+                [IAWConstants.PayloadKeys.Message] = summary
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Digest failed for task {TaskId}", taskId);
+        }
     }
 
 }
