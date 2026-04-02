@@ -51,6 +51,7 @@ public abstract partial class Agent(
     protected IDurableList<AgentEvent> EventLog => durableState.EventLog;
     protected IStreamProvider StreamProvider => this.GetStreamProvider(IAWConstants.StreamProvider);
     protected virtual IReadOnlyList<IAgentContextProvider> GetContextProviders() => Array.Empty<IAgentContextProvider>();
+    protected string? TaskId { get; set; }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
