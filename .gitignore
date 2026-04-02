@@ -422,3 +422,4 @@ website/node_modules/
 website/.vitepress/dist/
 website/.vitepress/cache/
 .superpowers/
+src/IAW.Assistant/.playwright-mcp/
