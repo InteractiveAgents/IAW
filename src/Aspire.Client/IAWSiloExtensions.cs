@@ -22,6 +22,7 @@ public static class IAWSiloExtensions
             http.AddStandardResilienceHandler();
             http.AddServiceDiscovery();
         });
+        LlmResilienceConfiguration.AddLlmResilience(builder);
 
         builder.UseOrleans(silo =>
         {

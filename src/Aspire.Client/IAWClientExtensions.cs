@@ -21,6 +21,7 @@ public static class IAWClientExtensions
             http.AddStandardResilienceHandler();
             http.AddServiceDiscovery();
         });
+        LlmResilienceConfiguration.AddLlmResilience(builder);
 
         var clusterId = builder.Configuration["Orleans:ClusterId"] ?? "dev";
         var serviceId = builder.Configuration["Orleans:ServiceId"] ?? "dev";
