@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 
 namespace Aspire.IAW;
 
@@ -114,7 +115,9 @@ internal static class LlmRegistration
         if (!factories.TryGetValue(model.Provider, out var factory))
             throw new NotSupportedException($"Provider '{model.Provider}' not supported. Register an ILlmProviderFactory.");
 
-        var innerClient = factory.CreateClient(model, config);
+        var httpClientFactory = services.GetService<IHttpClientFactory>();
+        var httpClient = httpClientFactory?.CreateClient(model.Provider);
+        var innerClient = factory.CreateClient(model, config, httpClient);
 
         return new ChatClientBuilder(innerClient)
             .UseStreamingUsage()
@@ -124,13 +127,18 @@ internal static class LlmRegistration
             .Build(services);
     }
 
-    private static IChatClient CreateOllamaClient(IConfiguration config, LLMModel model)
+    private static IChatClient CreateOllamaClient(IConfiguration config, LLMModel model, HttpClient? httpClient = null)
     {
         var modelConnectionString = FindOllamaModelConnectionString(config, model);
         var endpoint = ParseOllamaEndpoint(modelConnectionString)
             ?? config[LlmConfig.OllamaEndpoint]
             ?? config["ConnectionStrings:ollama"]
             ?? "http://localhost:11434";
+        if (httpClient is not null)
+        {
+            httpClient.BaseAddress = new Uri(endpoint);
+            return new OllamaApiClient(httpClient, model.Id);
+        }
         return new OllamaApiClient(new Uri(endpoint), model.Id);
     }
 
@@ -160,30 +168,36 @@ internal static class LlmRegistration
         return null;
     }
 
-    private static IChatClient CreateAnthropicClient(IConfiguration config, LLMModel model)
+    private static IChatClient CreateAnthropicClient(IConfiguration config, LLMModel model, HttpClient? httpClient = null)
     {
         var apiKey = config[LlmConfig.AnthropicApiKey]
             ?? throw new InvalidOperationException("Anthropic API key not configured.");
-        var client = new Anthropic.AnthropicClient { ApiKey = apiKey };
+        var client = httpClient is not null
+            ? new Anthropic.AnthropicClient { ApiKey = apiKey, HttpClient = httpClient }
+            : new Anthropic.AnthropicClient { ApiKey = apiKey };
         return client.AsIChatClient(model.Id);
     }
 
-    private static IChatClient CreateOpenAiClient(IConfiguration config, LLMModel model)
+    private static IChatClient CreateOpenAiClient(IConfiguration config, LLMModel model, HttpClient? httpClient = null)
     {
         var apiKey = config[LlmConfig.OpenAiApiKey]
             ?? throw new InvalidOperationException("OpenAI API key not configured.");
-        return new OpenAI.OpenAIClient(apiKey)
+        var options = new OpenAI.OpenAIClientOptions();
+        if (httpClient is not null)
+            options.Transport = new HttpClientPipelineTransport(httpClient);
+        return new OpenAI.OpenAIClient(new ApiKeyCredential(apiKey), options)
             .GetChatClient(model.Id)
             .AsIChatClient();
     }
 
-    private static IChatClient CreateGitHubModelsClient(IConfiguration config, LLMModel model)
+    private static IChatClient CreateGitHubModelsClient(IConfiguration config, LLMModel model, HttpClient? httpClient = null)
     {
         var token = config[LlmConfig.GitHubModelsApiKey]
             ?? throw new InvalidOperationException("GitHub token not configured for GitHub Models.");
-        return new OpenAI.OpenAIClient(
-                new ApiKeyCredential(token),
-                new OpenAI.OpenAIClientOptions { Endpoint = new Uri(LlmConfig.GitHubModelsEndpoint) })
+        var options = new OpenAI.OpenAIClientOptions { Endpoint = new Uri(LlmConfig.GitHubModelsEndpoint) };
+        if (httpClient is not null)
+            options.Transport = new HttpClientPipelineTransport(httpClient);
+        return new OpenAI.OpenAIClient(new ApiKeyCredential(token), options)
             .GetChatClient(model.Id)
             .AsIChatClient();
     }
@@ -242,8 +256,8 @@ internal static class LlmRegistration
         public string ProviderName => "anthropic";
         public bool IsConfigured(IConfiguration config)
             => !string.IsNullOrEmpty(config[LlmConfig.AnthropicApiKey]);
-        public IChatClient CreateClient(LLMModel model, IConfiguration config)
-            => CreateAnthropicClient(config, model);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config, HttpClient? httpClient = null)
+            => CreateAnthropicClient(config, model, httpClient);
     }
 
     private sealed class OpenAIProviderFactory : ILlmProviderFactory
@@ -251,8 +265,8 @@ internal static class LlmRegistration
         public string ProviderName => "openai";
         public bool IsConfigured(IConfiguration config)
             => !string.IsNullOrEmpty(config[LlmConfig.OpenAiApiKey]);
-        public IChatClient CreateClient(LLMModel model, IConfiguration config)
-            => CreateOpenAiClient(config, model);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config, HttpClient? httpClient = null)
+            => CreateOpenAiClient(config, model, httpClient);
     }
 
     private sealed class OllamaProviderFactory : ILlmProviderFactory
@@ -262,8 +276,8 @@ internal static class LlmRegistration
             => !string.IsNullOrEmpty(config[LlmConfig.OllamaEndpoint])
                || !string.IsNullOrEmpty(config["ConnectionStrings:ollama"])
                || HasOllamaModelConnectionString(config);
-        public IChatClient CreateClient(LLMModel model, IConfiguration config)
-            => CreateOllamaClient(config, model);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config, HttpClient? httpClient = null)
+            => CreateOllamaClient(config, model, httpClient);
     }
 
     private sealed class GitHubProviderFactory : ILlmProviderFactory
@@ -271,8 +285,8 @@ internal static class LlmRegistration
         public string ProviderName => "github";
         public bool IsConfigured(IConfiguration config)
             => !string.IsNullOrEmpty(config[LlmConfig.GitHubModelsApiKey]);
-        public IChatClient CreateClient(LLMModel model, IConfiguration config)
-            => CreateGitHubModelsClient(config, model);
+        public IChatClient CreateClient(LLMModel model, IConfiguration config, HttpClient? httpClient = null)
+            => CreateGitHubModelsClient(config, model, httpClient);
     }
 
     private static bool HasOllamaModelConnectionString(IConfiguration config)

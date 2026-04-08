@@ -7,5 +7,5 @@ public interface ILlmProviderFactory
 {
     string ProviderName { get; }
     bool IsConfigured(IConfiguration config);
-    IChatClient CreateClient(LLMModel model, IConfiguration config);
+    IChatClient CreateClient(LLMModel model, IConfiguration config, HttpClient? httpClient = null);
 }
