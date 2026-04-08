@@ -29,9 +29,45 @@ public class ShellAgent(
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
-        var tools = new List<AITool>();
-        RegisterToolMethods(tools, new ShellTools(() => GetWorkspacePath() ?? Directory.GetCurrentDirectory()));
-        return tools;
+        // register wrappers that call typed interface methods (which publish events)
+        // instead of raw ShellTools (which bypass event publishing)
+        return
+        [
+            AIFunctionFactory.Create(RunShellToolAsync, "RunShell",
+                "Run a shell command (cmd.exe on Windows, bash on Linux). Returns output and exit code."),
+            AIFunctionFactory.Create(RunDotnetToolAsync, "RunDotnet",
+                "Run a dotnet CLI command. Returns output and exit code."),
+            AIFunctionFactory.Create(RunPowerShellToolAsync, "RunPowerShell",
+                "Run a PowerShell command (pwsh). Preferred for complex Windows tasks. Returns output and exit code.")
+        ];
+    }
+
+    private async Task<string> RunShellToolAsync(string command, string? workingDirectory = null)
+    {
+        var result = await ExecuteAsync(command, workingDirectory, 120_000, default);
+        return FormatResult(result);
+    }
+
+    private async Task<string> RunDotnetToolAsync(string arguments, string? workingDirectory = null)
+    {
+        var result = await RunDotnetAsync(arguments, workingDirectory, default);
+        return FormatResult(result);
+    }
+
+    private async Task<string> RunPowerShellToolAsync(string command, string? workingDirectory = null)
+    {
+        var result = await ExecutePowerShellAsync(command, workingDirectory, 120_000, default);
+        return FormatResult(result);
+    }
+
+    static string FormatResult(CommandResult result)
+    {
+        var sb = new StringBuilder();
+        if (result.Output.Length > 0) sb.AppendLine(result.Output.Trim());
+        if (result.Error.Length > 0) sb.AppendLine(result.Error.Trim());
+        sb.AppendLine($"Exit code: {result.ExitCode}");
+        var output = sb.ToString();
+        return TruncateOutput(output);
     }
 
     static string? ValidateCommand(string command)
@@ -61,10 +97,16 @@ public class ShellAgent(
         var effectiveDirectory = workingDirectory ?? GetWorkspacePath() ?? Directory.GetCurrentDirectory();
         var sw = Stopwatch.StartNew();
 
+        // cmd.exe /c treats everything after /c as the raw command — no extra quoting
+        // bash -c requires the command in quotes with inner quotes escaped
+        var (shell, shellArgs) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", $"/c {command}")
+            : ("/bin/bash", $"-c \"{command.Replace("\"", "\\\"")}\"");
+
         var psi = new ProcessStartInfo
         {
-            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
-            Arguments = OperatingSystem.IsWindows() ? $"/c \"{command.Replace("\"", "\\\"")}\"" : $"-c \"{command.Replace("\"", "\\\"")}\"",
+            FileName = shell,
+            Arguments = shellArgs,
             WorkingDirectory = effectiveDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

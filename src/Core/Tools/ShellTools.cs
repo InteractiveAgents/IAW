@@ -22,12 +22,10 @@ public class ShellTools(Func<string> getWorkspacePath)
         [Description("Command to execute")] string command,
         [Description("Working directory (defaults to workspace)")] string? workingDirectory = null)
     {
-        var isWindows = OperatingSystem.IsWindows();
-        var shell = isWindows ? "cmd.exe" : "/bin/sh";
-        var escapedCommand = command.Replace("\"", "\\\"");
-        var args = isWindows
-            ? $"/c \"{escapedCommand}\""
-            : $"-c \"{escapedCommand}\"";
+        // cmd.exe /c takes the rest of the line as raw command — no extra quoting needed
+        var (shell, args) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", $"/c {command}")
+            : ("/bin/sh", $"-c \"{command.Replace("\"", "\\\"")}\"");
         return ExecuteAsync(shell, args, workingDirectory ?? WorkspacePath);
     }
 
@@ -49,6 +47,37 @@ public class ShellTools(Func<string> getWorkspacePath)
             if (!OperatingSystem.IsWindows()) throw;
             return await ExecuteAsync("powershell.exe", args, workingDirectory ?? WorkspacePath);
         }
+    }
+
+    private static async Task<string> ExecuteWithArgsAsync(string fileName, string flag, string command, string workingDirectory)
+    {
+        var psi = new ProcessStartInfo(fileName)
+        {
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        psi.ArgumentList.Add(flag);
+        psi.ArgumentList.Add(command);
+
+        using var process = Process.Start(psi);
+        if (process is null) return $"Failed to start: {fileName}";
+        using var cts = new CancellationTokenSource(TimeoutMs);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
+        await Task.WhenAll(stdoutTask, stderrTask);
+        await process.WaitForExitAsync(cts.Token);
+        var sb = new StringBuilder();
+        if (stdoutTask.Result.Length > 0) sb.AppendLine(stdoutTask.Result.Trim());
+        if (stderrTask.Result.Length > 0) sb.AppendLine(stderrTask.Result.Trim());
+        sb.AppendLine($"Exit code: {process.ExitCode}");
+        var output = sb.ToString();
+        if (output.Length <= 16_000) return output;
+        var headSize = 10_000;
+        var tailSize = 5_000;
+        return $"{output[..headSize]}\n\n... [{output.Length - 15_000} characters truncated] ...\n\n{output[^tailSize..]}";
     }
 
     private static async Task<string> ExecuteAsync(string fileName, string arguments, string workingDirectory)
