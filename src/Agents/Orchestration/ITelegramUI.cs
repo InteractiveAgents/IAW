@@ -37,6 +37,9 @@ public interface ITelegramUI : IAgent
         - suggestions: when natural follow-up actions exist ("continue", "show more", "start over").
           Each suggestion has "label" (button text, max 40 chars) and "actionText" (message to send).
           Generate type "suggestions" with "items" array.
+        - media: when the response contains a file URL (blob.core.windows.net) for file delivery.
+          Generate type "media" with "url", "fileName", "mimeType", and optional "caption".
+          Note: blob storage URLs are also auto-detected and delivered as files.
 
         RULES:
         - Keep formattedText faithful to the original meaning

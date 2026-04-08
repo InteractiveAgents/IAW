@@ -922,12 +922,20 @@ public sealed class TelegramBotService(
         {
             try
             {
-                if (part.MimeType.StartsWith("image/"))
+                if (part.Url.Contains("blob.core.windows.net"))
+                {
+                    await SendBlobAsDocumentAsync(chatId, part.Url, part.FileName, part.Caption, topicId, ct);
+                }
+                else if (part.MimeType.StartsWith("image/"))
+                {
                     await botClient.SendPhotoAsync(chatId, part.Url,
                         messageThreadId: topicId, caption: part.Caption);
+                }
                 else
+                {
                     await botClient.SendDocumentAsync(chatId, part.Url,
                         messageThreadId: topicId, caption: part.Caption);
+                }
             }
             catch (Exception ex)
             {

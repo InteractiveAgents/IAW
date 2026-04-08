@@ -1,10 +1,12 @@
 using Core.AI;
 using Core.Contracts;
+using Core.Services;
 using Core.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace IAW.Agents.Orchestration;
 
@@ -25,6 +27,9 @@ public class TelegramUIAgent(
         if (string.IsNullOrWhiteSpace(rawText))
             return new RichOutput("", []);
 
+        // deterministically extract file delivery URLs before LLM formatting
+        var mediaParts = ExtractMediaParts(rawText);
+
         try
         {
             // bypass Agent pipeline (GetResponse) to avoid tool-calling loop:
@@ -41,13 +46,45 @@ public class TelegramUIAgent(
                 MaxOutputTokens = 2048
             }, ct);
 
-            return ParseRichOutput(response.Text ?? "", rawText);
+            var richOutput = ParseRichOutput(response.Text ?? "", rawText);
+
+            if (mediaParts.Count > 0)
+            {
+                var allParts = new List<UIPart>(richOutput.Parts);
+                allParts.AddRange(mediaParts);
+                return new RichOutput(richOutput.FormattedText, allParts);
+            }
+
+            return richOutput;
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "TelegramUI formatting failed, returning plain text");
-            return new RichOutput(rawText, []);
+            return new RichOutput(rawText, mediaParts.Count > 0 ? [.. mediaParts] : []);
         }
+    }
+
+    static List<MediaPart> ExtractMediaParts(string text)
+    {
+        var parts = new List<MediaPart>();
+        // match blob storage URLs for delivered files
+        var blobPattern = @"https?://[^\s""]+\.blob\.core\.windows\.net/files/deliveries/[^\s""]+";
+        foreach (Match match in Regex.Matches(text, blobPattern))
+        {
+            var url = match.Value.TrimEnd('.', ',', ')', ']', '>');
+            try
+            {
+                var uri = new Uri(url);
+                var fileName = Path.GetFileName(uri.LocalPath);
+                var mimeType = MimeTypes.GetMimeType(fileName);
+                parts.Add(new MediaPart(url, fileName, mimeType, fileName));
+            }
+            catch
+            {
+                // malformed URL, skip
+            }
+        }
+        return parts;
     }
 
     static RichOutput ParseRichOutput(string llmResponse, string fallbackText)
@@ -91,6 +128,16 @@ public class TelegramUIAgent(
                         }
                         if (options.Count >= 2)
                             parts.Add(new OptionsPart(prompt, options, callbackId));
+                    }
+
+                    if (partType == "media" && part.TryGetProperty("url", out var urlEl))
+                    {
+                        var mediaUrl = urlEl.GetString() ?? "";
+                        var mediaFileName = part.TryGetProperty("fileName", out var fn) ? fn.GetString() ?? "" : Path.GetFileName(new Uri(mediaUrl).LocalPath);
+                        var mediaMimeType = part.TryGetProperty("mimeType", out var mt) ? mt.GetString() ?? "application/octet-stream" : MimeTypes.GetMimeType(mediaFileName);
+                        var mediaCaption = part.TryGetProperty("caption", out var cap) ? cap.GetString() : null;
+                        if (mediaUrl.Length > 0)
+                            parts.Add(new MediaPart(mediaUrl, mediaFileName, mediaMimeType, mediaCaption));
                     }
 
                     if (partType == "suggestions" && part.TryGetProperty("items", out var sugItems))

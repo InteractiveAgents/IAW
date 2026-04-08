@@ -24,10 +24,31 @@ public class ShellTools(Func<string> getWorkspacePath)
     {
         var isWindows = OperatingSystem.IsWindows();
         var shell = isWindows ? "cmd.exe" : "/bin/sh";
+        var escapedCommand = command.Replace("\"", "\\\"");
         var args = isWindows
-            ? $"/c \"{command.Replace("\"", "\\\"")}\""
-            : $"-c \"{command.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+            ? $"/c \"{escapedCommand}\""
+            : $"-c \"{escapedCommand}\"";
         return ExecuteAsync(shell, args, workingDirectory ?? WorkspacePath);
+    }
+
+    [Description("Run a PowerShell command (pwsh or powershell.exe). Preferred for complex Windows tasks.")]
+    public async Task<string> RunPowerShellAsync(
+        [Description("PowerShell command or script to execute")] string command,
+        [Description("Working directory (defaults to workspace)")] string? workingDirectory = null)
+    {
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
+        var shell = OperatingSystem.IsWindows() ? "pwsh" : "pwsh";
+        var args = $"-NoProfile -NonInteractive -EncodedCommand {encoded}";
+
+        try
+        {
+            return await ExecuteAsync(shell, args, workingDirectory ?? WorkspacePath);
+        }
+        catch (Exception)
+        {
+            if (!OperatingSystem.IsWindows()) throw;
+            return await ExecuteAsync("powershell.exe", args, workingDirectory ?? WorkspacePath);
+        }
     }
 
     private static async Task<string> ExecuteAsync(string fileName, string arguments, string workingDirectory)
@@ -52,6 +73,10 @@ public class ShellTools(Func<string> getWorkspacePath)
         if (stderrTask.Result.Length > 0) sb.AppendLine(stderrTask.Result.Trim());
         sb.AppendLine($"Exit code: {process.ExitCode}");
         var output = sb.ToString();
-        return output.Length > 8_000 ? output[..8_000] + "\n... (truncated)" : output;
+        if (output.Length <= 16_000) return output;
+        var headSize = 10_000;
+        var tailSize = 5_000;
+        return $"{output[..headSize]}\n\n... [{output.Length - 15_000} characters truncated] ...\n\n{output[^tailSize..]}";
+
     }
 }

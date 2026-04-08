@@ -51,8 +51,10 @@ public class ThreadAgent(
     {
         return [
             AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
-                "Send a task to a specific agent by name. The agent handles it autonomously " +
-                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem."),
+                "ALWAYS delegate file, shell, build, test, git, and code analysis tasks to specialized agents. " +
+                "Never do these yourself — the agent has its own LLM and tools. Include FULL request with all paths and details. " +
+                "Available: Shell (CLI commands, PowerShell), DotNet (build/test), FileSystem (read/write/search/copy/move/archive/upload files), " +
+                "Git (status/commit/diff), Roslyn (C# analysis), GitHub (PRs/issues), Aspire (services), IAWSystem (self-improvement)."),
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
                 "For complex multi-step tasks requiring coordination across multiple agents. " +
@@ -73,9 +75,17 @@ public class ThreadAgent(
         var threadId = this.GetPrimaryKeyString();
         var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
 
+        var workspace = GetWorkspacePath();
+        if (workspace is not null)
+            await agent.SetWorkspace(workspace, ct);
+
+        var enrichedRequest = workspace is not null
+            ? $"[Workspace: {workspace}]\n{request}"
+            : request;
+
         try
         {
-            var result = await agent.GetResponse(request, ct);
+            var result = await agent.GetResponse(enrichedRequest, ct);
             return result.Length > 4000
                 ? result[..4000] + "\n...(truncated)"
                 : result;
@@ -124,6 +134,11 @@ public class ThreadAgent(
                 return $"Could not resolve agent: {agentInterfaceName}";
 
             var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
+
+            var workspace = GetWorkspacePath();
+            if (workspace is not null)
+                await agent.SetWorkspace(workspace, ct);
+
             return await agent.GetResponse(request, ct);
         }
 
