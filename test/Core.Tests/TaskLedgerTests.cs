@@ -81,7 +81,7 @@ public class TaskLedgerTests : AgentTest<TestAgent>
         Assert.DoesNotContain("Agent0", block);
     }
 
-    [Fact(Skip = "Journaling uses VolatileStateMachineStorageProvider — state does not survive deactivation by design")]
+    [Fact]
     public async Task Events_SurviveGrainDeactivation()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -93,7 +93,7 @@ public class TaskLedgerTests : AgentTest<TestAgent>
 
         var mgmt = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
         await mgmt.ForceActivationCollection(TimeSpan.Zero);
-        await Task.Delay(500, ct);
+        await Task.Delay(2000, ct);
 
         var ledger2 = Ledger(id);
         var events = await ledger2.GetEventsAsync(ct);
