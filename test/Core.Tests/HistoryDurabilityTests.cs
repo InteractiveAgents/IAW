@@ -1,5 +1,3 @@
-using Core.Contracts;
-using IAW.Core;
 using IAW.Testing;
 using Xunit;
 

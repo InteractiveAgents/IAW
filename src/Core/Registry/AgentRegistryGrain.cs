@@ -1,4 +1,3 @@
-using Core.Contracts;
 using System.Text;
 
 namespace Core.Registry;

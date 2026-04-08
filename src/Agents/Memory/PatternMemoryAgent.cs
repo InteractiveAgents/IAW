@@ -1,6 +1,4 @@
 using Core;
-using Core.AI;
-using Core.AI.Models;
 using Core.Contracts;
 using Core.Models;
 using Microsoft.Extensions.AI;

@@ -5,6 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Aspire.IAW</RootNamespace>
+    <AssemblyName>Aspire.IAW.Client</AssemblyName>
     <PackageId>Aspire.IAW.Client</PackageId>
     <Version>0.1.0</Version>
     <IsPackable>true</IsPackable>

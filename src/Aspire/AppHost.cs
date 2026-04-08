@@ -1,18 +1,15 @@
 using Core.AI.Models;
 using OpenAIModels = Core.AI.Models.OpenAI;
-using AnthropicModels = Core.AI.Models.Anthropic;
-using GitHubModels = Core.AI.Models.GitHub;
-using OllamaModels = Core.AI.Models.Ollama;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
 var iaw = builder.AddIAW("iaw")
 
     // --- OpenAI (direct API) ---
-    //.WithLLM<OpenAIModels.Gpt54Nano>().AsFast()
-    //.WithLLM<OpenAIModels.Gpt54Mini>().AsBalanced()
-    //.WithLLM<OpenAIModels.Gpt54>().AsReasoning()
-    //.WithEmbedding<OpenAIModels.TextEmbedding3Small>()
+    .WithLLM<OpenAIModels.Gpt54Nano>().AsFast()
+    .WithLLM<OpenAIModels.Gpt54Mini>().AsBalanced()
+    .WithLLM<OpenAIModels.Gpt54>().AsReasoning()
+    .WithEmbedding<OpenAIModels.TextEmbedding3Small>()
 
     // --- Anthropic (no embedding API — uses OpenAI embedding) ---
     //.WithLLM<AnthropicModels.Claude45Haiku>().AsFast()
@@ -27,14 +24,14 @@ var iaw = builder.AddIAW("iaw")
     //.WithEmbedding<GitHubModels.TextEmbedding3Small>()
 
     // --- Ollama (local, 3060 Ti / 8GB VRAM) ---
-    .WithLLM<OllamaModels.Qwen25_7B>()
-    .WithEmbedding<OllamaModels.MxbaiEmbedLarge>()
-    .WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI(op => op.WithLifetime(ContainerLifetime.Persistent)))
+    //.WithLLM<OllamaModels.Qwen25_7B>()
+    //.WithEmbedding<OllamaModels.MxbaiEmbedLarge>()
+    //.WithOllama(o => o.WithGPUSupport().WithDataVolume().WithOpenWebUI(op => op.WithLifetime(ContainerLifetime.Persistent)))
 
     // --- Local voice to text via Whisper with fallback to CPU in case of CUDA runtime issues ---
     .WithVoice2Text<WhisperLargeV3Turbo>();
 
-var assistant = builder.AddProject<Projects.IAW_Assistant>("assistant")
+var assistant = builder.AddProject<Projects.Agents_Host>("assistant")
     .WithReference(iaw)
     .WithEndpoint("orleans-gateway", e => { e.IsProxied = false; e.Port = 30000; })
     .WithEndpoint("orleans-silo", e => { e.IsProxied = false; e.Port = 11111; })

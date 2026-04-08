@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "IAW.Assistant": {
+    "Agents.Host": {
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {

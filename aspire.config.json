@@ -1,5 +1,5 @@
 {
   "appHost": {
-    "path": "src/IAW.AppHost/Aspire.csproj"
+    "path": "src/Aspire/Aspire.csproj"
   }
 }

@@ -1,5 +1,4 @@
 using Core;
-using Core.Contracts;
 using Core.Registry;
 using IAW.Testing;
 using Microsoft.Extensions.AI;
