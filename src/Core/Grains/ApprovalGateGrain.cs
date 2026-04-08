@@ -39,15 +39,19 @@ public class ApprovalGateGrain(
         return Task.FromResult(decision);
     }
 
-    public Task<ApprovalDecision> AwaitDecisionAsync(string requestId, CancellationToken ct = default)
+    public async Task<ApprovalDecision> AwaitDecisionAsync(string requestId, CancellationToken ct = default)
     {
         if (decisions.TryGetValue(requestId, out var existing))
-            return Task.FromResult(existing);
+            return existing;
 
         var tcs = new TaskCompletionSource<ApprovalDecision>(TaskCreationOptions.RunContinuationsAsynchronously);
         _waiters[requestId] = tcs;
-        ct.Register(() => tcs.TrySetCanceled());
-        return tcs.Task;
+        await using var registration = ct.Register(() =>
+        {
+            tcs.TrySetCanceled();
+            _waiters.Remove(requestId);
+        });
+        return await tcs.Task;
     }
 
     public Task<IReadOnlyList<ApprovalRequest>> GetPendingAsync(CancellationToken ct = default)

@@ -1,11 +1,13 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 
 namespace Core.Context;
 
 public class RAGContextProvider(
     QdrantClient qdrantClient,
-    IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator) : IAgentContextProvider
+    IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
+    ILogger<RAGContextProvider>? logger = null) : IAgentContextProvider
 {
     public string Name => "document-search";
 
@@ -31,8 +33,9 @@ public class RAGContextProvider(
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "RAG context provider failed for agent {AgentId}", agentId);
             return [];
         }
     }

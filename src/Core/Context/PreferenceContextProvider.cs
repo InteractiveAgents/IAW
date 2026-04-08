@@ -1,11 +1,13 @@
 using Core.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Context;
 
 public class PreferenceContextProvider(
     IGrainFactory grainFactory,
     string preferenceAgentId,
-    string? categoryFilter = null) : IAgentContextProvider
+    string? categoryFilter = null,
+    ILogger<PreferenceContextProvider>? logger = null) : IAgentContextProvider
 {
     public string Name => "user-preferences";
 
@@ -26,6 +28,6 @@ public class PreferenceContextProvider(
             }).ToList();
         }
         catch (OperationCanceledException) { throw; }
-        catch (Exception) { return []; }
+        catch (Exception ex) { logger?.LogWarning(ex, "Preference context provider failed for {AgentId}", preferenceAgentId); return []; }
     }
 }

@@ -1,8 +1,9 @@
 using Core.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Context;
 
-public class TaskLedgerContextProvider(IGrainFactory grainFactory, string taskId) : IAgentContextProvider
+public class TaskLedgerContextProvider(IGrainFactory grainFactory, string taskId, ILogger<TaskLedgerContextProvider>? logger = null) : IAgentContextProvider
 {
     public string Name => "task-ledger";
 
@@ -22,8 +23,9 @@ public class TaskLedgerContextProvider(IGrainFactory grainFactory, string taskId
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "Task ledger context provider failed for task {TaskId}", taskId);
             return [];
         }
     }

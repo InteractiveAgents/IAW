@@ -17,6 +17,7 @@ using Qdrant.Client;
 using Qdrant.Client.Grpc;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 using System.Threading.Channels;
 using ChatMessage = Core.Contracts.ChatMessage;
 using ContractsTextContent = Core.Contracts.TextContent;
@@ -36,6 +37,8 @@ public abstract partial class Agent(
     private AgentSession? _session;
     private IReadOnlyList<ContentPart>? _currentMessageParts;
     private ChannelWriter<string>? _toolProgressWriter;
+    private ILogger? _logger;
+    protected ILogger Logger => _logger ??= ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(GetType());
 
     protected void WriteToolProgress(string text)
     {
@@ -71,7 +74,7 @@ public abstract partial class Agent(
         {
             Name = this.GetPrimaryKeyString(),
             ChatOptions = _chatOptions,
-            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, async ct => await WriteStateAsync(ct), blobStorage, new ChatReducer(), new HistorySummarizer(chatClient, durableState.State))
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, async ct => await WriteStateAsync(ct), blobStorage, new ChatReducer(), new HistorySummarizer(chatClient, durableState.State, Logger), Logger)
         });
 
         _session = await _agent.CreateSessionAsync(cancellationToken);
@@ -331,8 +334,9 @@ public abstract partial class Agent(
                 {
                     throw;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Logger.LogWarning(ex, "Failed to resolve attachment {FileName}", file.FileName);
                     attachments.Add($"[Attached file: {file.FileName} — could not read content]");
                 }
             }
@@ -397,8 +401,9 @@ public abstract partial class Agent(
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Failed to ingest chunks for {FileName}", file.FileName);
         }
     }
 

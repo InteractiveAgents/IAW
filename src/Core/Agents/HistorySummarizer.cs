@@ -1,5 +1,6 @@
 using Core.Contracts;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Orleans.Journaling;
 using ChatMessage = Core.Contracts.ChatMessage;
 
@@ -7,7 +8,8 @@ namespace Core.Agents;
 
 internal sealed class HistorySummarizer(
     IChatClient chatClient,
-    IDurableDictionary<string, StateEntry>? durableState = null)
+    IDurableDictionary<string, StateEntry>? durableState = null,
+    ILogger? logger = null)
 {
     private const int SummarizationThreshold = 40;
     private const int RecentWindow = 20;
@@ -99,8 +101,9 @@ internal sealed class HistorySummarizer(
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "History summarization failed, returning existing summary");
             return existingSummary;
         }
     }

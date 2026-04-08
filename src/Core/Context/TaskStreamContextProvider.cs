@@ -1,17 +1,15 @@
 using Core.Contracts;
+using Orleans.Journaling;
 
 namespace Core.Context;
 
-public class TaskStreamContextProvider(IGrainFactory grainFactory) : IAgentContextProvider
+public class TaskStreamContextProvider(IDurableList<AgentEvent> eventLog) : IAgentContextProvider
 {
     public string Name => "TaskStream";
 
-    public async Task<IReadOnlyList<string>> GetContextAsync(string agentId, string prompt, CancellationToken ct = default)
+    public Task<IReadOnlyList<string>> GetContextAsync(string agentId, string prompt, CancellationToken ct = default)
     {
-        var agent = grainFactory.GetGrain<IAgent>(agentId);
-        var events = await agent.GetEventLog(ct);
-
-        var taskEvents = events
+        var taskEvents = eventLog
             .Where(e => e.Payload.ContainsKey("taskId"))
             .OrderByDescending(e => e.Timestamp)
             .Take(10)
@@ -22,6 +20,6 @@ public class TaskStreamContextProvider(IGrainFactory grainFactory) : IAgentConte
             })
             .ToList();
 
-        return taskEvents;
+        return Task.FromResult<IReadOnlyList<string>>(taskEvents);
     }
 }

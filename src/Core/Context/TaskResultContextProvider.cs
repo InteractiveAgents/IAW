@@ -1,4 +1,5 @@
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Qdrant.Client;
 
 namespace Core.Context;
@@ -6,7 +7,8 @@ namespace Core.Context;
 public class TaskResultContextProvider(
     QdrantClient qdrantClient,
     IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-    string userId) : IAgentContextProvider
+    string userId,
+    ILogger<TaskResultContextProvider>? logger = null) : IAgentContextProvider
 {
     public string Name => "task-results";
 
@@ -32,8 +34,9 @@ public class TaskResultContextProvider(
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "Task result context provider failed for user {UserId}", userId);
             return [];
         }
     }

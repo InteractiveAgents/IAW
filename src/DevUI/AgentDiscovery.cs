@@ -9,7 +9,7 @@ static partial class AgentDiscovery
     // Maps grain interface type to its well-known grain ID.
     // Convention: strip "I" prefix, convert PascalCase to kebab-case.
     // e.g. IPersonalAssistant → personal-assistant, IRoslyn → roslyn
-    public static void DiscoverAndRegisterAgents(IHostApplicationBuilder builder)
+    public static List<IHostedAgentBuilder> DiscoverAndRegisterAgents(IHostApplicationBuilder builder)
     {
         var agentInterfaces = AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
@@ -18,6 +18,8 @@ static partial class AgentDiscovery
                          && typeof(IAgent).IsAssignableFrom(t)
                          && !t.IsGenericType)
             .ToList();
+
+        var agentRefs = new List<IHostedAgentBuilder>(agentInterfaces.Count);
 
         foreach (var iface in agentInterfaces)
         {
@@ -28,11 +30,15 @@ static partial class AgentDiscovery
             var grainId = ToKebabCase(name);
             var displayName = ToSpacedName(name);
 
-            // First line = grain ID for routing, rest = description for DevUI
+            // First line = grain ID for routing; kebab-case name is URL-safe for per-agent endpoints
             var instructions = $"{grainId}\n{displayName} — Interactive Agent in the IAW system.";
+            var description = $"{displayName} — Interactive Agent in the IAW system.";
 
-            builder.AddAIAgent(displayName, instructions);
+            var agentRef = builder.AddAIAgent(grainId, instructions, description, chatClientServiceKey: null);
+            agentRefs.Add(agentRef);
         }
+
+        return agentRefs;
     }
 
     private static string ToKebabCase(string pascalCase)

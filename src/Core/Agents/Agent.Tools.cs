@@ -2,6 +2,7 @@ using Core.Communication;
 using Core.Contracts;
 using Core.Tools;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using System.Reflection;
 
@@ -30,6 +31,7 @@ public abstract partial class Agent
             {
                 durableState.State[WorkspacePathKey] = new StateEntry(WorkspacePathKey, path);
                 _cachedTools = null;
+                // state persists at next WriteStateAsync — journaling tracks this mutation automatically
             });
         RegisterToolMethods(tools, workspaceTools);
         RegisterSchedulingTools(tools);
@@ -68,9 +70,9 @@ public abstract partial class Agent
             {
                 tools.Add(AIFunctionFactory.Create(method, this));
             }
-            catch
+            catch (Exception ex)
             {
-                // method signature incompatible with AIFunctionFactory — skip silently
+                Logger.LogDebug(ex, "Skipping tool {Method} — incompatible signature", method.Name);
             }
         }
     }
@@ -157,9 +159,9 @@ public abstract partial class Agent
                 {
                     tools.Add(AIFunctionFactory.Create(method, this));
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // method signature incompatible — skip silently (matches DiscoverInterfaceTools pattern)
+                    Logger.LogDebug(ex, "Skipping scheduling tool {Method} — incompatible signature", method.Name);
                 }
             }
         }
