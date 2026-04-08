@@ -11,7 +11,7 @@
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; }
 
         #graph-container { flex: 1; position: relative; }
-        #cy { width: 100%; height: 100%; }
+        #cy { width: 100%; height: calc(100% - 44px); }
 
         #sidebar { width: 360px; background: #111128; border-left: 1px solid #2a2a4a; display: flex; flex-direction: column; }
         #sidebar-header { padding: 16px; border-bottom: 1px solid #2a2a4a; }
@@ -46,11 +46,35 @@
         .detail-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
         .detail-key { color: #888; }
         .detail-value { color: #ccc; }
+
+        #timeline-bar { position: absolute; bottom: 0; left: 0; right: 0; background: #111128; border-top: 1px solid #2a2a4a; padding: 8px 16px; display: flex; align-items: center; gap: 10px; z-index: 10; }
+        #timeline-bar button { background: #2a2a5a; border: 1px solid #3a3a6a; color: #ccc; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        #timeline-bar button:hover { background: #3a3a7a; }
+        #timeline-bar button.active { background: #6c6cff; color: #fff; }
+        #timeline-slider { flex: 1; accent-color: #6c6cff; }
+        #timeline-label { font-size: 11px; color: #888; min-width: 160px; text-align: right; font-family: 'Cascadia Code', monospace; }
+        #timeline-position { font-size: 11px; color: #6c6cff; min-width: 60px; }
+
+        #timeline-markers { position: absolute; bottom: 44px; left: 80px; right: 180px; height: 12px; pointer-events: none; z-index: 9; }
+        .timeline-tick { position: absolute; width: 3px; height: 10px; border-radius: 1px; bottom: 0; opacity: 0.7; }
+        .timeline-tick.file { background: #4caf50; }
+        .timeline-tick.command { background: #ff9800; }
+        .timeline-tick.orchestration { background: #9c27b0; }
+        .timeline-tick.call { background: #2196f3; }
+        .timeline-tick.llm { background: #ffd700; }
     </style>
 </head>
 <body>
     <div id="graph-container">
         <div id="cy"></div>
+        <div id="timeline-markers"></div>
+        <div id="timeline-bar">
+            <button id="btn-live" class="active">LIVE</button>
+            <button id="btn-replay">REPLAY</button>
+            <span id="timeline-position">0/0</span>
+            <input type="range" id="timeline-slider" min="0" max="0" value="0" disabled>
+            <span id="timeline-label">--:--:--</span>
+        </div>
     </div>
     <div id="sidebar">
         <div id="sidebar-header"><h2>IAW Agent Flow</h2></div>
@@ -375,6 +399,139 @@
         }
     });
 
+    // timeline recording
+    const eventHistory = [];
+    let isLiveMode = true;
+
+    function recordEvent(type, data) {
+        eventHistory.push({ type: type, data: data, time: Date.now() });
+        if (isLiveMode) {
+            var slider = document.getElementById('timeline-slider');
+            slider.max = eventHistory.length;
+            slider.value = eventHistory.length;
+            document.getElementById('timeline-position').textContent = eventHistory.length + '/' + eventHistory.length;
+            updateTimelineLabel(eventHistory.length - 1);
+            addTimelineTick(eventHistory.length - 1);
+        }
+    }
+
+    function updateTimelineLabel(index) {
+        var label = document.getElementById('timeline-label');
+        if (index < 0 || index >= eventHistory.length) {
+            label.textContent = '--:--:--';
+            return;
+        }
+        var t = new Date(eventHistory[index].time);
+        label.textContent = t.toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 1 });
+    }
+
+    function addTimelineTick(index) {
+        var markers = document.getElementById('timeline-markers');
+        if (eventHistory.length < 2) return;
+        var pct = (index / (eventHistory.length - 1)) * 100;
+        var tick = document.createElement('div');
+        tick.className = 'timeline-tick';
+        var entry = eventHistory[index];
+        if (entry.type === 'event') {
+            tick.classList.add(eventCategory(entry.data.eventName || ''));
+        } else {
+            tick.classList.add('call');
+        }
+        tick.style.left = pct + '%';
+        markers.appendChild(tick);
+        while (markers.children.length > 500) markers.removeChild(markers.firstChild);
+    }
+
+    function rebuildGraphToIndex(targetIndex) {
+        // clear the graph
+        cy.elements().remove();
+        knownThreads.clear();
+        eventCount = 0;
+        callCount = 0;
+
+        // clear event log
+        document.getElementById('event-log').replaceChildren();
+
+        // replay events up to targetIndex
+        for (var i = 0; i <= targetIndex && i < eventHistory.length; i++) {
+            var entry = eventHistory[i];
+            if (entry.type === 'event') {
+                replayAgentEvent(entry.data);
+            } else if (entry.type === 'call') {
+                replayGrainCall(entry.data);
+            }
+        }
+
+        // run layout once at end
+        if (cy.nodes().length > 0) {
+            cy.layout({
+                name: 'cose',
+                animate: false,
+                nodeRepulsion: 300000,
+                idealEdgeLength: 120,
+                edgeElasticity: 80,
+                gravity: 60,
+                numIter: 300,
+                padding: 40,
+                nestingFactor: 5,
+                fit: true
+            }).run();
+        }
+        updateStats();
+    }
+
+    function replayAgentEvent(evt) {
+        eventCount++;
+        var nodeId = ensureNode(evt.sourceAgentId);
+        var node = cy.getElementById(nodeId);
+        node.data('eventCount', (node.data('eventCount') || 0) + 1);
+        node.data('lastEvent', evt.eventName);
+
+        var detail = '';
+        if (evt.payload) {
+            if (evt.payload.Path) detail = evt.payload.Path.split('\\').pop();
+            else if (evt.payload.Command) detail = evt.payload.Command.substring(0, 60);
+            else if (evt.payload.Message) detail = evt.payload.Message.substring(0, 60);
+        }
+        addEventToLog(evt.eventName, evt.sourceAgentId, detail);
+    }
+
+    function replayGrainCall(call) {
+        callCount++;
+        var sourceNodeId = ensureNode(call.source);
+        var targetNodeId = ensureNode(call.target);
+        ensureEdge(sourceNodeId, targetNodeId);
+        addEventToLog(call.method, call.source, '-> ' + shortName(call.target));
+    }
+
+    // timeline controls
+    document.getElementById('btn-live').addEventListener('click', function() {
+        isLiveMode = true;
+        this.classList.add('active');
+        document.getElementById('btn-replay').classList.remove('active');
+        var slider = document.getElementById('timeline-slider');
+        slider.disabled = true;
+        slider.max = eventHistory.length;
+        slider.value = eventHistory.length;
+        document.getElementById('timeline-position').textContent = eventHistory.length + '/' + eventHistory.length;
+        rebuildGraphToIndex(eventHistory.length - 1);
+    });
+
+    document.getElementById('btn-replay').addEventListener('click', function() {
+        isLiveMode = false;
+        this.classList.add('active');
+        document.getElementById('btn-live').classList.remove('active');
+        document.getElementById('timeline-slider').disabled = false;
+    });
+
+    document.getElementById('timeline-slider').addEventListener('input', function() {
+        if (isLiveMode) return;
+        var idx = parseInt(this.value);
+        document.getElementById('timeline-position').textContent = idx + '/' + eventHistory.length;
+        updateTimelineLabel(idx - 1);
+        rebuildGraphToIndex(idx - 1);
+    });
+
     // SignalR connection
     const connection = new signalR.HubConnectionBuilder()
         .withUrl('/visualization/hub')
@@ -383,6 +540,9 @@
         .build();
 
     connection.on('AgentEvent', function(evt) {
+        recordEvent('event', evt);
+        if (!isLiveMode) return;
+
         eventCount++;
         const nodeId = ensureNode(evt.sourceAgentId);
         pulseNode(nodeId);
@@ -404,6 +564,9 @@
     });
 
     connection.on('GrainCall', function(call) {
+        recordEvent('call', call);
+        if (!isLiveMode) return;
+
         callCount++;
         const sourceNodeId = ensureNode(call.source);
         const targetNodeId = ensureNode(call.target);
