@@ -20,6 +20,7 @@ static partial class AgentDiscovery
             .ToList();
 
         var agentRefs = new List<IHostedAgentBuilder>(agentInterfaces.Count);
+        var registered = new HashSet<string>();
 
         foreach (var iface in agentInterfaces)
         {
@@ -28,6 +29,9 @@ static partial class AgentDiscovery
                 name = name[1..];
 
             var grainId = ToKebabCase(name);
+            if (!registered.Add(grainId))
+                continue;
+
             var displayName = ToSpacedName(name);
 
             // First line = grain ID for routing; kebab-case name is URL-safe for per-agent endpoints
