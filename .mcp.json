@@ -6,15 +6,33 @@
     },
     "aspire": {
       "command": "aspire",
-      "args": ["agent", "mcp"]
+      "args": [
+        "agent",
+        "mcp"
+      ]
+    },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
     },
     "context7": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@upstash/context7-mcp@latest"]
     },
-    "microsoft-learn": {
-      "type": "http",
-      "url": "https://learn.microsoft.com/api/mcp"
+    "playwright": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@playwright/mcp"]
+    },
+    "chrome-devtools": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "chrome-devtools-mcp"]
+    },
+    "stitch": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@_davideast/stitch-mcp", "proxy"],
+      "env": {
+        "STITCH_API_KEY": "${STITCH_API_KEY}"
+      }
     }
   }
 }
