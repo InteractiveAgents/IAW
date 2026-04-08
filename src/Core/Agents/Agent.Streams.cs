@@ -1,5 +1,6 @@
 using Core;
 using Core.Communication;
+using Core.Contracts;
 using Core.Messages;
 using Core.Observability;
 using Orleans.Streams;
@@ -60,6 +61,20 @@ public abstract partial class Agent
             var sw = Stopwatch.StartNew();
             await consumer.OnStreamEventAsync(evt, token);
             sw.Stop();
+
+            // publish consumption notification so visualization can draw event flow edges
+            var consumedStreamId = StreamId.Create(IAWConstants.StreamProvider, "stream.event.consumed");
+            var consumedStream = StreamProvider.GetStream<AgentEvent>(consumedStreamId);
+            await consumedStream.OnNextAsync(new AgentEvent(
+                "stream.event.consumed", this.GetPrimaryKeyString(),
+                evt.CorrelationId, DateTimeOffset.UtcNow,
+                new Dictionary<string, string>
+                {
+                    ["source_agent"] = evt.SourceAgentId,
+                    ["handler_agent"] = this.GetPrimaryKeyString(),
+                    ["event_name"] = streamName,
+                    ["event_type"] = typeof(TEvent).Name
+                }));
 
             AgentTelemetry.EventsHandled.Add(1, new TagList { { "event.name", streamName }, { "agent.type", GetType().Name } });
             AgentTelemetry.EventHandleDuration.Record(sw.Elapsed.TotalSeconds, new TagList { { "event.name", streamName }, { "agent.type", GetType().Name } });

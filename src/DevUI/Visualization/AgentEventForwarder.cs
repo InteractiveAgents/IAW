@@ -56,6 +56,27 @@ public class AgentEventForwarder(
 
         logger.LogInformation("AgentEventForwarder subscribed to {Count} global event streams", EventNames.Length);
 
+        // subscribe to event consumption notifications — shows where events flow to
+        var consumedStreamId = StreamId.Create(IAWConstants.StreamProvider, "stream.event.consumed");
+        var consumedStream = streamProvider.GetStream<AgentEvent>(consumedStreamId);
+        await consumedStream.SubscribeAsync(async (evt, _) =>
+        {
+            var payload = new
+            {
+                sourceAgent = evt.Payload.GetValueOrDefault("source_agent", ""),
+                handlerAgent = evt.Payload.GetValueOrDefault("handler_agent", ""),
+                eventName = evt.Payload.GetValueOrDefault("event_name", ""),
+                eventType = evt.Payload.GetValueOrDefault("event_type", ""),
+                timestamp = evt.Timestamp.ToString("o")
+            };
+
+            logger.LogDebug("Event flow: {Event} from {Source} → {Handler}",
+                payload.eventName, payload.sourceAgent, payload.handlerAgent);
+            await hub.Clients.All.SendAsync("EventFlow", payload, ct);
+        });
+
+        logger.LogInformation("AgentEventForwarder subscribed to event consumption stream");
+
         // keep alive
         await Task.Delay(Timeout.Infinite, ct);
     }

@@ -36,6 +36,7 @@
         .event-entry.orchestration { border-left-color: #9c27b0; }
         .event-entry.call { border-left-color: #2196f3; }
         .event-entry.llm { border-left-color: #ffd700; }
+        .event-entry.flow { border-left-color: #4caf50; }
         .event-time { color: #555; }
         .event-agent { color: #6c6cff; font-weight: 600; }
         .event-name { color: #aaa; }
@@ -62,6 +63,7 @@
         .timeline-tick.orchestration { background: #9c27b0; }
         .timeline-tick.call { background: #2196f3; }
         .timeline-tick.llm { background: #ffd700; }
+        .timeline-tick.flow { background: #4caf50; }
     </style>
 </head>
 <body>
@@ -194,6 +196,16 @@
                     'target-arrow-color': '#ffd700',
                     'width': 3,
                     'opacity': 1
+                }
+            },
+            {
+                selector: 'edge.event-flow',
+                style: {
+                    'line-color': '#4caf50',
+                    'target-arrow-color': '#4caf50',
+                    'line-style': 'dashed',
+                    'width': 2,
+                    'opacity': 0.9
                 }
             },
             {
@@ -338,6 +350,7 @@
         if (name.startsWith('command.') || name.startsWith('powershell.')) return 'command';
         if (name.startsWith('orchestration.') || name === 'job.completed') return 'orchestration';
         if (name === 'LlmCall') return 'llm';
+        if (name.startsWith('code.changed') || name.startsWith('test.result')) return 'flow';
         return 'call';
     }
 
@@ -459,6 +472,8 @@
                 replayAgentEvent(entry.data);
             } else if (entry.type === 'call') {
                 replayGrainCall(entry.data);
+            } else if (entry.type === 'flow') {
+                replayEventFlow(entry.data);
             }
         }
 
@@ -502,6 +517,14 @@
         var targetNodeId = ensureNode(call.target);
         ensureEdge(sourceNodeId, targetNodeId);
         addEventToLog(call.method, call.source, '-> ' + shortName(call.target));
+    }
+
+    function replayEventFlow(flow) {
+        if (!flow.sourceAgent || !flow.handlerAgent) return;
+        var sourceNodeId = ensureNode(flow.sourceAgent);
+        var targetNodeId = ensureNode(flow.handlerAgent);
+        ensureEdge(sourceNodeId, targetNodeId);
+        addEventToLog(flow.eventName, flow.sourceAgent, '~> ' + shortName(flow.handlerAgent) + ' [' + flow.eventType + ']');
     }
 
     // timeline controls
@@ -577,6 +600,25 @@
         pulseNode(targetNodeId);
 
         addEventToLog(call.method, call.source, '-> ' + shortName(call.target));
+        updateStats();
+    });
+
+    connection.on('EventFlow', function(flow) {
+        recordEvent('flow', flow);
+        if (!isLiveMode) return;
+
+        if (!flow.sourceAgent || !flow.handlerAgent) return;
+        var sourceNodeId = ensureNode(flow.sourceAgent);
+        var targetNodeId = ensureNode(flow.handlerAgent);
+        var edgeId = ensureEdge(sourceNodeId, targetNodeId);
+
+        // flash with event-flow style (green dashed)
+        var edge = cy.getElementById(edgeId);
+        edge.addClass('event-flow');
+        setTimeout(function() { edge.removeClass('event-flow'); }, 2000);
+        pulseNode(targetNodeId);
+
+        addEventToLog(flow.eventName, flow.sourceAgent, '~> ' + shortName(flow.handlerAgent) + ' [' + flow.eventType + ']');
         updateStats();
     });
 
