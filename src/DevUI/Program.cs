@@ -1,5 +1,6 @@
 using Aspire.IAW;
 using DevUI;
+using DevUI.Visualization;
 using Microsoft.Agents.AI.DevUI;
 using Microsoft.Extensions.AI;
 
@@ -16,8 +17,12 @@ builder.Services.AddOpenAIResponses();
 builder.Services.AddOpenAIConversations();
 builder.AddOpenAIChatCompletions();
 
+builder.Services.AddSignalR();
+builder.Services.AddHostedService<AgentEventForwarder>();
+
 var app = builder.Build();
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.MapDefaultEndpoints();
 
 // Per-agent OpenAI-compatible endpoints (GA pattern)
@@ -28,6 +33,7 @@ foreach (var agentRef in agentRefs)
 }
 
 app.MapOpenAIConversations();
+app.MapHub<AgentVisualizationHub>("/visualization/hub");
 
 if (builder.Environment.IsDevelopment())
 {

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IAW Agent Visualization</title>
+    <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0a1a; color: #e0e0e0; display: flex; height: 100vh; overflow: hidden; }
+
+        #graph-container { flex: 1; position: relative; }
+        #cy { width: 100%; height: 100%; }
+
+        #sidebar { width: 360px; background: #111128; border-left: 1px solid #2a2a4a; display: flex; flex-direction: column; }
+        #sidebar-header { padding: 16px; border-bottom: 1px solid #2a2a4a; }
+        #sidebar-header h2 { font-size: 14px; color: #8888cc; text-transform: uppercase; letter-spacing: 1px; }
+
+        #stats { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #2a2a4a; }
+        .stat { flex: 1; text-align: center; }
+        .stat-value { font-size: 24px; font-weight: 700; color: #6c6cff; }
+        .stat-label { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+
+        #connection-status { padding: 8px 16px; font-size: 11px; border-bottom: 1px solid #2a2a4a; }
+        .connected { color: #4caf50; }
+        .disconnected { color: #f44336; }
+
+        #thread-filter { padding: 12px 16px; border-bottom: 1px solid #2a2a4a; }
+        #thread-filter select { width: 100%; background: #1a1a3a; border: 1px solid #3a3a5a; color: #e0e0e0; padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+
+        #event-log { flex: 1; overflow-y: auto; padding: 8px; }
+        .event-entry { padding: 6px 8px; margin-bottom: 4px; border-radius: 4px; font-size: 11px; font-family: 'Cascadia Code', monospace; border-left: 3px solid transparent; background: #0d0d22; }
+        .event-entry.file { border-left-color: #4caf50; }
+        .event-entry.command { border-left-color: #ff9800; }
+        .event-entry.orchestration { border-left-color: #9c27b0; }
+        .event-entry.call { border-left-color: #2196f3; }
+        .event-entry.llm { border-left-color: #ffd700; }
+        .event-time { color: #555; }
+        .event-agent { color: #6c6cff; font-weight: 600; }
+        .event-name { color: #aaa; }
+        .event-detail { color: #666; font-size: 10px; display: block; margin-top: 2px; }
+
+        #agent-detail { display: none; padding: 16px; border-top: 1px solid #2a2a4a; max-height: 200px; overflow-y: auto; }
+        #agent-detail h3 { font-size: 13px; color: #6c6cff; margin-bottom: 8px; }
+        .detail-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+        .detail-key { color: #888; }
+        .detail-value { color: #ccc; }
+    </style>
+</head>
+<body>
+    <div id="graph-container">
+        <div id="cy"></div>
+    </div>
+    <div id="sidebar">
+        <div id="sidebar-header"><h2>IAW Agent Flow</h2></div>
+        <div id="stats">
+            <div class="stat"><div class="stat-value" id="agent-count">0</div><div class="stat-label">Agents</div></div>
+            <div class="stat"><div class="stat-value" id="event-count">0</div><div class="stat-label">Events</div></div>
+            <div class="stat"><div class="stat-value" id="call-count">0</div><div class="stat-label">Calls</div></div>
+        </div>
+        <div id="connection-status" class="disconnected">Connecting...</div>
+        <div id="thread-filter">
+            <select id="thread-select">
+                <option value="">All Threads</option>
+            </select>
+        </div>
+        <div id="event-log"></div>
+        <div id="agent-detail">
+            <h3 id="detail-title"></h3>
+            <div id="detail-body"></div>
+        </div>
+    </div>
+
+    <script>
+    const AGENT_COLORS = {
+        'Thread':     '#9c27b0',
+        'FileSystem': '#4caf50',
+        'Shell':      '#ff9800',
+        'DotNet':     '#2196f3',
+        'Roslyn':     '#00bcd4',
+        'Git':        '#f44336',
+        'GitHub':     '#333',
+        'Aspire':     '#e91e63',
+        'Validator':  '#795548',
+        'Preference': '#607d8b',
+        'Knowledge':  '#009688',
+        'NuGet':      '#3f51b5',
+        'default':    '#6c6cff'
+    };
+
+    function agentColor(id) {
+        for (const [name, color] of Object.entries(AGENT_COLORS)) {
+            if (id.toLowerCase().includes(name.toLowerCase())) return color;
+        }
+        return AGENT_COLORS.default;
+    }
+
+    function shortName(grainId) {
+        const slash = grainId.indexOf('/');
+        if (slash > 0) {
+            return grainId.substring(slash + 1).replace(/^I/, '');
+        }
+        return grainId.split('/').pop().replace('agent-', '').replace(/-/g, ' ');
+    }
+
+    function threadOf(grainId) {
+        const slash = grainId.indexOf('/');
+        return slash > 0 ? grainId.substring(0, slash) : null;
+    }
+
+    function escapeText(str) {
+        const div = document.createElement('span');
+        div.textContent = str;
+        return div.textContent;
+    }
+
+    // cytoscape setup
+    const cy = cytoscape({
+        container: document.getElementById('cy'),
+        style: [
+            {
+                selector: 'node',
+                style: {
+                    'label': 'data(label)',
+                    'text-valign': 'bottom',
+                    'text-halign': 'center',
+                    'font-size': '11px',
+                    'color': '#ccc',
+                    'background-color': 'data(color)',
+                    'width': 40,
+                    'height': 40,
+                    'border-width': 2,
+                    'border-color': '#333',
+                    'text-margin-y': 8,
+                    'font-family': 'Segoe UI, system-ui, sans-serif'
+                }
+            },
+            {
+                selector: 'node:parent',
+                style: {
+                    'background-opacity': 0.15,
+                    'background-color': '#6c6cff',
+                    'border-width': 1,
+                    'border-color': '#4a4a8a',
+                    'border-style': 'dashed',
+                    'padding': 30,
+                    'text-valign': 'top',
+                    'text-halign': 'center',
+                    'font-size': '10px',
+                    'color': '#6c6cff',
+                    'label': 'data(label)'
+                }
+            },
+            {
+                selector: 'edge',
+                style: {
+                    'width': 2,
+                    'line-color': '#3a3a6a',
+                    'target-arrow-color': '#3a3a6a',
+                    'target-arrow-shape': 'triangle',
+                    'curve-style': 'bezier',
+                    'opacity': 0.6
+                }
+            },
+            {
+                selector: 'edge.active',
+                style: {
+                    'line-color': '#ffd700',
+                    'target-arrow-color': '#ffd700',
+                    'width': 3,
+                    'opacity': 1
+                }
+            },
+            {
+                selector: 'node.pulse',
+                style: {
+                    'border-color': '#ffd700',
+                    'border-width': 4
+                }
+            }
+        ],
+        layout: { name: 'preset' },
+        minZoom: 0.3,
+        maxZoom: 3
+    });
+
+    // click node for details
+    cy.on('tap', 'node', function(evt) {
+        const node = evt.target;
+        if (node.isParent()) return;
+        const data = node.data();
+        const detail = document.getElementById('agent-detail');
+        detail.style.display = 'block';
+        document.getElementById('detail-title').textContent = data.label;
+
+        const body = document.getElementById('detail-body');
+        body.replaceChildren();
+        const rows = [
+            ['Grain ID', data.id],
+            ['Thread', data.thread || 'standalone'],
+            ['Events', String(data.eventCount || 0)],
+            ['Last Event', data.lastEvent || '-']
+        ];
+        rows.forEach(([key, value]) => {
+            const row = document.createElement('div');
+            row.className = 'detail-row';
+            const k = document.createElement('span');
+            k.className = 'detail-key';
+            k.textContent = key;
+            const v = document.createElement('span');
+            v.className = 'detail-value';
+            v.textContent = value;
+            row.appendChild(k);
+            row.appendChild(v);
+            body.appendChild(row);
+        });
+    });
+
+    // state
+    let eventCount = 0;
+    let callCount = 0;
+    const knownThreads = new Set();
+
+    function ensureNode(grainId) {
+        const nodeId = grainId.replace(/[^a-zA-Z0-9_-]/g, '_');
+        if (cy.getElementById(nodeId).length > 0) return nodeId;
+
+        const thread = threadOf(grainId);
+        const label = shortName(grainId);
+        const color = agentColor(grainId);
+
+        let parentId = null;
+        if (thread) {
+            const threadNodeId = 'thread_' + thread.replace(/[^a-zA-Z0-9_-]/g, '_');
+            if (cy.getElementById(threadNodeId).length === 0) {
+                cy.add({ data: { id: threadNodeId, label: 'Thread: ' + thread }, classes: 'thread-group' });
+                knownThreads.add(thread);
+                updateThreadFilter();
+            }
+            parentId = threadNodeId;
+        }
+
+        const nodeData = { id: nodeId, label: label, color: color, thread: thread || '', eventCount: 0, lastEvent: '' };
+        if (parentId) nodeData.parent = parentId;
+
+        cy.add({ data: nodeData });
+        relayout();
+        updateStats();
+        return nodeId;
+    }
+
+    function ensureEdge(sourceId, targetId) {
+        const edgeId = sourceId + '_to_' + targetId;
+        if (cy.getElementById(edgeId).length === 0) {
+            cy.add({ data: { id: edgeId, source: sourceId, target: targetId } });
+        }
+        return edgeId;
+    }
+
+    function flashEdge(edgeId) {
+        const edge = cy.getElementById(edgeId);
+        edge.addClass('active');
+        setTimeout(function() { edge.removeClass('active'); }, 1500);
+    }
+
+    function pulseNode(nodeId) {
+        const node = cy.getElementById(nodeId);
+        node.addClass('pulse');
+        setTimeout(function() { node.removeClass('pulse'); }, 1000);
+    }
+
+    let relayoutTimer = null;
+    function relayout() {
+        if (relayoutTimer) clearTimeout(relayoutTimer);
+        relayoutTimer = setTimeout(function() {
+            cy.layout({
+                name: 'cose',
+                animate: true,
+                animationDuration: 400,
+                nodeRepulsion: 300000,
+                idealEdgeLength: 120,
+                edgeElasticity: 80,
+                gravity: 60,
+                numIter: 300,
+                padding: 40,
+                nestingFactor: 5,
+                fit: true
+            }).run();
+        }, 500);
+    }
+
+    function updateStats() {
+        document.getElementById('agent-count').textContent = cy.nodes().not(':parent').length;
+        document.getElementById('event-count').textContent = eventCount;
+        document.getElementById('call-count').textContent = callCount;
+    }
+
+    function updateThreadFilter() {
+        const select = document.getElementById('thread-select');
+        const current = select.value;
+        while (select.options.length > 1) select.remove(1);
+        knownThreads.forEach(function(t) {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            select.appendChild(opt);
+        });
+        select.value = current;
+    }
+
+    function eventCategory(name) {
+        if (name.startsWith('file.') || name.startsWith('archive.')) return 'file';
+        if (name.startsWith('command.') || name.startsWith('powershell.')) return 'command';
+        if (name.startsWith('orchestration.') || name === 'job.completed') return 'orchestration';
+        if (name === 'LlmCall') return 'llm';
+        return 'call';
+    }
+
+    function addEventToLog(eventName, agentId, detail) {
+        const log = document.getElementById('event-log');
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 1 });
+        const cat = eventCategory(eventName);
+
+        const entry = document.createElement('div');
+        entry.className = 'event-entry ' + cat;
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'event-time';
+        timeSpan.textContent = time;
+        entry.appendChild(timeSpan);
+
+        entry.appendChild(document.createTextNode(' '));
+
+        const agentSpan = document.createElement('span');
+        agentSpan.className = 'event-agent';
+        agentSpan.textContent = shortName(agentId);
+        entry.appendChild(agentSpan);
+
+        entry.appendChild(document.createTextNode(' '));
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'event-name';
+        nameSpan.textContent = eventName;
+        entry.appendChild(nameSpan);
+
+        if (detail) {
+            const detailSpan = document.createElement('span');
+            detailSpan.className = 'event-detail';
+            detailSpan.textContent = detail;
+            entry.appendChild(detailSpan);
+        }
+
+        log.insertBefore(entry, log.firstChild);
+        while (log.children.length > 200) log.removeChild(log.lastChild);
+    }
+
+    // thread filter
+    document.getElementById('thread-select').addEventListener('change', function() {
+        const thread = this.value;
+        if (!thread) {
+            cy.nodes().style('display', 'element');
+            cy.edges().style('display', 'element');
+        } else {
+            const threadNodeId = 'thread_' + thread.replace(/[^a-zA-Z0-9_-]/g, '_');
+            cy.nodes().forEach(function(n) {
+                const show = n.id() === threadNodeId || n.data('parent') === threadNodeId;
+                n.style('display', show ? 'element' : 'none');
+            });
+            cy.edges().forEach(function(e) {
+                const s = e.source().style('display') !== 'none';
+                const t = e.target().style('display') !== 'none';
+                e.style('display', s && t ? 'element' : 'none');
+            });
+        }
+    });
+
+    // SignalR connection
+    const connection = new signalR.HubConnectionBuilder()
+        .withUrl('/visualization/hub')
+        .withAutomaticReconnect([0, 2000, 5000, 10000])
+        .configureLogging(signalR.LogLevel.Warning)
+        .build();
+
+    connection.on('AgentEvent', function(evt) {
+        eventCount++;
+        const nodeId = ensureNode(evt.sourceAgentId);
+        pulseNode(nodeId);
+
+        const node = cy.getElementById(nodeId);
+        node.data('eventCount', (node.data('eventCount') || 0) + 1);
+        node.data('lastEvent', evt.eventName);
+
+        var detail = '';
+        if (evt.payload) {
+            var p = evt.payload;
+            if (p.Path) detail = p.Path.split('\\').pop();
+            else if (p.Command) detail = p.Command.substring(0, 60);
+            else if (p.Message) detail = p.Message.substring(0, 60);
+        }
+
+        addEventToLog(evt.eventName, evt.sourceAgentId, detail);
+        updateStats();
+    });
+
+    connection.on('GrainCall', function(call) {
+        callCount++;
+        const sourceNodeId = ensureNode(call.source);
+        const targetNodeId = ensureNode(call.target);
+        const edgeId = ensureEdge(sourceNodeId, targetNodeId);
+
+        flashEdge(edgeId);
+        pulseNode(sourceNodeId);
+        pulseNode(targetNodeId);
+
+        addEventToLog(call.method, call.source, '-> ' + shortName(call.target));
+        updateStats();
+    });
+
+    connection.onclose(function() {
+        document.getElementById('connection-status').className = 'disconnected';
+        document.getElementById('connection-status').textContent = 'Disconnected';
+    });
+
+    connection.onreconnecting(function() {
+        document.getElementById('connection-status').className = 'disconnected';
+        document.getElementById('connection-status').textContent = 'Reconnecting...';
+    });
+
+    connection.onreconnected(function() {
+        document.getElementById('connection-status').className = 'connected';
+        document.getElementById('connection-status').textContent = 'Connected';
+    });
+
+    connection.start().then(function() {
+        document.getElementById('connection-status').className = 'connected';
+        document.getElementById('connection-status').textContent = 'Connected';
+    }).catch(function(err) {
+        document.getElementById('connection-status').textContent = 'Failed: ' + err;
+    });
+    </script>
+</body>
+</html>
