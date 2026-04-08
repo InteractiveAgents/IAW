@@ -3,7 +3,7 @@
     <TargetFramework>net11.0</TargetFramework>
     <IsPackable>true</IsPackable>
     <PackageId>IAW.Testing</PackageId>
-    <Version>0.1.0</Version>
+    <NoWarn>$(NoWarn);NU5100</NoWarn>
     <Description>Testing framework for IAW agents -- one-line test inheritance</Description>
   </PropertyGroup>
 

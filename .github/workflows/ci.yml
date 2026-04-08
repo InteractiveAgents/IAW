@@ -25,5 +25,14 @@ jobs:
       - name: Build
         run: dotnet build IAW.slnx --no-restore --configuration Release
 
-      # - name: Test
-      #   run: dotnet test IAW.slnx --no-build --configuration Release --verbosity normal
+      - name: Test
+        run: dotnet test IAW.slnx --no-build --configuration Release --verbosity normal
+
+      - name: Pack
+        run: dotnet pack IAW.slnx --no-build --configuration Release --output ./nupkgs
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs
+          path: ./nupkgs/*.nupkg

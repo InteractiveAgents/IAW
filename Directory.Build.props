@@ -9,7 +9,10 @@
     <DisableMSBuildAssemblyCopyCheck>true</DisableMSBuildAssemblyCopyCheck>
   </PropertyGroup>
 
+  <!-- NuGet package metadata -->
   <PropertyGroup>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>preview.1</VersionSuffix>
     <Authors>InteractiveAgents</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/InteractiveAgents/IAW</RepositoryUrl>
@@ -19,4 +22,18 @@
     <PackageTags>agents;orleans;aspire;ai;multi-agent;llm</PackageTags>
     <Description>IAW - Interactive Agents Web: Orleans-based multi-agent runtime for .NET</Description>
   </PropertyGroup>
+
+  <!-- SourceLink + deterministic builds for NuGet consumers -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
 </Project>
