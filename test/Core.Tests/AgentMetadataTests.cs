@@ -17,7 +17,7 @@ public class AgentMetadataTests
             var contractInterface = GetAgentContractInterface(type);
             if (contractInterface is null) continue;
 
-            var (_, description, _) = AgentInterfaceMetadata.ReadFrom(contractInterface);
+            var (_, description, _, _) = AgentInterfaceMetadata.ReadFrom(contractInterface);
             Assert.True(!string.IsNullOrEmpty(description), $"Agent {type.Name} missing AgentDescription");
         }
     }
@@ -33,7 +33,7 @@ public class AgentMetadataTests
             var contractInterface = GetAgentContractInterface(type);
             if (contractInterface is null) continue;
 
-            var (_, _, capabilities) = AgentInterfaceMetadata.ReadFrom(contractInterface);
+            var (_, _, capabilities, _) = AgentInterfaceMetadata.ReadFrom(contractInterface);
             Assert.True(capabilities.Length > 0, $"Agent {type.Name} missing AgentCapabilities");
         }
     }

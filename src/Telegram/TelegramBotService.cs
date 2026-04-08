@@ -666,18 +666,6 @@ public sealed class TelegramBotService(
         await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: caption);
     }
 
-    public async Task SendBlobAsDocumentAsync(long chatId, string blobPath, string fileName, string? caption, int? topicId, CancellationToken ct)
-    {
-        try
-        {
-            await using var stream = await blobFileStorage.DownloadAsync(blobPath);
-            await SendDocumentAsync(chatId, stream, fileName, caption, topicId, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to send blob {BlobPath} as document", blobPath);
-        }
-    }
 
     private async Task<(long GroupChatId, int? TopicId)> ResolveGroupAndTopicAsync(AgentEvent evt, string targetTopicSlug, CancellationToken ct)
     {
@@ -827,6 +815,7 @@ public sealed class TelegramBotService(
         {
             if (finalText.Length > 0)
                 await EditSafe(chatId, currentMessageId, finalText);
+            await SendPendingDeliveriesAsync(chatId, topicId, thread, ct);
             await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
             return;
         }
@@ -856,7 +845,39 @@ public sealed class TelegramBotService(
                 await EditSafe(chatId, currentMessageId, finalText);
         }
 
+        // deliver any files uploaded by agents during this turn
+        await SendPendingDeliveriesAsync(chatId, topicId, thread, ct);
+
         await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
+    }
+
+    private async Task SendPendingDeliveriesAsync(long chatId, int? topicId, IThread thread, CancellationToken ct)
+    {
+        try
+        {
+            var deliveries = await thread.GetPendingDeliveries(ct);
+            foreach (var delivery in deliveries)
+            {
+                try
+                {
+                    await using var stream = await blobFileStorage.DownloadAsync(delivery.Url);
+                    var inputFile = new InputFile(stream, delivery.FileName);
+
+                    if (delivery.MimeType.StartsWith("image/"))
+                        await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: delivery.Caption);
+                    else
+                        await botClient.SendDocumentAsync(chatId, inputFile, messageThreadId: topicId, caption: delivery.Caption);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to deliver file {FileName}", delivery.FileName);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to get pending deliveries from thread");
+        }
     }
 
     private async Task TryAutoRenameTopicAsync(long chatId, int? topicId, IThread thread, string? slug, CancellationToken ct)
@@ -922,20 +943,13 @@ public sealed class TelegramBotService(
         {
             try
             {
-                if (part.Url.Contains("blob.core.windows.net"))
-                {
-                    await SendBlobAsDocumentAsync(chatId, part.Url, part.FileName, part.Caption, topicId, ct);
-                }
-                else if (part.MimeType.StartsWith("image/"))
-                {
-                    await botClient.SendPhotoAsync(chatId, part.Url,
-                        messageThreadId: topicId, caption: part.Caption);
-                }
+                await using var stream = await blobFileStorage.DownloadAsync(part.Url);
+                var inputFile = new InputFile(stream, part.FileName);
+
+                if (part.MimeType.StartsWith("image/"))
+                    await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: part.Caption);
                 else
-                {
-                    await botClient.SendDocumentAsync(chatId, part.Url,
-                        messageThreadId: topicId, caption: part.Caption);
-                }
+                    await botClient.SendDocumentAsync(chatId, inputFile, messageThreadId: topicId, caption: part.Caption);
             }
             catch (Exception ex)
             {

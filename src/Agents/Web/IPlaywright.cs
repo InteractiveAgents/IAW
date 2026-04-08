@@ -13,6 +13,10 @@ public interface IPlaywright : IAgent
     static string[] IAgent.AgentCapabilities =>
         ["browser", "scrape", "web", "navigate", "extract", "screenshot", "automation"];
 
+    static string[] IAgent.AgentRoutingExamples =>
+        ["open this website", "scrape page content", "take a screenshot of the page",
+         "navigate to URL", "extract data from webpage", "browse to"];
+
     static string IAgent.AgentInstructions => """
         You are Playwright, the browser automation specialist. You navigate web pages, scrape content,
         and extract structured data using browser tools.

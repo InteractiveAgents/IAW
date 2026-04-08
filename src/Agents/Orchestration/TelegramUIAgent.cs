@@ -6,7 +6,6 @@ using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace IAW.Agents.Orchestration;
 
@@ -27,14 +26,8 @@ public class TelegramUIAgent(
         if (string.IsNullOrWhiteSpace(rawText))
             return new RichOutput("", []);
 
-        // deterministically extract file delivery URLs before LLM formatting
-        var mediaParts = ExtractMediaParts(rawText);
-
         try
         {
-            // bypass Agent pipeline (GetResponse) to avoid tool-calling loop:
-            // DiscoverInterfaceTools registers FormatResponse itself as an LLM tool,
-            // causing recursive calls and massive token waste
             var messages = new List<Microsoft.Extensions.AI.ChatMessage>
             {
                 new(ChatRole.System, Instructions),
@@ -46,45 +39,13 @@ public class TelegramUIAgent(
                 MaxOutputTokens = 2048
             }, ct);
 
-            var richOutput = ParseRichOutput(response.Text ?? "", rawText);
-
-            if (mediaParts.Count > 0)
-            {
-                var allParts = new List<UIPart>(richOutput.Parts);
-                allParts.AddRange(mediaParts);
-                return new RichOutput(richOutput.FormattedText, allParts);
-            }
-
-            return richOutput;
+            return ParseRichOutput(response.Text ?? "", rawText);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "TelegramUI formatting failed, returning plain text");
-            return new RichOutput(rawText, mediaParts.Count > 0 ? [.. mediaParts] : []);
+            return new RichOutput(rawText, []);
         }
-    }
-
-    static List<MediaPart> ExtractMediaParts(string text)
-    {
-        var parts = new List<MediaPart>();
-        // match blob storage URLs for delivered files
-        var blobPattern = @"https?://[^\s""]+\.blob\.core\.windows\.net/files/deliveries/[^\s""]+";
-        foreach (Match match in Regex.Matches(text, blobPattern))
-        {
-            var url = match.Value.TrimEnd('.', ',', ')', ']', '>');
-            try
-            {
-                var uri = new Uri(url);
-                var fileName = Path.GetFileName(uri.LocalPath);
-                var mimeType = MimeTypes.GetMimeType(fileName);
-                parts.Add(new MediaPart(url, fileName, mimeType, fileName));
-            }
-            catch
-            {
-                // malformed URL, skip
-            }
-        }
-        return parts;
     }
 
     static RichOutput ParseRichOutput(string llmResponse, string fallbackText)

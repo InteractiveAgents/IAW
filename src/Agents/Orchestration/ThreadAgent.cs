@@ -1,6 +1,8 @@
 using Core;
 using Core.Context;
 using Core.Contracts;
+using Core.Registry;
+using Core.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +22,7 @@ public class ThreadAgent(
 {
     private const string CallbackPrefix = "cb:";
     private const string DigestJobPrefix = "digest:";
+    private readonly List<MediaPart> _pendingDeliveries = [];
 
     protected override int MaxHistoryMessages => 20;
 
@@ -34,10 +37,14 @@ public class ThreadAgent(
             new UserContextProvider(GrainFactory)
         };
 
-        var qdrant = ServiceProvider.GetService<QdrantClient>();
         var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
+
+        var qdrant = ServiceProvider.GetService<QdrantClient>();
         if (qdrant is not null && embeddings is not null)
             providers.Add(new RAGContextProvider(qdrant, embeddings));
+
+        if (embeddings is not null)
+            providers.Add(new AgentRoutingContextProvider(GrainFactory, embeddings));
 
         var memoryAgents = ServiceProvider.GetService<IReadOnlyList<IMemoryAgent>>();
         if (memoryAgents is not null && memoryAgents.Count > 0)
@@ -51,14 +58,13 @@ public class ThreadAgent(
     {
         return [
             AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
-                "ALWAYS delegate file, shell, build, test, git, and code analysis tasks to specialized agents. " +
-                "Never do these yourself — the agent has its own LLM and tools. Include FULL request with all paths and details. " +
-                "Available: Shell (CLI commands, PowerShell), DotNet (build/test), FileSystem (read/write/search/copy/move/archive/upload files), " +
-                "Git (status/commit/diff), Roslyn (C# analysis), GitHub (PRs/issues), Aspire (services), IAWSystem (self-improvement)."),
+                "Delegate a task to a specialized agent from [Available agents for this request]. " +
+                "Use the agent's DisplayName. The agent has its own LLM and tools — never do these tasks yourself. " +
+                "Include FULL request with all paths and details."),
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
-                "For complex multi-step tasks requiring coordination across multiple agents. " +
-                "NOT needed for single build/run/read/git tasks — use SendToAgent instead.")
+                "For complex multi-step tasks requiring coordination across 3+ agents. " +
+                "NOT needed for single-agent tasks — use SendToAgent instead.")
         ];
     }
 
@@ -70,7 +76,12 @@ public class ThreadAgent(
         var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
                          ?? AgentInterfaceResolver.Resolve(agentName);
         if (interfaceType is null)
-            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem.";
+        {
+            var registry = GrainFactory.GetGrain<IAgentRegistry>("global");
+            var all = await registry.GetAllAsync(ct);
+            var names = string.Join(", ", all.Select(r => r.DisplayName).Where(n => n.Length > 0).Order());
+            return $"Unknown agent: {agentName}. Available: {names}.";
+        }
 
         var threadId = this.GetPrimaryKeyString();
         var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
@@ -85,10 +96,13 @@ public class ThreadAgent(
 
         try
         {
-            var result = await agent.GetResponse(enrichedRequest, ct);
-            return result.Length > 4000
-                ? result[..4000] + "\n...(truncated)"
-                : result;
+            var response = await agent.GetRichResponse(enrichedRequest, ct);
+            var text = string.Join("\n", response.Parts.OfType<TextPart>().Select(p => p.Content));
+            _pendingDeliveries.AddRange(response.Parts.OfType<MediaPart>());
+
+            return text.Length > 4000
+                ? text[..4000] + "\n...(truncated)"
+                : text;
         }
         catch (OperationCanceledException)
         {
@@ -97,17 +111,7 @@ public class ThreadAgent(
         catch (Exception ex)
         {
             logger.LogError(ex, "SendToAgent: {Agent} failed", agentName);
-            var suggestion = agentName switch
-            {
-                "DotNet" => "Try Shell agent for raw dotnet CLI commands, or check the project path.",
-                "Shell" => "Check command syntax. For .NET operations, use DotNet agent instead.",
-                "FileSystem" => "Check file path exists. Use absolute paths.",
-                "Git" => "Check repository path. Ensure it's a valid git repo.",
-                "Aspire" => "Aspire MCP may not be connected. Try again after restart.",
-                "Roslyn" => "Check that the workspace is set and contains C# code.",
-                _ => "Try a different agent or rephrase the request."
-            };
-            return $"Agent {agentName} failed: {ex.Message}\nSuggestion: {suggestion}";
+            return $"Agent {agentName} failed: {ex.Message}\nTry a different agent or rephrase the request.";
         }
     }
 
@@ -295,6 +299,13 @@ public class ThreadAgent(
         var targetGrainId = Orleans.Runtime.GrainId.Create(grainType, grainId);
         var targetAgent = GrainFactory.GetGrain<IAgent>(targetGrainId);
         return await targetAgent.HandleCallback(callbackId, value, ct);
+    }
+
+    public Task<List<MediaPart>> GetPendingDeliveries(CancellationToken ct = default)
+    {
+        var deliveries = new List<MediaPart>(_pendingDeliveries);
+        _pendingDeliveries.Clear();
+        return Task.FromResult(deliveries);
     }
 
     public async Task<string?> GetTitle(CancellationToken ct)

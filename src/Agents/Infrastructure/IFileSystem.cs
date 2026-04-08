@@ -14,6 +14,11 @@ public interface IFileSystem : IAgent
     static string[] IAgent.AgentCapabilities =>
         ["file", "read", "write", "copy", "move", "delete", "search", "archive", "upload", "filesystem", "workspace"];
 
+    static string[] IAgent.AgentRoutingExamples =>
+        ["send me a file", "deliver the file to me", "zip this folder and send it",
+         "upload the document", "search for files containing", "read the contents of",
+         "copy files to another folder", "find all .txt files"];
+
     static string IAgent.AgentInstructions => """
         You are FileSystem, the file operations specialist. You manage files anywhere on the PC.
 

@@ -13,6 +13,10 @@ public interface IGitHub : IAgent
     static string[] IAgent.AgentCapabilities =>
         ["github", "releases", "issues", "repository", "monitor", "api"];
 
+    static string[] IAgent.AgentRoutingExamples =>
+        ["latest release of repo", "create a GitHub issue", "check pull requests",
+         "watch for new releases", "get repository activity"];
+
     static string IAgent.AgentInstructions =>
         "You are GitHub, the IAW team's GitHub API specialist. " +
         "You monitor repositories for releases, manage issues, and track project activity.";

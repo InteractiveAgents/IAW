@@ -43,7 +43,7 @@ public static class AgentInterfaceResolver
         var interfaces = DiscoverAgentInterfaces();
         return interfaces.FirstOrDefault(t =>
         {
-            var (name, _, _) = AgentInterfaceMetadata.ReadFrom(t);
+            var (name, _, _, _) = AgentInterfaceMetadata.ReadFrom(t);
             return string.Equals(name, displayName, StringComparison.OrdinalIgnoreCase);
         });
     }

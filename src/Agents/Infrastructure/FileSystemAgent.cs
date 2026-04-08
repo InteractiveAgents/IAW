@@ -2,12 +2,14 @@ using Core.AI;
 using Core.Contracts;
 using Core.Services;
 using Core.Tools;
+using Core.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using UIAgentResponse = Core.UI.AgentResponse;
 
 namespace IAW.Agents.System;
 
@@ -16,6 +18,17 @@ public class FileSystemAgent(
     [Llm<Fast>] IChatClient chatClient)
     : Agent<IFileSystem>(durableState, chatClient), IFileSystem
 {
+    readonly List<MediaPart> _pendingDeliveries = [];
+
+    public override async Task<UIAgentResponse> GetRichResponse(string prompt, CancellationToken ct = default)
+    {
+        _pendingDeliveries.Clear();
+        var text = await GetResponse(prompt, ct);
+        var parts = new List<UIPart> { new TextPart(text) };
+        parts.AddRange(_pendingDeliveries);
+        _pendingDeliveries.Clear();
+        return new UIAgentResponse(parts);
+    }
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
@@ -348,6 +361,8 @@ public class FileSystemAgent(
 
         IncrementCounter("total-reads");
         await WriteStateAsync(ct);
+        _pendingDeliveries.Add(new MediaPart(blobUrl, fileName, mimeType, fileName));
+
         await PublishAsync("file.uploaded", new Dictionary<string, string>
         {
             ["Path"] = resolvedPath,

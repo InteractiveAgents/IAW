@@ -13,6 +13,10 @@ public interface IShell : IAgent
     static string[] IAgent.AgentCapabilities =>
         ["execute", "shell", "powershell", "command", "script", "process"];
 
+    static string[] IAgent.AgentRoutingExamples =>
+        ["run npm install", "execute this script", "run pip install",
+         "run a shell command", "execute cargo build", "run python script"];
+
     static string IAgent.AgentInstructions => """
         You are Shell, the command execution specialist. You run CLI commands,
         scripts, and non-.NET tools with timeout enforcement.
