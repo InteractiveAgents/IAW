@@ -24,7 +24,9 @@ public class ShellTools(Func<string> getWorkspacePath)
     {
         var isWindows = OperatingSystem.IsWindows();
         var shell = isWindows ? "cmd.exe" : "/bin/sh";
-        var args = isWindows ? $"/c {command}" : $"-c \"{command.Replace("\"", "\\\"")}\"";
+        var args = isWindows
+            ? $"/c \"{command.Replace("\"", "\\\"")}\""
+            : $"-c \"{command.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
         return ExecuteAsync(shell, args, workingDirectory ?? WorkspacePath);
     }
 

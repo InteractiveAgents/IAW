@@ -1,5 +1,6 @@
 using Core.Communication;
 using Core.Contracts;
+using Core.Registry;
 
 namespace IAW.Core;
 
@@ -11,9 +12,14 @@ public abstract partial class Agent
     public Task<AgentMetadata> GetMetadata(CancellationToken ct = default)
     {
         var type = GetType();
+        var agentInterface = type.GetInterfaces()
+            .FirstOrDefault(i => i != typeof(IAgent) && typeof(IAgent).IsAssignableFrom(i) && !i.IsGenericType);
+        var description = agentInterface is not null
+            ? AgentInterfaceMetadata.ReadFrom(agentInterface).Description
+            : DisplayName;
 
         return Task.FromResult(new AgentMetadata(
-            type.Name, DisplayName, Instructions,
+            type.Name, DisplayName, description,
             DiscoverPublishedMessageTypes(type), DiscoverReceivedMessageTypes(type)));
     }
 

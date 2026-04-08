@@ -9,25 +9,32 @@ namespace Core.Agents;
 internal sealed class HistorySummarizer(
     IChatClient chatClient,
     IDurableDictionary<string, StateEntry>? durableState = null,
-    ILogger? logger = null)
+    ILogger? logger = null,
+    int summarizationThreshold = 40,
+    int recentWindow = 20)
 {
-    private const int SummarizationThreshold = 40;
-    private const int RecentWindow = 20;
     private const string SummaryStateKey = "__history_summary";
     private const string SummaryEndKey = "__history_summary_end";
 
     private int _lastSummarizedOldEnd;
     private ChatMessage? _cachedSummary;
+    private bool _restoredFromState;
 
     public async Task<ChatMessage?> SummarizeIfNeededAsync(
         IReadOnlyList<ChatMessage> history,
         ChatMessage? existingSummary,
         CancellationToken ct = default)
     {
-        // restore summary from durable state on first call after reactivation
-        if (_cachedSummary is null && existingSummary is null && durableState is not null)
+        // restore from durable state once after reactivation
+        if (!_restoredFromState && durableState is not null)
         {
-            if (durableState.TryGetValue(SummaryStateKey, out var entry))
+            _restoredFromState = true;
+            if (durableState.TryGetValue(SummaryEndKey, out var endEntry)
+                && int.TryParse(endEntry.Value.ToString(), out var savedEnd))
+                _lastSummarizedOldEnd = savedEnd;
+
+            if (_cachedSummary is null && existingSummary is null
+                && durableState.TryGetValue(SummaryStateKey, out var entry))
             {
                 _cachedSummary = new ChatMessage
                 {
@@ -35,17 +42,14 @@ internal sealed class HistorySummarizer(
                     Content = entry.Value.ToString()!,
                     Parts = [new Contracts.TextContent(entry.Value.ToString()!)]
                 };
-                if (durableState.TryGetValue(SummaryEndKey, out var endEntry)
-                    && int.TryParse(endEntry.Value.ToString(), out var savedEnd))
-                    _lastSummarizedOldEnd = savedEnd;
                 existingSummary = _cachedSummary;
             }
         }
 
-        if (history.Count <= SummarizationThreshold)
+        if (history.Count <= summarizationThreshold)
             return existingSummary;
 
-        var oldEnd = history.Count - RecentWindow;
+        var oldEnd = history.Count - recentWindow;
 
         // skip re-summarization if old window hasn't grown
         if (existingSummary is not null && oldEnd <= _lastSummarizedOldEnd)
