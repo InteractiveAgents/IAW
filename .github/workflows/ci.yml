@@ -28,11 +28,14 @@ jobs:
       - name: Test
         run: dotnet test IAW.slnx --no-build --configuration Release --verbosity normal
 
-      - name: Pack
+      - name: Pack (validation only)
         run: dotnet pack IAW.slnx --no-build --configuration Release --output ./nupkgs
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
           name: nupkgs
-          path: ./nupkgs/*.nupkg
+          path: |
+            ./nupkgs/*.nupkg
+            ./nupkgs/*.snupkg
+          retention-days: 7
