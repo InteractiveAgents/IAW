@@ -1,43 +1,42 @@
 using Core;
-using Core.AI;
 using Core.Contracts;
 using Core.Contracts.UI;
-using Core.Services;
-using Core.UI;
-using IAW.Agents.Orchestration;
-using Microsoft.Extensions.Options;
-using System.Collections.Concurrent;
-using System.Text;
-using Telegram;
-using Telegram.BotAPI;
-using Telegram.BotAPI.AvailableMethods;
 using Telegram.BotAPI.AvailableTypes;
 using Telegram.BotAPI.GettingUpdates;
-using Telegram.BotAPI.UpdatingMessages;
+using TelegramClient.Services;
 
 namespace TelegramClient;
 
-public sealed class TelegramBotService(
-    IClusterClient clusterClient,
-    ITelegramBotClient botClient,
-    IAudioTranscriptionService transcriptionService,
-    IHttpClientFactory httpClientFactory,
-    BlobFileStorage blobFileStorage,
-    IOptions<TelegramBotOptions> options,
-    ILogger<TelegramBotService> logger)
+public sealed class TelegramBotService
 {
-    static readonly int ColorPurple = 0xCB86DB;
-    static readonly int ColorBlue = 0x6FB9F0;
+    readonly IClusterClient _clusterClient;
+    readonly TelegramMessageSender _messageSender;
+    readonly TelegramFileService _fileService;
+    readonly CommandHandler _commandHandler;
+    readonly CallbackRouter _callbackRouter;
+    readonly ResponseStreamer _responseStreamer;
+    readonly ILogger<TelegramBotService> _logger;
 
-    private readonly ConcurrentDictionary<string, (long ChatId, int MessageId, int? TopicId)> _progressMessages = new();
+    public TelegramBotService(
+        IClusterClient clusterClient,
+        TelegramMessageSender messageSender,
+        TelegramFileService fileService,
+        CommandHandler commandHandler,
+        CallbackRouter callbackRouter,
+        ResponseStreamer responseStreamer,
+        ILogger<TelegramBotService> logger)
+    {
+        _clusterClient = clusterClient;
+        _messageSender = messageSender;
+        _fileService = fileService;
+        _commandHandler = commandHandler;
+        _callbackRouter = callbackRouter;
+        _responseStreamer = responseStreamer;
+        _logger = logger;
 
-    const int StreamingEditIntervalMs = 1500;
-
-    static readonly (string Slug, string Name, int Color)[] PredefinedTopics =
-    [
-        ("personal", "Personal", ColorPurple),
-        ("iaw", "IAW", ColorBlue),
-    ];
+        _callbackRouter.StreamResponse = (chatId, msgId, topicId, thread, msg, telegramId, ct, slug) =>
+            _responseStreamer.StreamAsync(chatId, msgId, topicId, thread, msg, telegramId, ct, slug);
+    }
 
     public async Task HandleUpdateAsync(Update update, CancellationToken ct)
     {
@@ -47,15 +46,15 @@ public sealed class TelegramBotService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unhandled error in HandleUpdateAsync");
+            _logger.LogError(ex, "Unhandled error in HandleUpdateAsync");
         }
     }
 
-    private async Task HandleUpdateCoreAsync(Update update, CancellationToken ct)
+    async Task HandleUpdateCoreAsync(Update update, CancellationToken ct)
     {
         if (update.CallbackQuery is { } callbackQuery)
         {
-            await HandleCallbackQueryAsync(callbackQuery, ct);
+            await _callbackRouter.HandleAsync(callbackQuery, ct);
             return;
         }
 
@@ -68,25 +67,21 @@ public sealed class TelegramBotService(
         var from = message.From;
         if (from is null) return;
 
-        try { await botClient.SetMessageReactionAsync(chatId, message.MessageId, [new ReactionTypeEmoji("\ud83d\udc40")]); }
-        catch { }
+        await _messageSender.SetReactionAsync(chatId, message.MessageId, "\ud83d\udc40");
 
         var text = message.Text;
 
-        // Voice message: download -> OGG-to-WAV -> Whisper transcription
         if (message.Voice is not null && string.IsNullOrEmpty(text))
         {
             try
             {
-                text = await TranscribeVoiceAsync(message.Voice.FileId, ct);
+                text = await _fileService.TranscribeVoiceAsync(message.Voice.FileId, ct);
                 if (!string.IsNullOrEmpty(text))
-                    await botClient.SendMessageAsync(chatId, $"\ud83c\udfA4 {text}",
-                        replyParameters: new ReplyParameters { MessageId = message.MessageId },
-                        messageThreadId: message.MessageThreadId);
+                    await _messageSender.SendTextAsync(chatId, $"\ud83c\udfA4 {text}", message.MessageThreadId);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Voice transcription failed");
+                _logger.LogError(ex, "Voice transcription failed");
                 text = null;
             }
         }
@@ -94,20 +89,17 @@ public sealed class TelegramBotService(
         var telegramId = from.Id;
         var topicId = message.MessageThreadId;
 
-        // ensure GroupChatId is persisted so async event handlers (job results, notifications) can find it
-        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
+        var userProfile = _clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
         var prefs = await userProfile.GetPreferences(ct);
         if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var storedChatId) || storedChatId != chatId.ToString())
             await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
 
-        // Photo message: download highest-res photo -> upload to blob -> send as ImageContent
         if (message.Photo is not null && message.Photo.Any())
         {
             await HandlePhotoAsync(message, telegramId, topicId, ct);
             return;
         }
 
-        // Document message: download -> upload to blob -> send as FileContent
         if (message.Document is not null)
         {
             await HandleDocumentAsync(message, telegramId, topicId, ct);
@@ -118,599 +110,42 @@ public sealed class TelegramBotService(
 
         if (text.StartsWith("/"))
         {
-            await HandleCommandAsync(chatId, from.Id, topicId, text, ct);
+            await _commandHandler.HandleAsync(chatId, from.Id, topicId, text, ct);
             return;
         }
 
-        // Check UISession for pending free-text input (placeholder for Slice 6)
         var topicKey = topicId?.ToString() ?? "general";
-        var session = clusterClient.GetGrain<IUISession>(telegramId.ToString());
+        var session = _clusterClient.GetGrain<IUISession>(telegramId.ToString());
         if (await session.HasPendingFreeTextInput(topicKey, ct))
         {
-            // Future: route to UISession free-text handler
+            // future: route to UISession free-text handler
         }
 
-        var (thread, slug) = await ResolveThreadAsync(telegramId, topicId, ct);
-        var chatMessage = BuildChatMessage(text);
+        var (thread, slug) = await ThreadResolver.ResolveAsync(_clusterClient, telegramId, topicId, ct);
+        var chatMessage = ChatMessageBuilder.FromText(text);
 
-        logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
+        _logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
-        var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-        await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct, slug);
+        var sent = await _messageSender.SendTextAsync(chatId, "...", topicId);
+        await _responseStreamer.StreamAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct, slug,
+            userMessageId: message.MessageId);
     }
 
-    private async Task HandleCallbackQueryAsync(CallbackQuery callbackQuery, CancellationToken ct)
-    {
-        if (callbackQuery.Data?.StartsWith("cmd:") == true)
-        {
-            await HandleCommandCallbackAsync(callbackQuery, ct);
-            return;
-        }
-
-        var from = callbackQuery.From;
-        var chatId = callbackQuery.Message?.Chat.Id ?? 0L;
-        if (chatId == 0) return;
-
-        var session = clusterClient.GetGrain<IUISession>(from.Id.ToString());
-        var result = await session.HandleCallback(callbackQuery.Id, callbackQuery.Data ?? "", ct);
-
-        try
-        {
-            await botClient.AnswerCallbackQueryAsync(callbackQuery.Id, text: result.Toast);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to answer callback query");
-        }
-
-        if (result.NewText is not null && callbackQuery.Message is not null)
-        {
-            if (result.Buttons is { Count: > 0 })
-            {
-                var buttons = result.Buttons.Select(b =>
-                    new InlineKeyboardButton(b.Text) { CallbackData = b.CallbackData }
-                ).ToArray();
-                var keyboard = new InlineKeyboardMarkup([buttons]);
-                await botClient.EditMessageTextAsync(chatId, callbackQuery.Message.MessageId,
-                    result.NewText, replyMarkup: keyboard);
-            }
-            else
-            {
-                await EditSafe(chatId, callbackQuery.Message.MessageId, result.NewText);
-            }
-        }
-
-        if (callbackQuery.Data?.StartsWith("opt:") == true && result.Action is not null)
-        {
-            if (result.Action.StartsWith("suggestion:"))
-            {
-                var selectedLabel = result.NewText?.Contains('\u2014') == true
-                    ? result.NewText.Split('\u2014', 2).Last().Trim()
-                    : result.Action.Replace("suggestion:", "");
-
-                var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
-                var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
-                var selectionMessage = BuildChatMessage(selectedLabel);
-
-                var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-                await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
-            }
-            else
-            {
-                var optParts = callbackQuery.Data.Split(':', 3);
-                if (optParts.Length >= 3)
-                {
-                    var topicId = (callbackQuery.Message as Message)?.MessageThreadId;
-                    var (thread, _) = await ResolveThreadAsync(from.Id, topicId, ct);
-
-                    var selectedLabel = result.NewText?.Contains('\u2014') == true
-                        ? result.NewText.Split('\u2014', 2).Last().Trim()
-                        : result.Action;
-                    var originalPrompt = result.NewText?.Contains('\u2014') == true
-                        ? result.NewText.Split('\u2014', 2).First().Replace("\u2705", "").Trim()
-                        : "";
-                    var contextPrefix = !string.IsNullOrEmpty(originalPrompt)
-                        ? $"Re: '{originalPrompt}' -- " : "";
-                    var selectionMessage = BuildChatMessage($"{contextPrefix}I choose: {selectedLabel}");
-
-                    var sent = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-                    await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, selectionMessage, from.Id, ct);
-                }
-            }
-        }
-    }
-
-    private async Task HandleCommandCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
-    {
-        var chatId = callbackQuery.Message?.Chat.Id ?? 0L;
-        if (chatId == 0) return;
-
-        var from = callbackQuery.From;
-        var parts = callbackQuery.Data!.Split(':', 3);
-        var action = parts.Length >= 3 ? parts[2] : "";
-
-        try { await botClient.AnswerCallbackQueryAsync(callbackQuery.Id); }
-        catch { }
-
-        switch (parts[1])
-        {
-            case "status" when action == "show":
-                await HandleStatusCommandAsync(chatId, from.Id, null, ct);
-                break;
-            case "cleanup":
-                var cleanupTopicId = (callbackQuery.Message as Message)?.MessageThreadId;
-                await HandleCleanupDeleteAsync(chatId, from.Id, action, cleanupTopicId, ct);
-                break;
-        }
-    }
-
-    private async Task HandleCommandAsync(long chatId, long telegramId, int? topicId, string text, CancellationToken ct)
-    {
-        var command = text.Split(' ', 2)[0].ToLowerInvariant();
-        switch (command)
-        {
-            case "/start":
-                await HandleStartCommandAsync(chatId, telegramId, ct);
-                break;
-            case "/clear":
-                await HandleClearCommandAsync(chatId, telegramId, topicId, ct);
-                break;
-            case "/status":
-                await HandleStatusCommandAsync(chatId, telegramId, topicId, ct);
-                break;
-            case "/newchat":
-                await HandleNewChatCommandAsync(chatId, telegramId, ct);
-                break;
-            case "/cleanup":
-                await HandleCleanupCommandAsync(chatId, telegramId, topicId, ct);
-                break;
-        }
-    }
-
-    private async Task HandleStartCommandAsync(long chatId, long telegramId, CancellationToken ct)
-    {
-        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
-
-        var prefs = await userProfile.GetPreferences(ct);
-        if (prefs.ContainsKey(IAWConstants.StateKeys.SetupComplete))
-        {
-            await botClient.SendMessageAsync(chatId, "Already set up! Topics should be ready.");
-            return;
-        }
-
-        foreach (var (slug, name, color) in PredefinedTopics)
-        {
-            try
-            {
-                var existingTopicId = await userProfile.GetTopicId(slug, ct);
-                if (existingTopicId is not null) continue;
-
-                var topic = await botClient.CreateForumTopicAsync(chatId, name, iconColor: color);
-                await userProfile.SetTopicId(slug, topic.MessageThreadId, ct);
-                logger.LogInformation("Created topic {Name} (id: {TopicId}) for user {TelegramId}",
-                    name, topic.MessageThreadId, telegramId);
-            }
-            catch (BotRequestException ex) when (ex.Message.Contains("TOPIC_NAME_ALREADY_EXISTS", StringComparison.OrdinalIgnoreCase))
-            {
-                logger.LogInformation("Topic {Name} already exists for user {TelegramId}. Send a message there to register.", name, telegramId);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Could not create topic {Name}", name);
-            }
-        }
-
-        await userProfile.RegisterProject("general", "general", ct);
-        await userProfile.SetPreference(IAWConstants.StateKeys.GroupChatId, chatId.ToString(), ct);
-
-        var welcomeText = "Welcome to IAW!\n\nYour Topics:\n- General \u2014 quick questions, overview\n- Personal \u2014 personal assistant, memories\n- IAW \u2014 project monitoring & troubleshooting\n\nUse /clear to reset conversation in any topic.\nUse /status for an overview.";
-        var welcomeButtons = new InlineKeyboardMarkup([
-            [
-                new InlineKeyboardButton("Status") { CallbackData = "cmd:status:show" }
-            ]
-        ]);
-        var welcomeMsg = await botClient.SendMessageAsync(chatId, welcomeText, replyMarkup: welcomeButtons);
-
-        try { await botClient.PinChatMessageAsync(chatId, welcomeMsg.MessageId); }
-        catch (Exception ex) { logger.LogWarning(ex, "Could not pin welcome message"); }
-
-        await userProfile.SetPreference(IAWConstants.StateKeys.SetupComplete, "true", ct);
-        logger.LogInformation("Setup complete for user {TelegramId}", telegramId);
-    }
-
-    private async Task HandleClearCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
-    {
-        var (thread, _) = await ResolveThreadAsync(telegramId, topicId, ct);
-        await thread.ClearHistory(ct);
-        await botClient.SendMessageAsync(chatId, "Conversation cleared.", messageThreadId: topicId);
-    }
-
-    private async Task HandleStatusCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
-    {
-        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
-        var projects = await userProfile.GetProjects(ct);
-
-        var sb = new StringBuilder();
-        sb.AppendLine("Status across all topics:\n");
-
-        foreach (var proj in projects)
-        {
-            var grainId = $"{telegramId}/{proj.Slug}";
-            var thread = clusterClient.GetGrain<IThread>(grainId);
-            try
-            {
-                var meta = await thread.GetMetadata(ct);
-                var history = await thread.GetHistory(ct);
-                if (history.Count > 0)
-                    sb.AppendLine($"[{proj.Slug}] {history.Count} messages");
-            }
-            catch { }
-        }
-
-        if (sb.Length < 40) sb.AppendLine("All quiet \u2014 no active threads.");
-
-        await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
-    }
-
-    private async Task HandleNewChatCommandAsync(long chatId, long telegramId, CancellationToken ct)
-    {
-        var slug = $"chat-{Guid.NewGuid().ToString("N")[..6]}";
-
-        try
-        {
-            var topic = await botClient.CreateForumTopicAsync(chatId, "New Chat");
-            var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
-            await userProfile.SetTopicId(slug, topic.MessageThreadId, ct);
-            await botClient.SendMessageAsync(chatId, "What would you like to work on?",
-                messageThreadId: topic.MessageThreadId);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to create new chat topic");
-            await botClient.SendMessageAsync(chatId, "Could not create topic. Make sure the group has Topics enabled.");
-        }
-    }
-
-    private async Task HandleCleanupCommandAsync(long chatId, long telegramId, int? topicId, CancellationToken ct)
-    {
-        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
-        var projects = await userProfile.GetProjects(ct);
-
-        var sb = new StringBuilder("Your topics:\n\n");
-        var buttons = new List<InlineKeyboardButton[]>();
-
-        foreach (var proj in projects)
-        {
-            if (proj.Slug is "general" or "personal" or "iaw") continue;
-
-            var grainId = $"{telegramId}/{proj.Slug}";
-            var thread = clusterClient.GetGrain<IThread>(grainId);
-            try
-            {
-                var history = await thread.GetHistory(ct);
-                var title = await thread.GetTitle(ct) ?? proj.Slug;
-                sb.AppendLine($"- {title} ({history.Count} messages)");
-                buttons.Add([new InlineKeyboardButton($"Delete: {title}")
-                    { CallbackData = $"cmd:cleanup:{proj.Slug}" }]);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to get info for topic {Slug}", proj.Slug);
-            }
-        }
-
-        if (buttons.Count == 0)
-        {
-            sb.AppendLine("No custom topics to clean up.");
-            await botClient.SendMessageAsync(chatId, sb.ToString(), messageThreadId: topicId);
-            return;
-        }
-
-        var keyboard = new InlineKeyboardMarkup([.. buttons]);
-        await botClient.SendMessageAsync(chatId, sb.ToString(), replyMarkup: keyboard, messageThreadId: topicId);
-    }
-
-    private async Task HandleCleanupDeleteAsync(long chatId, long telegramId, string slug, int? replyTopicId, CancellationToken ct)
-    {
-        var userProfile = clusterClient.GetGrain<IUserProfile>(telegramId.ToString());
-
-        var topicId = await userProfile.GetTopicId(slug, ct);
-        if (topicId.HasValue)
-        {
-            try { await botClient.DeleteForumTopicAsync(chatId, topicId.Value); }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to delete topic {Slug}", slug);
-                await botClient.SendMessageAsync(chatId, $"Could not delete topic: {slug}", messageThreadId: replyTopicId);
-                return;
-            }
-        }
-
-        var thread = clusterClient.GetGrain<IThread>($"{telegramId}/{slug}");
-        await thread.ClearHistory(ct);
-        await userProfile.RemoveProject(slug, ct);
-
-        await botClient.SendMessageAsync(chatId, $"Deleted topic: {slug}", messageThreadId: replyTopicId);
-    }
-
-    private async Task<(IThread Thread, string Slug)> ResolveThreadAsync(long telegramId, int? topicId, CancellationToken ct)
-    {
-        var userProfileId = telegramId.ToString();
-        var userProfile = clusterClient.GetGrain<IUserProfile>(userProfileId);
-        var topicKey = topicId?.ToString() ?? "general";
-
-        var projectSlug = await userProfile.ResolveProject(topicKey, ct);
-        if (projectSlug is null)
-        {
-            projectSlug = topicId is null ? "general" : $"topic-{topicId}";
-            await userProfile.RegisterProject(projectSlug, topicKey, ct);
-        }
-
-        var grainId = $"{userProfileId}/{projectSlug}";
-        return (clusterClient.GetGrain<IThread>(grainId), projectSlug);
-    }
-
-    private static ChatMessage BuildChatMessage(string text) => new()
-    {
-        Role = "user",
-        Parts = new List<ContentPart> { new TextContent(text) }
-    };
-
-    public async Task SendNotificationAsync(AgentEvent evt, CancellationToken ct)
-    {
-        var (groupChatId, notifTopicId) = await ResolveGroupAndTopicAsync(evt, "notifications", ct);
-        if (groupChatId == 0) return;
-
-        var text = $"*{EscapeMarkdown(evt.EventName)}* from `{evt.SourceAgentId}`\n" +
-                   string.Join("\n", evt.Payload.Select(p => $"  {EscapeMarkdown(p.Key)}: {EscapeMarkdown(p.Value?.ToString() ?? "")}"));
-
-        try
-        {
-            await botClient.SendMessageAsync(groupChatId, text,
-                messageThreadId: notifTopicId, parseMode: FormatStyles.MarkdownV2);
-        }
-        catch (BotRequestException)
-        {
-            var plainText = $"{evt.EventName} from {evt.SourceAgentId}\n" +
-                            string.Join("\n", evt.Payload.Select(p => $"  {p.Key}: {p.Value}"));
-            await botClient.SendMessageAsync(groupChatId, plainText, messageThreadId: notifTopicId);
-        }
-    }
-
-    public async Task SendJobResultAsync(string projectKey, string jobName, string result, CancellationToken ct)
-    {
-        var parts = projectKey.Split('/');
-        if (parts.Length < 2 || !long.TryParse(parts[0], out _))
-        {
-            logger.LogWarning("SendJobResult: invalid projectKey format '{ProjectKey}'", projectKey);
-            return;
-        }
-
-        var userId = parts[0];
-        var slug = parts[1];
-        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
-        var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
-        {
-            logger.LogWarning("SendJobResult: no GroupChatId for user {UserId}, slug {Slug}", userId, slug);
-            return;
-        }
-
-        var topicId = await userProfile.GetTopicId(slug, ct);
-        var telegramId = long.Parse(userId);
-        var (formattedText, orchestrationTaskId) = FormatOrchestrationResult(result);
-
-        int messageId;
-        if (orchestrationTaskId is not null && TryGetProgressMessage(orchestrationTaskId, out var progress))
-        {
-            try
-            {
-                await EditSafe(progress.ChatId, progress.MessageId, formattedText);
-                messageId = progress.MessageId;
-                chatId = progress.ChatId;
-                topicId = progress.TopicId;
-            }
-            catch
-            {
-                var sent = await botClient.SendMessageAsync(chatId, formattedText, messageThreadId: topicId);
-                messageId = sent.MessageId;
-            }
-        }
-        else
-        {
-            var sent = await botClient.SendMessageAsync(chatId, formattedText, messageThreadId: topicId);
-            messageId = sent.MessageId;
-        }
-
-        if (NeedsRichFormatting(formattedText))
-        {
-            try
-            {
-                var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
-                var richOutput = await uiAgent.FormatResponse(formattedText, ct);
-
-                if (richOutput.Parts.Count > 0)
-                    await RenderRichOutput(chatId, messageId, topicId, richOutput, telegramId, ct);
-                else if (!string.IsNullOrEmpty(richOutput.FormattedText))
-                    await EditWithMarkdown(chatId, messageId, richOutput.FormattedText);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "TelegramUI formatting failed for job result, keeping plain text");
-            }
-        }
-    }
-
-    public async Task SendProgressAsync(string projectKey, string taskId, string phase, string message, CancellationToken ct)
-    {
-        if (_progressMessages.TryGetValue(taskId, out var existing))
-        {
-            try
-            {
-                await botClient.EditMessageTextAsync(existing.ChatId, existing.MessageId, $"\u2699\ufe0f {message}");
-            }
-            catch (BotRequestException) { }
-            return;
-        }
-
-        var parts = projectKey.Split('/');
-        if (parts.Length < 2 || !long.TryParse(parts[0], out _))
-        {
-            logger.LogWarning("SendProgress: invalid projectKey format '{ProjectKey}'", projectKey);
-            return;
-        }
-
-        var userId = parts[0];
-        var slug = parts[1];
-        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
-        var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
-        {
-            logger.LogWarning("SendProgress: no GroupChatId for user {UserId}", userId);
-            return;
-        }
-
-        var topicId = await userProfile.GetTopicId(slug, ct);
-        var sent = await botClient.SendMessageAsync(chatId, $"\u2699\ufe0f {message}", messageThreadId: topicId);
-        _progressMessages[taskId] = (chatId, sent.MessageId, topicId);
-    }
-
-    public bool TryGetProgressMessage(string taskId, out (long ChatId, int MessageId, int? TopicId) progress)
-        => _progressMessages.TryRemove(taskId, out progress);
-
-    private static (string Text, string? TaskId) FormatOrchestrationResult(string resultPayload)
-    {
-        try
-        {
-            var result = System.Text.Json.JsonSerializer.Deserialize<Core.Contracts.OrchestrationResult>(resultPayload);
-            if (result is null) return (resultPayload, null);
-
-            var sb = new StringBuilder();
-            sb.AppendLine(result.Success ? $"\u2705 {result.Summary}" : $"\u274c {result.Summary}");
-
-            foreach (var artifact in result.Artifacts)
-                sb.AppendLine($"\ud83d\udcc1 {artifact}");
-
-            if (result.Metrics is { Count: > 0 })
-            {
-                var metricStr = string.Join(", ", result.Metrics.Select(kv => $"{kv.Key}: {kv.Value}"));
-                sb.AppendLine($"\u23f1 {metricStr}");
-            }
-
-            if (!result.Success && !string.IsNullOrEmpty(result.ErrorDetail))
-            {
-                var truncated = result.ErrorDetail.Length > 500 ? result.ErrorDetail[..500] + "..." : result.ErrorDetail;
-                sb.AppendLine();
-                sb.AppendLine(truncated);
-            }
-
-            return (sb.ToString().TrimEnd(), result.TaskId);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return (resultPayload, null);
-        }
-    }
-
-    public async Task SendWizardStepAsync(string wizardId, string prompt, string[] stepOptions, string projectSlug, CancellationToken ct)
-    {
-        if (!TryResolveChatId(projectSlug, out var chatId)) return;
-
-        if (stepOptions.Length > 0)
-        {
-            var buttons = stepOptions.Select(opt =>
-                new InlineKeyboardButton(opt) { CallbackData = $"wz:{wizardId}:{opt}" }
-            ).ToArray();
-            var keyboard = new InlineKeyboardMarkup([buttons]);
-            await botClient.SendMessageAsync(chatId, prompt, replyMarkup: keyboard);
-        }
-        else
-        {
-            await botClient.SendMessageAsync(chatId, prompt);
-        }
-    }
-
-    public async Task SendApprovalAsync(string approvalId, string question, string[] approvalOptions, string projectSlug, CancellationToken ct)
-    {
-        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
-        if (!long.TryParse(userId, out _)) return;
-
-        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
-        var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
-            return;
-
-        var slug = projectSlug.Contains('/') ? projectSlug.Split('/')[1] : "general";
-        var topicId = await userProfile.GetTopicId(slug, ct);
-
-        var buttons = approvalOptions.Select(opt =>
-            new InlineKeyboardButton(opt) { CallbackData = $"ap:{approvalId}:{opt}" }
-        ).ToArray();
-        var keyboard = new InlineKeyboardMarkup([buttons]);
-
-        var session = clusterClient.GetGrain<IUISession>(userId);
-        await session.RegisterApproval(approvalId, question, approvalOptions, projectSlug, ct);
-
-        await botClient.SendMessageAsync(chatId, $"\ud83d\udd14 {question}", replyMarkup: keyboard, messageThreadId: topicId);
-    }
-
-    public async Task SendDocumentAsync(long chatId, Stream fileStream, string fileName, string? caption, int? topicId, CancellationToken ct)
-    {
-        var inputFile = new InputFile(fileStream, fileName);
-        await botClient.SendDocumentAsync(chatId, inputFile, messageThreadId: topicId, caption: caption);
-    }
-
-    public async Task SendPhotoAsync(long chatId, Stream photoStream, string fileName, string? caption, int? topicId, CancellationToken ct)
-    {
-        var inputFile = new InputFile(photoStream, fileName);
-        await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: caption);
-    }
-
-
-    private async Task<(long GroupChatId, int? TopicId)> ResolveGroupAndTopicAsync(AgentEvent evt, string targetTopicSlug, CancellationToken ct)
-    {
-        var projectSlug = evt.Payload.GetValueOrDefault("projectSlug")?.ToString()
-                       ?? evt.Payload.GetValueOrDefault("projectKey")?.ToString()
-                       ?? evt.SourceAgentId ?? "";
-        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
-        if (!long.TryParse(userId, out _))
-            return (0, null);
-
-        var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
-        var prefs = await userProfile.GetPreferences(ct);
-        if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var groupChatId))
-            return (0, null);
-
-        var topicId = await userProfile.GetTopicId(targetTopicSlug, ct);
-        return (groupChatId, topicId);
-    }
-
-    private bool TryResolveChatId(string projectSlug, out long chatId)
-    {
-        var telegramId = projectSlug.Split('/')[0];
-        if (long.TryParse(telegramId, out chatId) && chatId != 0)
-            return true;
-
-        chatId = options.Value.ChatId;
-        return chatId != 0;
-    }
-
-    private async Task HandlePhotoAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
+    async Task HandlePhotoAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
     {
         var chatId = message.Chat.Id;
-        var highestResPhoto = message.Photo!.Last(); // last element is highest resolution
+        var highestResPhoto = message.Photo!.Last();
 
-        logger.LogInformation("Processing photo from user {TelegramId}, file {FileId}", telegramId, highestResPhoto.FileId);
-        var sent = await botClient.SendMessageAsync(chatId, "Processing image...", messageThreadId: topicId);
+        _logger.LogInformation("Processing photo from user {TelegramId}, file {FileId}", telegramId, highestResPhoto.FileId);
+        var sent = await _messageSender.SendTextAsync(chatId, "Processing image...", topicId);
 
         try
         {
-            await using var photoStream = await DownloadTelegramFileAsync(highestResPhoto.FileId, ct);
+            await using var photoStream = await _fileService.DownloadTelegramFileAsync(highestResPhoto.FileId, ct);
 
-            var (thread, threadSlug) = await ResolveThreadAsync(telegramId, topicId, ct);
+            var (thread, threadSlug) = await ThreadResolver.ResolveAsync(_clusterClient, telegramId, topicId, ct);
             var blobPath = $"{telegramId}/{threadSlug}/{Guid.NewGuid()}-photo.jpg";
-
-            var blobUri = await blobFileStorage.UploadAsync(photoStream, blobPath, "image/jpeg");
+            var blobUri = await _fileService.UploadToBlobAsync(photoStream, blobPath, "image/jpeg");
 
             var chatMessage = new ChatMessage
             {
@@ -718,33 +153,33 @@ public sealed class TelegramBotService(
                 Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
             };
 
-            await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
+            await _responseStreamer.StreamAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Photo processing failed for user {TelegramId}", telegramId);
-            await EditSafe(chatId, sent.MessageId, "[Error processing image]");
+            _logger.LogError(ex, "Photo processing failed for user {TelegramId}", telegramId);
+            await _messageSender.EditTextAsync(chatId, sent.MessageId, "[Error processing image]");
         }
     }
 
-    private async Task HandleDocumentAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
+    async Task HandleDocumentAsync(Message message, long telegramId, int? topicId, CancellationToken ct)
     {
         var chatId = message.Chat.Id;
         var document = message.Document!;
 
-        logger.LogInformation("Processing document from user {TelegramId}, file {FileName}", telegramId, document.FileName);
-        var sent = await botClient.SendMessageAsync(chatId, "Processing document...", messageThreadId: topicId);
+        _logger.LogInformation("Processing document from user {TelegramId}, file {FileName}", telegramId, document.FileName);
+        var sent = await _messageSender.SendTextAsync(chatId, "Processing document...", topicId);
 
         try
         {
-            await using var docStream = await DownloadTelegramFileAsync(document.FileId, ct);
+            await using var docStream = await _fileService.DownloadTelegramFileAsync(document.FileId, ct);
 
-            var (thread, threadSlug) = await ResolveThreadAsync(telegramId, topicId, ct);
+            var (thread, threadSlug) = await ThreadResolver.ResolveAsync(_clusterClient, telegramId, topicId, ct);
             var safeFileName = document.FileName ?? "document";
             var blobPath = $"{telegramId}/{threadSlug}/{Guid.NewGuid()}-{safeFileName}";
             var mimeType = document.MimeType ?? "application/octet-stream";
 
-            var blobUri = await blobFileStorage.UploadAsync(docStream, blobPath, mimeType);
+            var blobUri = await _fileService.UploadToBlobAsync(docStream, blobPath, mimeType);
 
             var chatMessage = new ChatMessage
             {
@@ -752,311 +187,28 @@ public sealed class TelegramBotService(
                 Parts = [new FileContent(blobUri, safeFileName, mimeType, document.FileSize ?? 0, Ingested: false)]
             };
 
-            // Include caption as text if provided
             if (!string.IsNullOrEmpty(message.Caption))
                 chatMessage.Parts.Add(new TextContent(message.Caption));
 
-            await StreamResponseAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
+            await _responseStreamer.StreamAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Document processing failed for user {TelegramId}", telegramId);
-            await EditSafe(chatId, sent.MessageId, "[Error processing document]");
+            _logger.LogError(ex, "Document processing failed for user {TelegramId}", telegramId);
+            await _messageSender.EditTextAsync(chatId, sent.MessageId, "[Error processing document]");
         }
     }
 
-    private async Task StreamResponseAsync(
-        long chatId, int messageId, int? topicId, IThread thread, ChatMessage chatMessage, long telegramId, CancellationToken ct, string? slug = null)
+    // public accessors for file delivery (used by other services)
+    public async Task SendDocumentAsync(long chatId, Stream fileStream, string fileName, string? caption, int? topicId, CancellationToken ct)
     {
-        const int maxChars = 4000;
-        var buffer = new StringBuilder();
-        var currentMessageId = messageId;
-        var lastEditAt = DateTimeOffset.MinValue;
-
-        try
-        {
-            await foreach (var chunk in thread.GetResponseStream(chatMessage, ct))
-            {
-                buffer.Append(chunk);
-
-                if (buffer.Length > maxChars)
-                {
-                    await EditSafe(chatId, currentMessageId, buffer.ToString());
-
-                    var continuation = await botClient.SendMessageAsync(chatId, "...", messageThreadId: topicId);
-                    currentMessageId = continuation.MessageId;
-                    buffer.Clear();
-                    lastEditAt = DateTimeOffset.MinValue;
-                    continue;
-                }
-
-                if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > StreamingEditIntervalMs)
-                {
-                    await EditSafe(chatId, currentMessageId, buffer.ToString());
-                    lastEditAt = DateTimeOffset.UtcNow;
-                }
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            logger.LogWarning("Streaming cancelled for user {TelegramId}", telegramId);
-            if (buffer.Length == 0) buffer.Append("[Request timed out]");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error streaming response from thread for user {TelegramId}", telegramId);
-            buffer.Append("\n\n[Error communicating with assistant]");
-        }
-
-        var finalText = buffer.ToString();
-
-        // skip TelegramUIAgent for short/simple responses -- not worth an LLM call
-        if (finalText.Length < 200 || !NeedsRichFormatting(finalText))
-        {
-            if (finalText.Length > 0)
-                await EditSafe(chatId, currentMessageId, finalText);
-            await SendPendingDeliveriesAsync(chatId, topicId, thread, ct);
-            await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
-            return;
-        }
-
-        try
-        {
-            var uiAgent = clusterClient.GetGrain<ITelegramUI>($"tg-ui-{Guid.NewGuid().ToString("N")[..8]}");
-            var richOutput = await uiAgent.FormatResponse(finalText, ct);
-
-            if (richOutput.Parts.Count > 0)
-            {
-                await RenderRichOutput(chatId, currentMessageId, topicId, richOutput, telegramId, ct);
-            }
-            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
-            {
-                await EditWithMarkdown(chatId, currentMessageId, richOutput.FormattedText);
-            }
-            else if (finalText.Length > 0)
-            {
-                await EditSafe(chatId, currentMessageId, finalText);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "TelegramUI formatting failed for user {TelegramId}, falling back to plain text", telegramId);
-            if (finalText.Length > 0)
-                await EditSafe(chatId, currentMessageId, finalText);
-        }
-
-        // deliver any files uploaded by agents during this turn
-        await SendPendingDeliveriesAsync(chatId, topicId, thread, ct);
-
-        await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
+        var inputFile = new InputFile(fileStream, fileName);
+        await _messageSender.SendDocumentAsync(chatId, inputFile, topicId, caption);
     }
 
-    private async Task SendPendingDeliveriesAsync(long chatId, int? topicId, IThread thread, CancellationToken ct)
+    public async Task SendPhotoAsync(long chatId, Stream photoStream, string fileName, string? caption, int? topicId, CancellationToken ct)
     {
-        try
-        {
-            var deliveries = await thread.GetPendingDeliveries(ct);
-            foreach (var delivery in deliveries)
-            {
-                try
-                {
-                    await using var stream = await blobFileStorage.DownloadAsync(delivery.Url);
-                    var inputFile = new InputFile(stream, delivery.FileName);
-
-                    if (delivery.MimeType.StartsWith("image/"))
-                        await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: delivery.Caption);
-                    else
-                        await botClient.SendDocumentAsync(chatId, inputFile, messageThreadId: topicId, caption: delivery.Caption);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to deliver file {FileName}", delivery.FileName);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to get pending deliveries from thread");
-        }
+        var inputFile = new InputFile(photoStream, fileName);
+        await _messageSender.SendPhotoAsync(chatId, inputFile, topicId, caption);
     }
-
-    private async Task TryAutoRenameTopicAsync(long chatId, int? topicId, IThread thread, string? slug, CancellationToken ct)
-    {
-        if (slug is null || !slug.StartsWith("chat-") || !topicId.HasValue)
-            return;
-
-        // only rename once — check if title is already cached (avoids repeated API calls)
-        if (_renamedTopics.ContainsKey(slug))
-            return;
-
-        try
-        {
-            var title = await thread.GetTitle(ct);
-            if (title is not null)
-            {
-                await botClient.EditForumTopicAsync(chatId, topicId.Value, name: title);
-                _renamedTopics.TryAdd(slug, true);
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Best-effort topic rename failed");
-        }
-    }
-
-    private readonly ConcurrentDictionary<string, bool> _renamedTopics = new();
-
-    private async Task RenderRichOutput(long chatId, int messageId, int? topicId, RichOutput richOutput, long telegramId, CancellationToken ct)
-    {
-        var userId = telegramId.ToString();
-        var session = clusterClient.GetGrain<IUISession>(userId);
-
-        var rows = new List<InlineKeyboardButton[]>();
-
-        foreach (var part in richOutput.Parts)
-        {
-            if (part is OptionsPart optionsPart && optionsPart.Options.Count >= 2)
-            {
-                var pendingOpts = optionsPart.Options.Select(o => new PendingOption(o.Label, o.Value)).ToArray();
-                var threadId = $"{telegramId}/{topicId?.ToString() ?? "general"}";
-                await session.RegisterOptions(optionsPart.CallbackId, optionsPart.Prompt, pendingOpts, threadId, "option", ct);
-                rows.Add(optionsPart.Options.Select(o =>
-                    new InlineKeyboardButton(o.Label) { CallbackData = $"opt:{optionsPart.CallbackId}:{o.Value}" }
-                ).ToArray());
-            }
-
-            if (part is SuggestionPart suggestionPart && suggestionPart.Actions.Count > 0)
-            {
-                var pendingOpts = suggestionPart.Actions.Select((a, i) => new PendingOption(a.Label, (i + 1).ToString())).ToArray();
-                var threadId = $"{telegramId}/{topicId?.ToString() ?? "general"}";
-                await session.RegisterOptions(suggestionPart.CallbackId, "", pendingOpts, threadId, "suggestion", ct);
-                rows.Add(suggestionPart.Actions.Select((a, i) =>
-                    new InlineKeyboardButton(a.Label) { CallbackData = $"opt:{suggestionPart.CallbackId}:{i + 1}" }
-                ).ToArray());
-            }
-        }
-
-        var keyboard = rows.Count > 0 ? new InlineKeyboardMarkup([.. rows]) : null;
-        await EditWithMarkdown(chatId, messageId, richOutput.FormattedText, keyboard);
-
-        foreach (var part in richOutput.Parts.OfType<MediaPart>())
-        {
-            try
-            {
-                await using var stream = await blobFileStorage.DownloadAsync(part.Url);
-                var inputFile = new InputFile(stream, part.FileName);
-
-                if (part.MimeType.StartsWith("image/"))
-                    await botClient.SendPhotoAsync(chatId, inputFile, messageThreadId: topicId, caption: part.Caption);
-                else
-                    await botClient.SendDocumentAsync(chatId, inputFile, messageThreadId: topicId, caption: part.Caption);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Failed to send media {FileName}", part.FileName);
-            }
-        }
-    }
-
-    private async Task EditWithMarkdown(long chatId, int messageId, string markdownText, InlineKeyboardMarkup? keyboard = null)
-    {
-        if (string.IsNullOrWhiteSpace(markdownText)) return;
-        try
-        {
-            await botClient.EditMessageTextAsync(chatId, messageId, markdownText,
-                parseMode: FormatStyles.MarkdownV2, replyMarkup: keyboard);
-        }
-        catch (BotRequestException)
-        {
-            try
-            {
-                await botClient.EditMessageTextAsync(chatId, messageId, markdownText,
-                    replyMarkup: keyboard);
-            }
-            catch (BotRequestException ex) when (
-                ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase))
-            {
-            }
-        }
-    }
-
-    private async Task<Stream> DownloadTelegramFileAsync(string fileId, CancellationToken ct)
-    {
-        var file = await botClient.GetFileAsync(fileId);
-        var downloadUrl = $"{botClient.Options.ServerAddress}/file/bot{options.Value.BotToken}/{file.FilePath}";
-
-        using var http = httpClientFactory.CreateClient();
-        var memoryStream = new MemoryStream();
-        await using var responseStream = await http.GetStreamAsync(downloadUrl, ct);
-        await responseStream.CopyToAsync(memoryStream, ct);
-        memoryStream.Position = 0;
-        return memoryStream;
-    }
-
-    private async Task<string> TranscribeVoiceAsync(string fileId, CancellationToken ct)
-    {
-        var file = await botClient.GetFileAsync(fileId);
-        var downloadUrl = $"{botClient.Options.ServerAddress}/file/bot{options.Value.BotToken}/{file.FilePath}";
-
-        using var http = httpClientFactory.CreateClient();
-        await using var responseStream = await http.GetStreamAsync(downloadUrl, ct);
-
-        var tempPath = Path.Combine(Path.GetTempPath(), $"iaw_voice_{Guid.NewGuid()}.ogg");
-        try
-        {
-            await using (var fileStream = System.IO.File.Create(tempPath))
-                await responseStream.CopyToAsync(fileStream, ct);
-            return await transcriptionService.TranscribeAsync(tempPath, ct);
-        }
-        finally
-        {
-            if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
-        }
-    }
-
-    private async Task EditSafe(long chatId, int messageId, string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        try
-        {
-            // plain text to avoid 400 errors from unescaped markdown chars
-            // TODO: implement proper markdown-to-MarkdownV2 conversion for links, bold, code blocks
-            await botClient.EditMessageTextAsync(chatId, messageId, text);
-        }
-        catch (BotRequestException ex) when (
-            ex.Message.Contains("message is not modified", StringComparison.OrdinalIgnoreCase) ||
-            ex.Message.Contains("message text is empty", StringComparison.OrdinalIgnoreCase))
-        {
-        }
-    }
-
-    static bool NeedsRichFormatting(string text)
-    {
-        // numbered list: "1." or "1)" at line start
-        if (System.Text.RegularExpressions.Regex.IsMatch(text, @"(?m)^\s*\d+[\.\)]\s"))
-            return true;
-
-        // 3+ bullet items
-        if (System.Text.RegularExpressions.Regex.Matches(text, @"(?m)^\s*[-*\u2022]\s").Count >= 3)
-            return true;
-
-        // markdown headers
-        if (text.Contains("\n##"))
-            return true;
-
-        // explicit option/choice language (at least 2 options)
-        if (text.Contains("Option 1", StringComparison.OrdinalIgnoreCase) &&
-            text.Contains("Option 2", StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        return false;
-    }
-
-    private static string EscapeMarkdown(string text) =>
-        text.Replace("_", "\\_").Replace("*", "\\*").Replace("[", "\\[")
-            .Replace("]", "\\]").Replace("(", "\\(").Replace(")", "\\)")
-            .Replace("~", "\\~").Replace("`", "\\`").Replace(">", "\\>")
-            .Replace("#", "\\#").Replace("+", "\\+").Replace("-", "\\-")
-            .Replace("=", "\\=").Replace("|", "\\|").Replace("{", "\\{")
-            .Replace("}", "\\}").Replace(".", "\\.").Replace("!", "\\!");
 }

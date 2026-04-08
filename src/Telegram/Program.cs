@@ -6,6 +6,7 @@ using Telegram;
 using Telegram.BotAPI;
 using Telegram.BotAPI.GettingUpdates;
 using TelegramClient;
+using TelegramClient.Formatting;
 using TelegramClient.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -21,12 +22,24 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 });
 
 builder.Services.AddHttpClient();
-builder.Services.AddSingleton<TelegramBotService>();
-builder.Services.AddHostedService<StreamSubscriber>();
-builder.Services.AddHostedService<WebhookSetupService>();
 builder.Services.AddSingleton<IAudioConverter, AudioConverter>();
 builder.AddWhisperProvider<FoundryLocalTranscriptionService>();
 builder.Services.AddSingleton<BlobFileStorage>();
+
+// Telegram services
+builder.Services.AddSingleton<TelegramRateLimiter>();
+builder.Services.AddSingleton<TelegramMessageSender>();
+builder.Services.AddSingleton<TelegramFileService>();
+builder.Services.AddSingleton<ChatActionService>();
+builder.Services.AddSingleton<CommandHandler>();
+builder.Services.AddSingleton<CallbackRouter>();
+builder.Services.AddSingleton<ITelegramFormatter, TelegramFormatter>();
+builder.Services.AddSingleton<NotificationService>();
+builder.Services.AddSingleton<ResponseStreamer>();
+builder.Services.AddSingleton<TelegramBotService>();
+
+builder.Services.AddHostedService<StreamSubscriber>();
+builder.Services.AddHostedService<WebhookSetupService>();
 
 var app = builder.Build();
 app.MapDefaultEndpoints();

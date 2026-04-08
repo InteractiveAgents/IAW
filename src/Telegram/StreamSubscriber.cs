@@ -1,6 +1,7 @@
 using Core;
 using Core.Contracts;
 using Orleans.Streams;
+using TelegramClient.Services;
 
 namespace TelegramClient;
 
@@ -12,7 +13,7 @@ static class TelegramEvents
 
 public sealed class StreamSubscriber(
     IClusterClient clusterClient,
-    TelegramBotService botService,
+    NotificationService notificationService,
     ILogger<StreamSubscriber> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -27,7 +28,7 @@ public sealed class StreamSubscriber(
             {
                 try
                 {
-                    await botService.SendNotificationAsync(evt, ct);
+                    await notificationService.SendNotificationAsync(evt, ct);
                 }
                 catch (Exception ex)
                 {
@@ -44,7 +45,7 @@ public sealed class StreamSubscriber(
                     var projectKey = evt.Payload.GetValueOrDefault("projectKey")?.ToString() ?? "";
                     var jobName = evt.Payload.GetValueOrDefault("jobName")?.ToString() ?? "";
                     var result = evt.Payload.GetValueOrDefault("result")?.ToString() ?? "";
-                    await botService.SendJobResultAsync(projectKey, jobName, result, ct);
+                    await notificationService.SendJobResultAsync(projectKey, jobName, result, ct);
                 }
                 catch (Exception ex)
                 {
@@ -62,7 +63,7 @@ public sealed class StreamSubscriber(
                     var taskId = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.TaskId)?.ToString() ?? "";
                     var phase = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.Phase)?.ToString() ?? "";
                     var message = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.Message)?.ToString() ?? "";
-                    await botService.SendProgressAsync(projectKey, taskId, phase, message, ct);
+                    await notificationService.SendProgressAsync(projectKey, taskId, phase, message, ct);
                 }
                 catch (Exception ex)
                 {
@@ -77,7 +78,6 @@ public sealed class StreamSubscriber(
             logger.LogError(ex, "Failed to subscribe to agent streams");
         }
 
-        // Keep alive
         await Task.Delay(Timeout.Infinite, ct);
     }
 }
