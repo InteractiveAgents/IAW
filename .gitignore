@@ -425,4 +425,5 @@ website/node_modules/
 website/.vitepress/dist/
 website/.vitepress/cache/
 .superpowers/
-src/IAW.Assistant/.playwright-mcp/
+.playwright-mcp/
+.claude/settings.local.json
