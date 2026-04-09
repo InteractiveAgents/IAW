@@ -81,18 +81,6 @@ public class UserProfileTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RememberFact_And_RecallFacts_RoundTrips()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var profile = Profile("test-user-5");
-        await profile.RememberFact("Prefers dark mode", ct);
-        await profile.RememberFact("Uses C# daily", ct);
-        var facts = await profile.RecallFacts("dark", ct);
-        Assert.Single(facts);
-        Assert.Equal("Prefers dark mode", facts[0]);
-    }
-
-    [Fact]
     public async Task GetPreferences_InitiallyEmpty()
     {
         var ct = TestContext.Current.CancellationToken;

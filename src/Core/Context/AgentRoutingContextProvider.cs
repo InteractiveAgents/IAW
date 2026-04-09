@@ -1,20 +1,25 @@
 using Core.Registry;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Core.Context;
 
-public class AgentRoutingContextProvider(
+public sealed class AgentRoutingContextProvider(
     IGrainFactory grainFactory,
     IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-    ILogger<AgentRoutingContextProvider>? logger = null) : IAgentContextProvider
+    ILogger<AgentRoutingContextProvider>? logger = null)
+    : MessageAIContextProvider
 {
     static readonly HashSet<string> OrchestrationAgents = ["IThread", "IAgentSelector", "ICodeOrchestrator", "ITelegramUI"];
 
-    public string Name => "agent-routing";
-
-    public async Task<IReadOnlyList<string>> GetContextAsync(string agentId, string prompt, CancellationToken ct = default)
+    protected override async ValueTask<IEnumerable<Microsoft.Extensions.AI.ChatMessage>> ProvideMessagesAsync(
+        MessageAIContextProvider.InvokingContext context, CancellationToken cancellationToken = default)
     {
+        var query = context.RequestMessages.LastOrDefault(m => m.Role == ChatRole.User)?.Text;
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<Microsoft.Extensions.AI.ChatMessage>();
+
         try
         {
             var registry = grainFactory.GetGrain<IAgentRegistry>("global");
@@ -22,7 +27,7 @@ public class AgentRoutingContextProvider(
             ReadOnlyMemory<float> queryVector = default;
             try
             {
-                var embeddings = await embeddingGenerator.GenerateAsync([prompt], cancellationToken: ct);
+                var embeddings = await embeddingGenerator.GenerateAsync([query], cancellationToken: cancellationToken);
                 queryVector = embeddings[0].Vector;
             }
             catch (Exception ex)
@@ -31,18 +36,17 @@ public class AgentRoutingContextProvider(
             }
 
             var candidates = queryVector.Length > 0
-                ? await registry.HybridSearchAsync(prompt, queryVector, top: 8, ct: ct)
-                : await registry.SearchAsync(prompt, top: 8, ct: ct);
+                ? await registry.HybridSearchAsync(query, queryVector, top: 8, ct: cancellationToken)
+                : await registry.SearchAsync(query, top: 8, ct: cancellationToken);
 
             var filtered = candidates
                 .Where(c => !OrchestrationAgents.Contains(c.InterfaceName))
                 .Take(5)
                 .ToList();
 
-            // if search returned nothing, show all available agents so LLM can choose
             if (filtered.Count == 0)
             {
-                var allAgents = await registry.GetAllAsync(ct);
+                var allAgents = await registry.GetAllAsync(cancellationToken);
                 filtered = allAgents
                     .Where(r => !OrchestrationAgents.Contains(r.InterfaceName) && r.DisplayName.Length > 0)
                     .Select(r => new AgentCandidate(r.AgentType, r.Namespace, r.DisplayName, r.Description, r.InterfaceName, 0f) { Capabilities = r.Capabilities, RoutingExamples = r.RoutingExamples })
@@ -50,13 +54,9 @@ public class AgentRoutingContextProvider(
             }
 
             if (filtered.Count == 0)
-                return [];
+                return Array.Empty<Microsoft.Extensions.AI.ChatMessage>();
 
-            var lines = new List<string>(filtered.Count + 1)
-            {
-                "[Available agents for this request]"
-            };
-
+            var lines = new List<string> { "## Available agents for this request" };
             foreach (var c in filtered)
             {
                 var line = $"- {c.DisplayName}: {c.Description}";
@@ -67,16 +67,13 @@ public class AgentRoutingContextProvider(
                 lines.Add(line);
             }
 
-            return lines;
+            return new[] { new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, string.Join("\n", lines)) };
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             logger?.LogWarning(ex, "Agent routing context failed");
-            return [];
+            return Array.Empty<Microsoft.Extensions.AI.ChatMessage>();
         }
     }
 }

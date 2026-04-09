@@ -1,13 +1,13 @@
-using Core.Contracts;
+using Core.Contracts.Security;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 
 namespace Core.Context;
 
-public sealed class UserContextProvider(
+public sealed class PolicyContextProvider(
     IGrainFactory grainFactory,
-    ILogger<UserContextProvider>? logger = null)
+    ILogger<PolicyContextProvider>? logger = null)
     : MessageAIContextProvider
 {
     protected override async ValueTask<IEnumerable<Microsoft.Extensions.AI.ChatMessage>> ProvideMessagesAsync(
@@ -19,21 +19,21 @@ public sealed class UserContextProvider(
 
         try
         {
-            var userProfile = grainFactory.GetGrain<IUserProfile>(userId);
-            var prefs = await userProfile.GetPreferences(cancellationToken);
-            if (prefs.Count == 0)
+            var approver = grainFactory.GetGrain<IApprover>(userId);
+            var policies = await approver.ListPolicies(cancellationToken);
+            if (policies.Count == 0)
                 return Array.Empty<Microsoft.Extensions.AI.ChatMessage>();
 
-            var lines = new List<string> { "## User profile" };
-            foreach (var kvp in prefs)
-                lines.Add($"- {kvp.Key}: {kvp.Value}");
+            var lines = new List<string> { "## Approver policies" };
+            foreach (var p in policies)
+                lines.Add($"- [policy:{p.Scope}] {p.Rule}");
 
             return new[] { new Microsoft.Extensions.AI.ChatMessage(ChatRole.System, string.Join("\n", lines)) };
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "UserContextProvider failed for user {UserId}", userId);
+            logger?.LogWarning(ex, "Policy context provider failed for user {UserId}", userId);
             return Array.Empty<Microsoft.Extensions.AI.ChatMessage>();
         }
     }

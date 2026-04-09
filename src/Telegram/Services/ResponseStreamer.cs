@@ -174,6 +174,12 @@ public sealed class ResponseStreamer(
 
         foreach (var part in richOutput.Parts.OfType<MediaPart>())
             await fileService.DeliverMediaAsync(chatId, topicId, [part]);
+
+        foreach (var part in richOutput.Parts.OfType<ForwardMessageHint>())
+        {
+            if (int.TryParse(part.TelegramMsgId, out var sourceId))
+                await messageSender.ForwardMessageAsync(chatId, sourceId, chatId, topicId);
+        }
     }
 
     async Task StreamingEditAsync(long chatId, int messageId, string text)

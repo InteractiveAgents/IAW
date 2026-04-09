@@ -4,6 +4,7 @@ using Core.AI;
 using Core.Context;
 using Core.Contracts;
 using Core.Ingestion;
+using Core.Memory;
 using Core.Observability;
 using Core.Services;
 using Core.UI;
@@ -22,6 +23,7 @@ using System.Threading.Channels;
 using ChatMessage = Core.Contracts.ChatMessage;
 using ContractsTextContent = Core.Contracts.TextContent;
 using UIAgentResponse = Core.UI.AgentResponse;
+using AIChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
 namespace IAW.Core;
 
@@ -36,6 +38,7 @@ public abstract partial class Agent(
     private ChatOptions? _chatOptions;
     private AgentSession? _session;
     private IReadOnlyList<ContentPart>? _currentMessageParts;
+    private int? _currentSourceTelegramMsgId;
     private ChannelWriter<string>? _toolProgressWriter;
     private ILogger? _logger;
     protected ILogger Logger => _logger ??= ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger(GetType());
@@ -56,8 +59,54 @@ public abstract partial class Agent(
     protected IDurableDictionary<string, StateEntry> State => durableState.State;
     protected IDurableList<AgentEvent> EventLog => durableState.EventLog;
     protected IStreamProvider StreamProvider => this.GetStreamProvider(IAWConstants.StreamProvider);
-    protected virtual IReadOnlyList<IAgentContextProvider> GetContextProviders() => Array.Empty<IAgentContextProvider>();
+    protected virtual IReadOnlyList<AIContextProvider> GetAdditionalAIContextProviders() => Array.Empty<AIContextProvider>();
     protected string? TaskId { get; set; }
+
+    public const string SessionUserIdKey = "iaw.userId";
+    public const string SessionThreadIdKey = "iaw.threadId";
+
+    private void PopulateSessionIdentity(AgentSession session)
+    {
+        var grainId = this.GetPrimaryKeyString();
+        var (userId, threadId) = ParseIdentityFromGrainKey(grainId);
+        if (userId is not null)
+            session.StateBag.SetValue(SessionUserIdKey, userId);
+        if (threadId is not null)
+            session.StateBag.SetValue(SessionThreadIdKey, threadId);
+    }
+
+    protected static (string? UserId, string? ThreadId) ParseIdentityFromGrainKey(string grainId)
+    {
+        var firstSlash = grainId.IndexOf('/');
+        string? userId;
+        if (firstSlash > 0)
+        {
+            var head = grainId[..firstSlash];
+            userId = long.TryParse(head, out _) ? head : null;
+        }
+        else
+        {
+            userId = long.TryParse(grainId, out _) ? grainId : null;
+        }
+
+        if (userId is null)
+            return (null, null);
+
+        if (firstSlash <= 0)
+            return (userId, null);
+
+        // Sub-agent keys look like "{userId}/{threadSlug}/{InterfaceName}".
+        // Thread grain keys are "{userId}/{threadSlug}". Strip a trailing interface segment when present.
+        var lastSlash = grainId.LastIndexOf('/');
+        if (lastSlash == firstSlash)
+            return (userId, grainId);
+
+        var trailing = grainId[(lastSlash + 1)..];
+        if (trailing.Length > 1 && trailing[0] == 'I' && trailing.Skip(1).All(char.IsLetterOrDigit))
+            return (userId, grainId[..lastSlash]);
+
+        return (userId, grainId);
+    }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -73,14 +122,32 @@ public abstract partial class Agent(
             Tools = GetAllTools().ToList(),
             MaxOutputTokens = MaxOutputTokens
         };
+
+        var aiContextProviders = new List<AIContextProvider>();
+        var memoryProvider = ServiceProvider.GetService<IawMemoryProvider>();
+        if (memoryProvider is not null)
+            aiContextProviders.Add(memoryProvider);
+        aiContextProviders.Add(new PolicyContextProvider(GrainFactory,
+            ServiceProvider.GetService<ILogger<PolicyContextProvider>>()));
+        aiContextProviders.Add(new UserContextProvider(GrainFactory,
+            ServiceProvider.GetService<ILogger<UserContextProvider>>()));
+        foreach (var extra in GetAdditionalAIContextProviders())
+            aiContextProviders.Add(extra);
+
         _agent = _usageCapture.AsAIAgent(new ChatClientAgentOptions
         {
             Name = this.GetPrimaryKeyString(),
             ChatOptions = _chatOptions,
-            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, async ct => await WriteStateAsync(ct), blobStorage, new ChatReducer(), new HistorySummarizer(chatClient, durableState.State, Logger, SummarizationThreshold, SummarizationRecentWindow), Logger)
-        });
+            ChatHistoryProvider = new DurableChatHistoryProvider(durableState.History, MaxHistoryMessages, async ct => await WriteStateAsync(ct), blobStorage, new ChatReducer(), new HistorySummarizer(chatClient, durableState.State, Logger, SummarizationThreshold, SummarizationRecentWindow), Logger),
+            AIContextProviders = aiContextProviders
+        })
+        .AsBuilder()
+        .Use(ToolApprovalMiddleware)
+        .Build();
 
         _session = await _agent.CreateSessionAsync(cancellationToken);
+
+        PopulateSessionIdentity(_session);
 
         await SubscribeToStreamConsumerInterfaces();
 
@@ -108,6 +175,7 @@ public abstract partial class Agent(
     {
         AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
         _currentMessageParts = message.Parts;
+        _currentSourceTelegramMsgId = message.SourceTelegramMsgId;
         ClearPendingUIHints();
         return StreamResponseCore(message.Text, cancellationToken);
     }
@@ -129,11 +197,6 @@ public abstract partial class Agent(
         try
         {
             var attachmentText = await ResolveAttachments(prompt, cancellationToken);
-            var contextBlock = await BuildContextBlock(prompt, cancellationToken);
-            _chatOptions!.Instructions = contextBlock.Length > 0
-                ? $"{Instructions}\n\n{contextBlock}"
-                : Instructions;
-
             var fullPrompt = attachmentText != prompt ? attachmentText : prompt;
 
             var channel = Channel.CreateUnbounded<string>(
@@ -191,8 +254,15 @@ public abstract partial class Agent(
     {
         try
         {
+            var userMessage = new AIChatMessage(ChatRole.User, prompt);
+            if (_currentSourceTelegramMsgId is { } telegramMsgId)
+            {
+                userMessage.AdditionalProperties ??= new AdditionalPropertiesDictionary();
+                userMessage.AdditionalProperties["iaw.sourceTelegramMsgId"] = telegramMsgId.ToString();
+            }
+
             await foreach (var chunk in _agent!.RunStreamingAsync(
-                prompt, _session, cancellationToken: ct))
+                [userMessage], _session, cancellationToken: ct))
             {
                 if (chunk.Text is { } text)
                     writer.TryWrite(text);
@@ -263,48 +333,6 @@ public abstract partial class Agent(
         AgentTelemetry.TokenUsage.Record(usage.OutputTokens, outputTags);
         AgentTelemetry.TotalInputTokens.Add(usage.InputTokens, tags);
         AgentTelemetry.TotalOutputTokens.Add(usage.OutputTokens, tags);
-    }
-
-    private async Task<string> BuildContextBlock(string prompt, CancellationToken ct)
-    {
-        var providers = GetContextProviders();
-        if (providers.Count == 0) return "";
-
-        using var activity = AgentTelemetry.ActivitySource.StartActivity("agent.enrich_context");
-        activity?.SetTag("context.provider_count", providers.Count);
-
-        var contextParts = new List<string>();
-        foreach (var provider in providers)
-        {
-            try
-            {
-                using var providerTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                providerTimeout.CancelAfter(TimeSpan.FromSeconds(10));
-                var items = await provider.GetContextAsync(this.GetPrimaryKeyString(), prompt, providerTimeout.Token);
-                contextParts.AddRange(items);
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                activity?.SetTag($"context.provider_timeout.{provider.Name}", true);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                activity?.SetTag("context.provider_error", ex.GetType().Name);
-            }
-        }
-
-        // Deduplicate exact matches across providers
-        contextParts = contextParts.Distinct().ToList();
-
-        activity?.SetTag("context.items_found", contextParts.Count);
-
-        return contextParts.Count > 0
-            ? $"[Current context]\n{string.Join("\n", contextParts)}"
-            : "";
     }
 
     private async Task<string> ResolveAttachments(string prompt, CancellationToken ct)
