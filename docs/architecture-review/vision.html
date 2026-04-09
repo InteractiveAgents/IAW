@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IAW v0.0.3 — Domain-Driven Agent Platform Vision</title>
+<style>
+:root {
+  --bg: #0f1117; --surface: #1a1d27; --surface2: #242836; --border: #2e3348;
+  --text: #e1e4ed; --text-muted: #8b90a5;
+  --accent: #6c7bff; --accent2: #00d4aa; --accent3: #ff6b9d; --accent4: #ffd93d; --accent5: #4ecdc4;
+  --success: #00d4aa; --warning: #ffd93d; --error: #ff6b6b; --info: #6c7bff;
+  --coding: #6c7bff; --pa: #00d4aa; --docs: #ff6b9d; --self: #ffd93d; --data: #4ecdc4; --infra: #a78bfa;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+.container { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+
+nav { position: sticky; top: 0; z-index: 100; background: rgba(15,17,23,0.95); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); padding: 12px 0; }
+nav .container { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+nav h1 { font-size: 18px; color: var(--accent); white-space: nowrap; }
+.tabs { display: flex; gap: 4px; overflow-x: auto; }
+.tab { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text-muted); border: none; background: none; transition: all 0.2s; white-space: nowrap; }
+.tab:hover { color: var(--text); background: var(--surface); }
+.tab.active { color: var(--accent); background: var(--surface2); }
+
+.section { display: none; padding: 32px 0; }
+.section.active { display: block; }
+h2 { font-size: 28px; margin-bottom: 8px; }
+h3 { font-size: 20px; margin: 24px 0 12px; }
+h4 { font-size: 16px; margin: 16px 0 8px; }
+p, li { color: var(--text-muted); }
+p { margin-bottom: 12px; }
+.subtitle { font-size: 16px; color: var(--text-muted); margin-bottom: 32px; }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px; margin: 16px 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: all 0.2s; }
+.card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.card-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.card ul { padding-left: 18px; font-size: 13px; margin: 8px 0; }
+.card li { margin: 4px 0; }
+
+.domain-badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-right: 4px; }
+.domain-badge.coding { background: #6c7bff22; color: var(--coding); }
+.domain-badge.pa { background: #00d4aa22; color: var(--pa); }
+.domain-badge.docs { background: #ff6b9d22; color: var(--docs); }
+.domain-badge.self { background: #ffd93d22; color: var(--self); }
+.domain-badge.data { background: #4ecdc422; color: var(--data); }
+.domain-badge.infra { background: #a78bfa22; color: var(--infra); }
+
+.agent-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 8px 0; }
+.agent-name { font-size: 15px; font-weight: 700; }
+.agent-role { font-size: 12px; color: var(--text-muted); margin: 4px 0 8px; font-style: italic; }
+.agent-section { margin: 6px 0; }
+.agent-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px; }
+.agent-tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.tool-tag { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: var(--surface2); color: var(--text); }
+.expert-box { background: var(--surface2); border-radius: 6px; padding: 10px; font-size: 12px; margin-top: 8px; border-left: 3px solid var(--accent); }
+
+.scenario-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; overflow: hidden; }
+.scenario-header { padding: 16px 20px; cursor: pointer; display: flex; align-items: flex-start; gap: 16px; }
+.scenario-header:hover { background: var(--surface2); }
+.scenario-num { font-size: 28px; font-weight: 800; opacity: 0.4; min-width: 40px; line-height: 1; }
+.scenario-body { display: none; padding: 0 20px 20px; }
+.scenario-box.open .scenario-body { display: block; }
+.chevron { font-size: 20px; color: var(--text-muted); transition: transform 0.2s; margin-left: auto; }
+.scenario-box.open .chevron { transform: rotate(90deg); }
+
+.flow { position: relative; padding-left: 28px; margin: 12px 0; }
+.flow::before { content: ''; position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+.flow-step { position: relative; margin-bottom: 12px; padding: 10px 14px; background: var(--surface2); border-radius: 6px; font-size: 13px; }
+.flow-step::before { content: ''; position: absolute; left: -22px; top: 14px; width: 8px; height: 8px; border-radius: 50%; }
+.flow-step.user::before { background: var(--accent3); }
+.flow-step.agent::before { background: var(--accent2); }
+.flow-step.system::before { background: var(--accent); }
+.flow-step.critical::before { background: var(--error); }
+.flow-step.memory::before { background: var(--accent4); }
+.flow-label { font-weight: 600; font-size: 12px; }
+.flow-detail { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+.flow-meta { font-size: 11px; color: var(--text-muted); opacity: 0.6; margin-top: 4px; }
+
+.diagram { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 16px 0; overflow-x: auto; }
+.diagram-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+
+table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+tr:hover td { background: var(--surface2); }
+
+.bdd { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 12px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; line-height: 1.8; overflow-x: auto; }
+.k { color: var(--accent); font-weight: 600; }
+.g { color: var(--accent2); }
+.w { color: var(--accent4); }
+.t { color: var(--accent3); }
+.a { color: var(--text-muted); }
+.c { color: var(--text-muted); font-style: italic; opacity: 0.6; }
+
+.gap-card { background: var(--surface); border-left: 4px solid; border-radius: 0 8px 8px 0; padding: 16px; margin: 8px 0; }
+.gap-card.critical { border-color: var(--error); }
+.gap-card.high { border-color: var(--accent4); }
+.gap-card.medium { border-color: var(--accent); }
+.gap-title { font-size: 14px; font-weight: 600; }
+.gap-detail { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 900px) { .columns { grid-template-columns: 1fr; } .card-grid { grid-template-columns: 1fr; } }
+
+.highlight-box { background: var(--surface); border: 1px solid var(--accent2); border-radius: 12px; padding: 20px; margin: 16px 0; }
+.highlight-box h4 { color: var(--accent2); margin-top: 0; }
+
+.stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; flex: 1; min-width: 140px; }
+.stat-val { font-size: 24px; font-weight: 700; }
+.stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="container">
+    <h1>IAW v0.0.3 Vision</h1>
+    <div class="tabs">
+      <button class="tab active" onclick="show('vision')">The Vision</button>
+      <button class="tab" onclick="show('domains')">Domains & Agents</button>
+      <button class="tab" onclick="show('scenarios')">Scenarios (15)</button>
+      <button class="tab" onclick="show('expertise')">Agent Expertise</button>
+      <button class="tab" onclick="show('memory')">Memory & Explainability</button>
+      <button class="tab" onclick="show('self')">Self-Improvement</button>
+      <button class="tab" onclick="show('gaps')">What's Missing</button>
+      <button class="tab" onclick="show('bdd')">BDD Specs</button>
+      <button class="tab" onclick="show('accede')">Lessons from Accede</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ==================== VISION ==================== -->
+<div class="section active" id="vision">
+<div class="container">
+  <h2>IAW: The Best Personal Assistant That Exists</h2>
+  <p class="subtitle">Not a chatbot. Not a coding tool. A domain-driven multi-agent platform where every agent is a true expert.</p>
+
+  <div class="diagram">
+    <div class="diagram-title">IAW Architecture: Core + Domains</div>
+    <pre style="font-family: 'Cascadia Code', monospace; font-size: 12px; color: var(--text-muted); line-height: 1.5; overflow-x: auto;">
+<span style="color:var(--accent)">IAW.Core</span> (abstractions, behaviors, communication primitives)
+ |
+ |--- Agent base class, tool registration, durable state, event system
+ |--- Communication: P2P, Streams, Broadcast, Ledger, Router
+ |--- Memory primitives, context injection, approval gates
+ |--- Scheduling (DurableJobs, Cron), lifecycle management
+ |
+ +=====================================================================+
+ |                        <span style="color:var(--text)">IAW SYSTEM (built on Core)</span>                      |
+ |                                                                     |
+ |  <span style="color:var(--coding)">+-- CODING DOMAIN --------+</span>  <span style="color:var(--pa)">+-- PERSONAL ASSISTANT ---+</span>  |
+ |  <span style="color:var(--coding)">|  Roslyn (syntax expert)  |</span>  <span style="color:var(--pa)">|  Thread (user liaison)  |</span>  |
+ |  <span style="color:var(--coding)">|  DotNet (build expert)   |</span>  <span style="color:var(--pa)">|  UserProfile (prefs)    |</span>  |
+ |  <span style="color:var(--coding)">|  Git (VCS expert)        |</span>  <span style="color:var(--pa)">|  Memory agents (5)      |</span>  |
+ |  <span style="color:var(--coding)">|  GitHub (repo expert)    |</span>  <span style="color:var(--pa)">|  Knowledge (decisions)  |</span>  |
+ |  <span style="color:var(--coding)">|  NuGet (pkg expert)      |</span>  <span style="color:var(--pa)">|  Preference agent       |</span>  |
+ |  <span style="color:var(--coding)">|  CodeOrchestrator        |</span>  <span style="color:var(--pa)">|  Explainability agent   |</span>  |
+ |  <span style="color:var(--coding)">+--------------------------+</span>  <span style="color:var(--pa)">+-------------------------+</span>  |
+ |                                                                     |
+ |  <span style="color:var(--docs)">+-- DOCUMENTS DOMAIN ------+</span>  <span style="color:var(--self)">+-- SELF-IMPROVEMENT -----+</span>  |
+ |  <span style="color:var(--docs)">|  Excel (OpenXML SDK)     |</span>  <span style="color:var(--self)">|  ArchitectureGuard      |</span>  |
+ |  <span style="color:var(--docs)">|  Word (OpenXML SDK)      |</span>  <span style="color:var(--self)">|  TestRunner             |</span>  |
+ |  <span style="color:var(--docs)">|  PDF (iText/QuestPDF)    |</span>  <span style="color:var(--self)">|  SafeDeployer           |</span>  |
+ |  <span style="color:var(--docs)">|  Image (SkiaSharp)       |</span>  <span style="color:var(--self)">|  ChangeAnalyzer         |</span>  |
+ |  <span style="color:var(--docs)">|  Voice (Whisper)         |</span>  <span style="color:var(--self)">|  PerformanceMonitor     |</span>  |
+ |  <span style="color:var(--docs)">+--------------------------+</span>  <span style="color:var(--self)">+-------------------------+</span>  |
+ |                                                                     |
+ |  <span style="color:var(--data)">+-- DATA DOMAIN -----------+</span>  <span style="color:var(--infra)">+-- INFRASTRUCTURE -------+</span>  |
+ |  <span style="color:var(--data)">|  Finance (categorize)    |</span>  <span style="color:var(--infra)">|  Shell (command exec)   |</span>  |
+ |  <span style="color:var(--data)">|  SQL (query, schema)     |</span>  <span style="color:var(--infra)">|  FileSystem (files)     |</span>  |
+ |  <span style="color:var(--data)">|  Analytics (insights)    |</span>  <span style="color:var(--infra)">|  Aspire (monitoring)    |</span>  |
+ |  <span style="color:var(--data)">|  Visualization (charts)  |</span>  <span style="color:var(--infra)">|  IAWSystem (self-mgmt)  |</span>  |
+ |  <span style="color:var(--data)">+--------------------------+</span>  <span style="color:var(--infra)">+-------------------------+</span>  |
+ +=====================================================================+
+ |                                                                     |
+ |  <span style="color:var(--text-muted)">CLIENTS: Telegram | DevUI (Blazor) | MCP (Claude Code) | API</span>        |
+ +=====================================================================+
+    </pre>
+  </div>
+
+  <h3>The Three Pillars</h3>
+  <div class="card-grid">
+    <div class="card" style="border-color: var(--accent2);">
+      <div class="card-title">1. Every Agent Is a True Expert</div>
+      <div class="card-sub">Not "an LLM that knows about Git." A Git expert with real tools.</div>
+      <ul>
+        <li><strong>SDK-backed tools</strong> — Excel agent uses OpenXML SDK, not LLM hallucinating formulas</li>
+        <li><strong>Expert prompts</strong> — Each agent's system prompt is curated expertise, not generic instructions</li>
+        <li><strong>Domain knowledge</strong> — Roslyn agent knows the syntax tree API. It doesn't guess — it navigates the actual AST.</li>
+        <li><strong>Bounded responsibility</strong> — Each agent knows exactly what it can and cannot do. It delegates what it can't.</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--accent);">
+      <div class="card-title">2. Memory Makes It Personal</div>
+      <div class="card-sub">"Why did you do it this way?" — "Because 2 months ago you said..."</div>
+      <ul>
+        <li><strong>Episodic memory</strong> — Remembers past conversations, decisions, outcomes</li>
+        <li><strong>User preferences</strong> — Coding style, communication preferences, timezone, tool preferences</li>
+        <li><strong>Explainability</strong> — Can trace any decision back to the memory/preference that drove it</li>
+        <li><strong>Long-term learning</strong> — Gets better at predicting what you want over time</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--accent4);">
+      <div class="card-title">3. Domains Collaborate, Not Compete</div>
+      <div class="card-sub">Your finance report uses the coding agent to fetch data AND the Excel agent to format it.</div>
+      <ul>
+        <li><strong>Cross-domain orchestration</strong> — "Analyze my expenses" touches Data, Documents, and Personal Assistant domains</li>
+        <li><strong>Shared Ledger</strong> — All agents on a task share context without duplicating tokens</li>
+        <li><strong>Quality gates</strong> — Validator ensures cross-domain output is consistent</li>
+        <li><strong>Event-driven, not chain-driven</strong> — Agents publish progress, not forward context</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>How IAW Differs from Everything Else</h3>
+  <div class="diagram">
+    <table>
+      <tr><th>Feature</th><th>ChatGPT / Claude</th><th>AutoGPT / CrewAI</th><th>IAW v0.0.3</th></tr>
+      <tr><td>Agent expertise</td><td>One LLM does everything</td><td>Agents with role strings</td><td style="color:var(--accent2)">Expert agents with real SDK tools</td></tr>
+      <tr><td>Memory</td><td>Session-only</td><td>File-based RAG</td><td style="color:var(--accent2)">Durable vector memory + episodic recall + explainability</td></tr>
+      <tr><td>State</td><td>Stateless</td><td>File checkpoint</td><td style="color:var(--accent2)">Orleans journaling (crash-proof, distributed)</td></tr>
+      <tr><td>Agent communication</td><td>N/A</td><td>String passing</td><td style="color:var(--accent2)">Typed events, streams, broadcast, ledger</td></tr>
+      <tr><td>Human-in-the-loop</td><td>Manual copy-paste</td><td>Terminal prompt</td><td style="color:var(--accent2)">Durable approval gates (Telegram buttons, survives crashes)</td></tr>
+      <tr><td>Scheduling</td><td>None</td><td>Basic cron</td><td style="color:var(--accent2)">DurableJobs with guaranteed delivery + catch-up</td></tr>
+      <tr><td>Self-improvement</td><td>None</td><td>None</td><td style="color:var(--accent2)">Dedicated domain with architecture guard + safe deploy</td></tr>
+      <tr><td>Quality assurance</td><td>None</td><td>None</td><td style="color:var(--accent2)">Validator agent monitoring all task streams</td></tr>
+      <tr><td>Hosting</td><td>Cloud (vendor lock)</td><td>Single machine</td><td style="color:var(--accent2)">Orleans cluster (distributed, self-healing)</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ==================== DOMAINS ==================== -->
+<div class="section" id="domains">
+<div class="container">
+  <h2>Domains & Their Agents</h2>
+  <p class="subtitle">Each domain is a coherent group of expert agents that own a capability area</p>
+
+  <h3 style="color: var(--coding);">Coding Domain</h3>
+  <p>The team that writes, analyzes, builds, and ships code. Already the most mature domain in IAW.</p>
+  <div class="card-grid">
+    <div class="agent-card" style="border-color: var(--coding);">
+      <div class="agent-name">RoslynAgent <span class="domain-badge coding">CODING</span></div>
+      <div class="agent-role">"I am a C# syntax tree expert. I don't guess about code structure — I navigate the actual AST."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools (SDK-backed)</div>
+        <div class="agent-tools"><span class="tool-tag">GetTypeMap</span><span class="tool-tag">FindReferences</span><span class="tool-tag">AnalyzeArchitecture</span><span class="tool-tag">GetCallGraph</span><span class="tool-tag">DetectPatterns</span><span class="tool-tag">ImplementInterface</span><span class="tool-tag">Refactor</span></div>
+      </div>
+      <div class="expert-box">EXPERT LEVEL: Roslyn Workspace API, semantic model, symbol resolution, call graph traversal, code fix providers. Does NOT use LLM for code analysis — uses actual compiler services.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--coding);">
+      <div class="agent-name">DotNetAgent <span class="domain-badge coding">CODING</span></div>
+      <div class="agent-role">"I build, test, format, and run .NET projects. I understand MSBuild, test frameworks, and diagnostics."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">Build</span><span class="tool-tag">Test</span><span class="tool-tag">Format</span><span class="tool-tag">Run</span><span class="tool-tag">ListProjects</span></div>
+      </div>
+      <div class="expert-box">Parses MSBuild output, understands error codes (CS0246, CS0103, etc.), extracts test results into structured data. Reacts to CodeChanged stream events.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--coding);">
+      <div class="agent-name">GitAgent <span class="domain-badge coding">CODING</span></div>
+      <div class="agent-role">"I manage version control. I understand branching strategies, merge conflicts, and commit history."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">Status</span><span class="tool-tag">Commit</span><span class="tool-tag">Diff</span><span class="tool-tag">Log</span><span class="tool-tag">Revert</span><span class="tool-tag">Branch</span><span class="tool-tag">Merge</span></div>
+      </div>
+      <div class="expert-box">MISSING TODAY: Interactive rebase, conflict resolution, cherry-pick, stash management, bisect. A true Git expert should handle complex branching workflows.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--coding);">
+      <div class="agent-name">CodeOrchestratorAgent <span class="domain-badge coding">CODING</span></div>
+      <div class="agent-role">"I coordinate multi-agent coding tasks. I generate and execute orchestration programs."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">GenerateOrchestration</span><span class="tool-tag">ExecuteProject</span><span class="tool-tag">RetryWithFix</span></div>
+      </div>
+      <div class="expert-box">Uses Opus-level LLM for code generation. Compile-retry loop with max 2 retries. Generates standalone C# that calls agents via Orleans client.</div>
+    </div>
+  </div>
+
+  <h3 style="color: var(--pa);">Personal Assistant Domain</h3>
+  <p>The domain that makes IAW <em>personal</em>. Knows you, remembers your preferences, explains its decisions.</p>
+  <div class="card-grid">
+    <div class="agent-card" style="border-color: var(--pa);">
+      <div class="agent-name">ThreadAgent (User Liaison) <span class="domain-badge pa">PERSONAL</span></div>
+      <div class="agent-role">"I am your primary point of contact. I understand what you need and coordinate the right experts."</div>
+      <div class="agent-section"><div class="agent-section-title">Capabilities</div>
+        <div class="agent-tools"><span class="tool-tag">RouteToAgent</span><span class="tool-tag">Orchestrate</span><span class="tool-tag">Approve/Reject</span><span class="tool-tag">ContextEnrich</span></div>
+      </div>
+      <div class="expert-box">Enriches every request with user context, memory, and RAG before routing. The "face" of IAW — like a personal assistant who knows your schedule, preferences, and history.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--pa);">
+      <div class="agent-name">PreferenceAgent <span class="domain-badge pa">PERSONAL</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I track how you like things done — coding style, communication tone, formatting preferences, timezone."</div>
+      <div class="agent-section"><div class="agent-section-title">State</div>
+        <div class="agent-tools"><span class="tool-tag">CodingStyle</span><span class="tool-tag">CommPreferences</span><span class="tool-tag">Timezone</span><span class="tool-tag">ToolPreferences</span><span class="tool-tag">LLMPreferences</span></div>
+      </div>
+      <div class="expert-box">Learns from corrections: "don't mock the database" → stores as preference. When another agent is about to mock a DB, PreferenceAgent intervenes via context injection. This is how IAW learns to stop repeating mistakes.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--pa);">
+      <div class="agent-name">ExplainabilityAgent <span class="domain-badge pa">PERSONAL</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I can explain why any decision was made — tracing it back to the conversation, preference, or memory that drove it."</div>
+      <div class="agent-section"><div class="agent-section-title">Capabilities</div>
+        <div class="agent-tools"><span class="tool-tag">TraceDecision</span><span class="tool-tag">SearchMemory</span><span class="tool-tag">ExplainChoice</span><span class="tool-tag">ShowProvenance</span></div>
+      </div>
+      <div class="expert-box">When user asks "why did you use Cosmos instead of SQL?" — this agent searches episode memory, knowledge decisions, and preference history to construct a traced answer: "On March 15, you said latency matters more than cost, and on March 20, we decided Cosmos for sub-10ms reads."</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--pa);">
+      <div class="agent-name">Memory Agents (5 types) <span class="domain-badge pa">PERSONAL</span></div>
+      <div class="agent-role">"We are the long-term memory of IAW — code patterns, episodes, project decisions, user facts."</div>
+      <div class="agent-section"><div class="agent-section-title">Types</div>
+        <div class="agent-tools"><span class="tool-tag">CodeMemory</span><span class="tool-tag">EpisodeMemory</span><span class="tool-tag">PatternMemory</span><span class="tool-tag">ProjectMemory</span><span class="tool-tag">UserMemory</span></div>
+      </div>
+      <div class="expert-box">Vector search via Qdrant. Daily maintenance jobs (decay, consolidation). Provide context to other agents WITHOUT LLM calls — pure state reads injected as structured context.</div>
+    </div>
+  </div>
+
+  <h3 style="color: var(--docs);">Documents Domain</h3>
+  <p>Professional document creation using real SDKs — not LLM guessing at XML formats.</p>
+  <div class="card-grid">
+    <div class="agent-card" style="border-color: var(--docs);">
+      <div class="agent-name">ExcelAgent <span class="domain-badge docs">DOCS</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I create and manipulate Excel spreadsheets using the OpenXML SDK. I operate formulas, create charts, and format cells through actual SDK calls."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools (OpenXML SDK)</div>
+        <div class="agent-tools"><span class="tool-tag">CreateWorkbook</span><span class="tool-tag">AddSheet</span><span class="tool-tag">WriteCell</span><span class="tool-tag">SetFormula</span><span class="tool-tag">CreateChart</span><span class="tool-tag">FormatRange</span><span class="tool-tag">AddPivotTable</span><span class="tool-tag">ApplyStyle</span></div>
+      </div>
+      <div class="expert-box">CRITICAL DESIGN: The LLM decides WHAT to put in the spreadsheet (structure, formulas, data layout). The SDK tools execute it precisely. The LLM never generates raw XML — it calls typed tools like <code>SetFormula("B2", "=SUM(B3:B50)")</code>. This is what makes it an expert, not a guesser.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--docs);">
+      <div class="agent-name">WordAgent <span class="domain-badge docs">DOCS</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I create Word documents with proper structure — TOC, headers, tables, styles, images."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools (OpenXML SDK)</div>
+        <div class="agent-tools"><span class="tool-tag">CreateDocument</span><span class="tool-tag">AddHeading</span><span class="tool-tag">AddParagraph</span><span class="tool-tag">AddTable</span><span class="tool-tag">InsertImage</span><span class="tool-tag">AddTOC</span><span class="tool-tag">ApplyStyle</span></div>
+      </div>
+    </div>
+    <div class="agent-card" style="border-color: var(--docs);">
+      <div class="agent-name">VisionAgent <span class="domain-badge docs">DOCS</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I analyze images — OCR, diagram understanding, receipt parsing, photo description."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">OCR</span><span class="tool-tag">AnalyzeImage</span><span class="tool-tag">ExtractReceipt</span><span class="tool-tag">DescribePhoto</span></div>
+      </div>
+      <div class="expert-box">Uses GPT-4o vision capabilities + Tesseract OCR for backup. Can extract structured data from photos of receipts, business cards, whiteboard diagrams.</div>
+    </div>
+  </div>
+
+  <h3 style="color: var(--data);">Data Domain</h3>
+  <p>Analyze, transform, and visualize data. Works with Documents domain for output.</p>
+  <div class="card-grid">
+    <div class="agent-card" style="border-color: var(--data);">
+      <div class="agent-name">FinanceAgent <span class="domain-badge data">DATA</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I understand financial data — transactions, budgets, categories, forecasting."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">CategorizeTransactions</span><span class="tool-tag">ComputeBudget</span><span class="tool-tag">DetectAnomalies</span><span class="tool-tag">ForecastCashflow</span><span class="tool-tag">CompareMonths</span></div>
+      </div>
+      <div class="expert-box">Learns your spending patterns over time via UserMemory. "Your entertainment spending is 45% above your 3-month average" is not a guess — it's computed from stored history.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--data);">
+      <div class="agent-name">WebResearchAgent <span class="domain-badge data">DATA</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I search the web, scrape data, call APIs, and collect structured information."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">WebSearch</span><span class="tool-tag">FetchPage</span><span class="tool-tag">ExtractData</span><span class="tool-tag">CallAPI</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="color: var(--self);">Self-Improvement Domain</h3>
+  <p>IAW improving itself — safely, with architecture guards and test coverage.</p>
+  <div class="card-grid">
+    <div class="agent-card" style="border-color: var(--self);">
+      <div class="agent-name">ArchitectureGuardAgent <span class="domain-badge self">SELF</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I review all self-improvement changes against IAW's architecture. I block changes that violate core principles."</div>
+      <div class="agent-section"><div class="agent-section-title">Tools</div>
+        <div class="agent-tools"><span class="tool-tag">ReviewChange</span><span class="tool-tag">CheckArchitecture</span><span class="tool-tag">ValidateContracts</span><span class="tool-tag">AssessImpact</span></div>
+      </div>
+      <div class="expert-box">Uses KnowledgeAgent's stored architecture decisions as ground truth. When IAWSystem proposes a change, ArchitectureGuard checks: "Does this violate any recorded decision? Does it change a public contract? Does it affect other domains?"</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--self);">
+      <div class="agent-name">SafeDeployerAgent <span class="domain-badge self">SELF</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I deploy changes safely — build, test, canary deploy, monitor, rollback if needed."</div>
+      <div class="agent-section"><div class="agent-section-title">Flow</div>
+        <div class="agent-tools"><span class="tool-tag">Build</span><span class="tool-tag">RunTests</span><span class="tool-tag">CanaryDeploy</span><span class="tool-tag">MonitorHealth</span><span class="tool-tag">Rollback</span><span class="tool-tag">FullDeploy</span></div>
+      </div>
+      <div class="expert-box">Self-improvement loop: IAWSystem proposes change → ArchitectureGuard reviews → SafeDeployer builds + tests → If green, canary deploy → Monitor 5 min → If healthy, full deploy → If not, auto-rollback. All with human approval gates.</div>
+    </div>
+  </div>
+
+  <h3 style="color: var(--infra);">Infrastructure Domain</h3>
+  <p>The low-level capabilities that all other domains build on.</p>
+  <div class="card-grid">
+    <div class="agent-card" style="border-color: var(--infra);">
+      <div class="agent-name">ValidatorAgent <span class="domain-badge infra">INFRA</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I monitor all task streams for hallucinations, drift, and errors. I am the adult in the room."</div>
+      <div class="agent-section"><div class="agent-section-title">Checks</div>
+        <div class="agent-tools"><span class="tool-tag">NumberConsistency</span><span class="tool-tag">EndpointMatch</span><span class="tool-tag">FileExistence</span><span class="tool-tag">RequirementCoverage</span><span class="tool-tag">DriftDetection</span></div>
+      </div>
+      <div class="expert-box">Subscribes to task streams. Uses cheap model (Haiku) for validation checks. When Excel agent says "total: 4,231" but Finance agent said "total: 4,532" — Validator catches the inconsistency BEFORE the user sees it.</div>
+    </div>
+    <div class="agent-card" style="border-color: var(--infra);">
+      <div class="agent-name">EventRouterGrain <span class="domain-badge infra">INFRA</span> <span style="color:var(--accent4);font-size:11px">(NEW)</span></div>
+      <div class="agent-role">"I route critical events to the right handlers. Zero LLM cost — pure pattern matching."</div>
+      <div class="agent-section"><div class="agent-section-title">NOT an agent — a plain grain</div>
+        <div class="agent-tools"><span class="tool-tag">RouteBuildFailure</span><span class="tool-tag">RouteTestFailure</span><span class="tool-tag">RouteHealthAlert</span><span class="tool-tag">RouteApproval</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ==================== SCENARIOS ==================== -->
+<div class="section" id="scenarios">
+<div class="container">
+  <h2>Real-World Scenarios</h2>
+  <p class="subtitle">15 scenarios across all domains — showing the full IAW potential</p>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-val" style="color:var(--coding);">5</div><div class="stat-label">Coding scenarios</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--pa);">3</div><div class="stat-label">Personal Assistant</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--docs);">3</div><div class="stat-label">Documents</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--data);">2</div><div class="stat-label">Data / Finance</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--self);">2</div><div class="stat-label">Self-Improvement</div></div>
+  </div>
+
+  <!-- S1 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--data)">01</div>
+      <div style="flex:1">
+        <div class="card-title">"Manage my monthly finances — analyze statement, categorize expenses, show where I'm overspending, and create a budget Excel"</div>
+        <div class="card-sub"><span class="domain-badge data">DATA</span><span class="domain-badge docs">DOCS</span><span class="domain-badge pa">PERSONAL</span> Cross-domain: Finance + Excel + Memory</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step user"><div class="flow-label">User → Telegram</div><div class="flow-detail">Uploads bank_march_2026.csv + message</div></div>
+        <div class="flow-step agent"><div class="flow-label">Thread enriches context</div><div class="flow-detail">Pulls from UserMemory: "user prefers EUR, lives in Prague, categorizes Uber as transport not entertainment"</div><div class="flow-meta">0 LLM calls — pure state read from PreferenceAgent</div></div>
+        <div class="flow-step system"><div class="flow-label">AgentSelector → Team</div><div class="flow-detail">Selects: FileSystem, Finance, Excel, Validator</div></div>
+        <div class="flow-step agent"><div class="flow-label">FileSystem → Ledger</div><div class="flow-detail">Parses CSV: 147 transactions, EUR 4,231.50</div><div class="flow-meta">Ledger event: ~40 tokens. Structured: {transactions: 147, total: 4231.50, currency: "EUR"}</div></div>
+        <div class="flow-step agent"><div class="flow-label">Finance → Ledger</div><div class="flow-detail">Categorizes using stored user preferences (Uber=transport). Computes: Housing 28%, Food 14%, Transport 8%...</div><div class="flow-meta">Finance reads UserMemory preferences + previous month data for comparison</div></div>
+        <div class="flow-step agent"><div class="flow-label">Finance → Stream (finding)</div><div class="flow-detail">OVERSPEND ALERT: Entertainment EUR 290, +45% vs 3-month avg (EUR 200)</div></div>
+        <div class="flow-step agent"><div class="flow-label">Excel → creates budget_march_2026.xlsx</div><div class="flow-detail">Sheet 1: All transactions. Sheet 2: Category totals with formulas =SUM(). Sheet 3: Month-over-month chart. Sheet 4: Budget recommendations.</div><div class="flow-meta">Excel uses OpenXML SDK — formulas are REAL, charts are REAL, not LLM text</div></div>
+        <div class="flow-step critical"><div class="flow-label">Validator checks</div><div class="flow-detail">SUM of categories (EUR 4,231.50) == source total (EUR 4,231.50) ✓ | All transactions categorized ✓ | Chart data matches ✓</div></div>
+        <div class="flow-step memory"><div class="flow-label">EpisodeMemory stores</div><div class="flow-detail">"March 2026 finance analysis: total 4231.50, overspend on entertainment +45%. Budget created."</div><div class="flow-meta">Next month, Finance agent will reference this for trend analysis</div></div>
+        <div class="flow-step user"><div class="flow-label">Telegram: Summary + xlsx attachment</div><div class="flow-detail">"Your March budget is ready. You spent EUR 4,231.50. Entertainment is 45% above your average — I'd suggest keeping it under EUR 220 next month. Here's the full breakdown."</div></div>
+      </div>
+
+      <div class="highlight-box">
+        <h4>Why This Is Better Than ChatGPT</h4>
+        <p>ChatGPT would give you a text table. IAW gives you a <strong>real Excel file</strong> with working formulas, a chart that updates when you edit data, and personalized categories based on your stored preferences. Next month, it knows your history and can show trends.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- S2 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--pa)">02</div>
+      <div style="flex:1">
+        <div class="card-title">"Why did you use Cosmos DB instead of PostgreSQL for the memory storage?"</div>
+        <div class="card-sub"><span class="domain-badge pa">PERSONAL</span> Explainability — tracing decisions back to conversations</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step user"><div class="flow-label">User asks</div><div class="flow-detail">"Why did you use Cosmos DB instead of PostgreSQL?"</div></div>
+        <div class="flow-step agent"><div class="flow-label">Thread → ExplainabilityAgent</div><div class="flow-detail">Recognizes "why" question pattern. Delegates to ExplainabilityAgent.</div></div>
+        <div class="flow-step memory"><div class="flow-label">ExplainabilityAgent searches memories</div><div class="flow-detail">
+          1. KnowledgeAgent: Decision #7 — "Use Cosmos DB for sub-10ms reads" (recorded March 15)<br>
+          2. EpisodeMemory: "Conversation March 15 — user said latency matters more than cost"<br>
+          3. EpisodeMemory: "Conversation March 20 — benchmarked Cosmos vs PG, Cosmos was 4x faster for point reads"<br>
+          4. ProjectMemory: "IAW uses Azure Blob + Cosmos — aligned with Aspire Azure integrations"
+        </div><div class="flow-meta">4 memory reads, 0 LLM calls for retrieval — all vector search + state reads</div></div>
+        <div class="flow-step agent"><div class="flow-label">ExplainabilityAgent → response</div><div class="flow-detail">"We chose Cosmos DB because of three factors:<br>1. On March 15, you mentioned that latency matters more than cost for memory storage<br>2. On March 20, we benchmarked both — Cosmos was 4x faster for the point-read pattern we use<br>3. It aligns with our Azure-first infrastructure (Aspire integrations)<br><br>This was recorded as Decision #7 in the project knowledge base."</div></div>
+      </div>
+      <div class="highlight-box">
+        <h4>This Is What Makes IAW Personal</h4>
+        <p>Any assistant can say "Cosmos is fast." Only IAW can say "because YOU told me latency matters on March 15, and WE proved it on March 20." This is the difference between a tool and an assistant that knows you.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- S3 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--coding)">03</div>
+      <div style="flex:1">
+        <div class="card-title">"Add a real-time notification system to the DevUI — WebSocket push, toast notifications, sound alerts"</div>
+        <div class="card-sub"><span class="domain-badge coding">CODING</span> Multi-agent feature development with quality gate</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step system"><div class="flow-label">AgentSelector → Team</div><div class="flow-detail">Roslyn (analyze existing code), FileSystem (write files), DotNet (build+test), Git (commit)</div></div>
+        <div class="flow-step agent"><div class="flow-label">Roslyn → Ledger</div><div class="flow-detail">Analysis: DevUI uses SignalR (existing hub found), existing notification model at Models/Notification.cs, Blazor components use EventCallback pattern</div><div class="flow-meta">NOT guessing — actual Roslyn workspace analysis of the solution</div></div>
+        <div class="flow-step agent"><div class="flow-label">CodeOrchestrator → generates plan</div><div class="flow-detail">Step 1: Create NotificationHub.cs (reuse existing SignalR setup). Step 2: Create ToastNotification.razor component. Step 3: Add sound service. Step 4: Wire into existing layout.</div></div>
+        <div class="flow-step agent"><div class="flow-label">FileSystem creates 4 files → Ledger</div><div class="flow-detail">{files_created: 4, lines: 312}</div></div>
+        <div class="flow-step critical"><div class="flow-label">DotNet builds → FAIL → Router</div><div class="flow-detail">CS0246: 'IJSRuntime' — missing using. Router (non-LLM) sees CS0246 → routes to FileSystem with fix hint</div><div class="flow-meta">Zero LLM tokens for routing decision</div></div>
+        <div class="flow-step agent"><div class="flow-label">FileSystem fixes → DotNet builds → PASS</div></div>
+        <div class="flow-step agent"><div class="flow-label">DotNet tests → 42/42 pass (+ 3 new)</div></div>
+        <div class="flow-step critical"><div class="flow-label">Validator checks</div><div class="flow-detail">Existing patterns followed ✓ | New files match naming convention ✓ | SignalR hub registered in DI ✓ | 3 new tests cover new code ✓</div></div>
+        <div class="flow-step agent"><div class="flow-label">Git → feature/notifications, commit</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S4 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--docs)">04</div>
+      <div style="flex:1">
+        <div class="card-title">"Generate a weekly expense report from my receipts folder — every Friday at 5 PM, no interaction needed"</div>
+        <div class="card-sub"><span class="domain-badge docs">DOCS</span><span class="domain-badge data">DATA</span> Scheduled automation with cron + multi-domain</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step system"><div class="flow-label">Cron: "0 17 * * 5" fires</div><div class="flow-detail">DurableJob activates Thread with task "expense-report-w13"</div></div>
+        <div class="flow-step agent"><div class="flow-label">FileSystem scans /receipts/2026-w13/</div><div class="flow-detail">12 images found (jpg, png)</div></div>
+        <div class="flow-step agent"><div class="flow-label">VisionAgent OCRs each receipt</div><div class="flow-detail">Extracts: merchant, amount, date, category. Structured JSON per receipt.</div><div class="flow-meta">Uses GPT-4o vision. Each receipt = 1 targeted call. No wasted tokens on context.</div></div>
+        <div class="flow-step agent"><div class="flow-label">Finance deduplicates, categorizes</div><div class="flow-detail">Finds 2 duplicate Uber receipts. Adjusted total: EUR 453.10</div></div>
+        <div class="flow-step agent"><div class="flow-label">Excel creates expense_report_w13.xlsx</div><div class="flow-detail">Sheet 1: Receipt details with merchant/amount/category. Sheet 2: Category summary with pie chart.</div></div>
+        <div class="flow-step user"><div class="flow-label">Telegram notification (automatic)</div><div class="flow-detail">"Weekly expense report ready: EUR 453.10 across 10 receipts (2 duplicates removed). File attached."</div></div>
+      </div>
+      <p style="font-size: 14px; color: var(--accent2); margin-top: 12px; font-weight: 600;">User interaction required: ZERO. This runs every Friday autonomously.</p>
+    </div>
+  </div>
+
+  <!-- S5 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--pa)">05</div>
+      <div style="flex:1">
+        <div class="card-title">"Prepare me for tomorrow's architecture review meeting — briefing doc, open decisions, and suggested talking points"</div>
+        <div class="card-sub"><span class="domain-badge pa">PERSONAL</span><span class="domain-badge docs">DOCS</span> Memory-heavy: knowledge + episodes + user context</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step memory"><div class="flow-label">Knowledge → Ledger (no LLM)</div><div class="flow-detail">5 open architecture decisions. 3 recorded patterns. Tech stack summary.</div></div>
+        <div class="flow-step memory"><div class="flow-label">EpisodeMemory → Ledger (no LLM)</div><div class="flow-detail">Last 5 architecture-related conversations. Key outcomes and pending items.</div></div>
+        <div class="flow-step memory"><div class="flow-label">UserMemory → Ledger (no LLM)</div><div class="flow-detail">Meeting participant preferences: "CTO prefers diagrams over text, values cost analysis"</div></div>
+        <div class="flow-step memory"><div class="flow-label">Git → Ledger (no LLM)</div><div class="flow-detail">Last 2 weeks: 23 commits, 4 features merged, 2 PRs pending</div></div>
+        <div class="flow-step agent"><div class="flow-label">Opus46 synthesizes (1 expensive LLM call)</div><div class="flow-detail">Reads full ledger (4 agents' context = ~800 tokens). Produces structured briefing.</div></div>
+        <div class="flow-step agent"><div class="flow-label">Word creates briefing_2026-04-02.docx</div><div class="flow-detail">TOC, executive summary, open decisions with recommendations, activity chart, talking points</div></div>
+        <div class="flow-step user"><div class="flow-label">Telegram: "Your briefing is ready"</div><div class="flow-detail">Summary + .docx attachment + top 3 decisions needing input</div></div>
+      </div>
+      <div class="highlight-box">
+        <h4>Token Efficiency</h4>
+        <p>4 agents contribute context via pure state reads (0 LLM calls). Only 1 expensive Opus call for synthesis. 1 Word formatting call. Total: 2 LLM calls instead of 6+ with context forwarding. The ledger is ~800 tokens instead of 8000+ if each agent's full output were forwarded.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- S6 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--self)">06</div>
+      <div style="flex:1">
+        <div class="card-title">IAW Self-Improvement: "I noticed the history summarization could be more efficient — let me fix it"</div>
+        <div class="card-sub"><span class="domain-badge self">SELF</span> Autonomous self-improvement with safety guards</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step system"><div class="flow-label">PerformanceMonitor detects</div><div class="flow-detail">HistorySummarizer is re-generating summaries on every grain activation (wasteful). Metrics show 40% of Haiku calls are redundant summaries.</div></div>
+        <div class="flow-step agent"><div class="flow-label">IAWSystem proposes fix</div><div class="flow-detail">"Store _lastSummary in durable state. Skip re-generation on activation if summary exists."</div></div>
+        <div class="flow-step critical"><div class="flow-label">ArchitectureGuard reviews</div><div class="flow-detail">Check 1: Does this change a public contract? No — internal to DurableChatHistoryProvider ✓<br>Check 2: Aligns with architecture decisions? Yes — Decision #3 favors durable state ✓<br>Check 3: Affects other domains? No — Core internal ✓</div></div>
+        <div class="flow-step agent"><div class="flow-label">IAWSystem implements change</div><div class="flow-detail">Modifies HistorySummarizer + DurableChatHistoryProvider. 2 files changed, +15/-3 lines.</div></div>
+        <div class="flow-step agent"><div class="flow-label">SafeDeployer pipeline</div><div class="flow-detail">Build ✓ → 42/42 tests pass ✓ → New test added for durable summary ✓ → Canary deploy ✓ → 5 min health check ✓</div></div>
+        <div class="flow-step user"><div class="flow-label">Human approval gate (Telegram)</div><div class="flow-detail">"IAW proposes an optimization: cache history summaries in durable state. Impact: -40% Haiku calls on activations. Tests pass. Approve?" [Yes] [No] [Show Diff]</div></div>
+        <div class="flow-step agent"><div class="flow-label">User approves → Full deploy</div></div>
+        <div class="flow-step memory"><div class="flow-label">EpisodeMemory stores</div><div class="flow-detail">"Self-improvement: cached history summaries. Result: 40% fewer Haiku calls. Approved by user on April 2."</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S7 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--coding)">07</div>
+      <div style="flex:1">
+        <div class="card-title">"Review this PR, check for security issues, verify test coverage, and post comments on GitHub"</div>
+        <div class="card-sub"><span class="domain-badge coding">CODING</span><span class="domain-badge pa">PERSONAL</span> Code review enriched with project knowledge</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step memory"><div class="flow-label">Knowledge → Ledger (0 LLM)</div><div class="flow-detail">Conventions: "TreatWarningsAsErrors", "No public setters on DTOs", "All endpoints require [Authorize]"</div></div>
+        <div class="flow-step agent"><div class="flow-label">Git → PR diff</div><div class="flow-detail">PR #42: 8 files, +230/-45, 3 new endpoints</div></div>
+        <div class="flow-step agent"><div class="flow-label">Roslyn → semantic analysis</div><div class="flow-detail">1 public setter on DTO (convention violation). 1 endpoint missing [Authorize] (security issue).</div><div class="flow-meta">Roslyn doesn't "think" there's a security issue — it VERIFIES via AST that the attribute is absent</div></div>
+        <div class="flow-step agent"><div class="flow-label">DotNet → test analysis</div><div class="flow-detail">42/42 pass, but 0 new tests for 3 new endpoints. Coverage gap.</div></div>
+        <div class="flow-step critical"><div class="flow-label">Validator aggregates</div><div class="flow-detail">2 issues (1 critical security, 1 convention). Verdict: REQUEST CHANGES</div></div>
+        <div class="flow-step agent"><div class="flow-label">GitHub → posts review</div><div class="flow-detail">Inline comments on specific lines + summary comment with verdict</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S8 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--data)">08</div>
+      <div style="flex:1">
+        <div class="card-title">"Compare my spending this quarter vs last quarter. Show trends and predict next month."</div>
+        <div class="card-sub"><span class="domain-badge data">DATA</span><span class="domain-badge docs">DOCS</span><span class="domain-badge pa">PERSONAL</span> Long-term memory + data analysis + Excel output</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step memory"><div class="flow-label">EpisodeMemory → past analyses</div><div class="flow-detail">Retrieves: Jan analysis (EUR 3,890), Feb analysis (EUR 4,100), Mar analysis (EUR 4,231). Already stored from previous monthly reports.</div><div class="flow-meta">This is why memory matters — without it, the user would need to re-upload 3 months of data</div></div>
+        <div class="flow-step agent"><div class="flow-label">Finance → trend computation</div><div class="flow-detail">Q1 total: EUR 12,221. Trend: +8.7% month-over-month. Entertainment: growing fastest (+15%/mo). Housing: stable.</div></div>
+        <div class="flow-step agent"><div class="flow-label">Finance → forecast</div><div class="flow-detail">April prediction: EUR 4,450 (based on 3-month trend). Risk: entertainment could push to EUR 4,600 if not controlled.</div></div>
+        <div class="flow-step agent"><div class="flow-label">Excel → quarterly_report_Q1_2026.xlsx</div><div class="flow-detail">Sheet 1: Monthly comparison table. Sheet 2: Trend chart (line graph, 3 months). Sheet 3: Forecast with confidence interval. Sheet 4: Category drill-down.</div></div>
+        <div class="flow-step user"><div class="flow-label">Telegram</div><div class="flow-detail">"Q1 spending: EUR 12,221, trending up 8.7%/month. Entertainment is your fastest growing category. April forecast: EUR 4,450. Full report attached."</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S9 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--infra)">09</div>
+      <div style="flex:1">
+        <div class="card-title">Aspire health check detects latency spike → autonomous investigation → fix proposal</div>
+        <div class="card-sub"><span class="domain-badge infra">INFRA</span><span class="domain-badge coding">CODING</span> Incident response — autonomous with human approval gate</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step critical"><div class="flow-label">AspireAgent (scheduled check) → ALERT</div><div class="flow-detail">p99 latency: 2340ms (threshold: 500ms). Routes via EventRouter (non-LLM) to Thread.</div></div>
+        <div class="flow-step user"><div class="flow-label">Broadcast → Telegram IMMEDIATELY</div><div class="flow-detail">"API latency spike detected: 2340ms. Investigating..."</div></div>
+        <div class="flow-step agent"><div class="flow-label">Aspire → traces analysis</div><div class="flow-detail">90% of slow requests hit /api/reports endpoint</div></div>
+        <div class="flow-step agent"><div class="flow-label">Roslyn → code analysis</div><div class="flow-detail">ReportsController.GetAll(): N+1 query detected (loop calling DB), missing .AsNoTracking()</div></div>
+        <div class="flow-step user"><div class="flow-label">Approval gate → Telegram</div><div class="flow-detail">"Found N+1 query in ReportsController. Proposed fix: Add .Include() + .AsNoTracking(). Apply?" [Yes] [No] [Show Diff]</div></div>
+      </div>
+      <p style="color: var(--accent2); font-size: 13px; margin-top: 12px;"><strong>Key pattern from Accede:</strong> The approval gate uses DurableTaskCompletionSource — the orchestration suspends durably until the user clicks a button. Even if the silo restarts, the pending approval survives.</p>
+    </div>
+  </div>
+
+  <!-- S10 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--coding)">10</div>
+      <div style="flex:1">
+        <div class="card-title">"Upgrade Orleans to latest across all projects, fix breaking changes, create PRs with changelogs"</div>
+        <div class="card-sub"><span class="domain-badge coding">CODING</span> Multi-project fan-out with Team Lead digest pattern</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <p>Fan-out across 3 projects. Each gets its own task ledger. Thread reads all ledgers every 2 minutes (1 Haiku call = digest). Handles build failures via Router. Creates PRs on GitHub when each project passes. Sends Telegram progress every 5 min.</p>
+      <p style="color: var(--accent4);">Total cross-project coordination: ~5 Haiku calls. Without events: ~50+ Opus calls for context forwarding.</p>
+    </div>
+  </div>
+
+  <!-- S11 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--docs)">11</div>
+      <div style="flex:1">
+        <div class="card-title">"Write a technical report comparing Aspire vs Dapr with code samples, architecture diagrams, and a recommendation"</div>
+        <div class="card-sub"><span class="domain-badge docs">DOCS</span><span class="domain-badge data">DATA</span><span class="domain-badge pa">PERSONAL</span> Research + synthesis + document generation</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <p>WebResearch agent scrapes official docs, blogs, release notes → short findings to Ledger. Knowledge agent adds project's current Aspire usage context. Opus synthesizes into structured analysis reading the full Ledger. Word agent formats as .docx with TOC, comparison tables, code snippets, and recommendation. Validator checks all cited features actually exist in the referenced versions.</p>
+    </div>
+  </div>
+
+  <!-- S12 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--pa)">12</div>
+      <div style="flex:1">
+        <div class="card-title">"Remember: I never want you to use mocks in integration tests. We got burned last quarter."</div>
+        <div class="card-sub"><span class="domain-badge pa">PERSONAL</span> Preference learning that affects future behavior across all agents</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step user"><div class="flow-label">User corrects</div><div class="flow-detail">"Don't use mocks in integration tests — we got burned last quarter"</div></div>
+        <div class="flow-step agent"><div class="flow-label">PreferenceAgent stores</div><div class="flow-detail">Category: coding/testing. Rule: "No mocks in integration tests". Reason: "Past incident — mock/prod divergence". Confidence: high (explicit instruction).</div></div>
+        <div class="flow-step memory"><div class="flow-label">UserMemory stores</div><div class="flow-detail">Vector-indexed for retrieval when ANY agent is about to write tests</div></div>
+        <div class="flow-step agent"><div class="flow-label">Future: DotNet is asked to write integration tests</div><div class="flow-detail">PreferenceAgent injects context: "User preference: no mocks in integration tests (reason: past incident)". DotNet writes tests with real DB.</div><div class="flow-meta">PreferenceAgent acts as context provider — injected automatically, not asked</div></div>
+      </div>
+      <div class="highlight-box">
+        <h4>This Is Why Preferences Need Their Own Agent</h4>
+        <p>Preferences aren't "memory" — they're <strong>behavioral rules</strong> that modify how other agents work. A PreferenceAgent doesn't just store them; it <strong>injects them as context</strong> whenever a relevant agent is activated. It's the difference between "remembering you said something" and "actually changing behavior because of it."</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- S13 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--self)">13</div>
+      <div style="flex:1">
+        <div class="card-title">Self-improvement: "Agent X has been failing 30% of the time on chart generation — let me investigate and fix"</div>
+        <div class="card-sub"><span class="domain-badge self">SELF</span> Autonomous quality improvement with safety net</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step system"><div class="flow-label">PerformanceMonitor detects pattern</div><div class="flow-detail">Excel agent chart creation fails 30% — usually when data has >20 categories</div></div>
+        <div class="flow-step agent"><div class="flow-label">ChangeAnalyzer investigates</div><div class="flow-detail">Root cause: OpenXML chart creation doesn't handle >20 series. Need to switch to grouped chart for large datasets.</div></div>
+        <div class="flow-step agent"><div class="flow-label">IAWSystem proposes fix</div><div class="flow-detail">If categories >20, use grouped bar chart instead of pie chart. Add fallback logic.</div></div>
+        <div class="flow-step critical"><div class="flow-label">ArchitectureGuard ✓ | SafeDeployer ✓</div></div>
+        <div class="flow-step user"><div class="flow-label">Approval gate</div><div class="flow-detail">"Excel agent chart improvement: auto-switch to grouped chart for 20+ categories. Fixes 30% failure rate. Approve?"</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S14 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--coding)">14</div>
+      <div style="flex:1">
+        <div class="card-title">"Scaffold a .NET MAUI app with API backend — SQLite, REST endpoints, auth, and full test suite"</div>
+        <div class="card-sub"><span class="domain-badge coding">CODING</span> Large generation with Validator catching hallucination drift</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <p>CodeOrchestrator generates 4-project solution blueprint. FileSystem creates 30+ files in batches, publishing to Ledger. Validator monitors the stream and catches: "MAUI calls /api/users but API only defines /api/accounts" — endpoint mismatch BEFORE the task completes. Router sends correction back to CodeOrchestrator. This is the quality gate in action — catching hallucinations that no other assistant would catch.</p>
+    </div>
+  </div>
+
+  <!-- S15 -->
+  <div class="scenario-box" onclick="toggle(this)">
+    <div class="scenario-header">
+      <div class="scenario-num" style="color:var(--docs)">15</div>
+      <div style="flex:1">
+        <div class="card-title">"Process my voice memo about the project status, create meeting notes, and update the knowledge base"</div>
+        <div class="card-sub"><span class="domain-badge docs">DOCS</span><span class="domain-badge pa">PERSONAL</span> Voice → text → structured knowledge</div>
+      </div>
+      <div class="chevron">›</div>
+    </div>
+    <div class="scenario-body">
+      <div class="flow">
+        <div class="flow-step user"><div class="flow-label">User sends voice memo via Telegram</div><div class="flow-detail">3-minute audio about project decisions</div></div>
+        <div class="flow-step agent"><div class="flow-label">Voice2Text (Whisper) → transcription</div></div>
+        <div class="flow-step agent"><div class="flow-label">Opus46 → structured extraction</div><div class="flow-detail">Decisions: 2 new, 1 updated. Action items: 3. Key insights: 2.</div></div>
+        <div class="flow-step agent"><div class="flow-label">Knowledge → stores decisions</div><div class="flow-detail">Decision #8: "Switch to queue-based streams for production". Decision #9: "Excel agent priority over Word".</div></div>
+        <div class="flow-step agent"><div class="flow-label">Word → meeting_notes_2026-04-01.docx</div><div class="flow-detail">Formatted notes with decisions, action items, timeline</div></div>
+        <div class="flow-step memory"><div class="flow-label">EpisodeMemory stores full context</div><div class="flow-detail">Searchable for future "why" questions</div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ==================== EXPERTISE ==================== -->
+<div class="section" id="expertise">
+<div class="container">
+  <h2>Agent Expertise Design</h2>
+  <p class="subtitle">What makes an IAW agent a TRUE expert vs. "an LLM with a role string"</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Expert Agent Anatomy</div>
+    <pre style="font-family: monospace; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+<span style="color:var(--text)">EXPERT AGENT = SDK Tools + Domain Prompt + Bounded Responsibility + Learning</span>
+
+ 1. <span style="color:var(--accent2)">SDK-Backed Tools</span> (the hands)
+    - NOT: LLM generates code/text that represents the output
+    - YES: LLM decides WHAT to do, SDK tools EXECUTE it precisely
+    - Example: Excel agent calls SetFormula("B2", "=SUM(B3:B50)")
+    - Example: Roslyn agent calls workspace.GetSymbol("MyClass")
+    - The LLM is the brain, the SDK is the hands
+
+ 2. <span style="color:var(--accent)">Expert System Prompt</span> (the knowledge)
+    - NOT: "You are an Excel assistant"
+    - YES: "You are an Excel expert. You understand:
+            - Cell references (A1, $A$1, A1:B10)
+            - Formula functions (VLOOKUP, INDEX/MATCH, SUMIFS)
+            - Chart types and when to use each
+            - Pivot table design principles
+            - Conditional formatting patterns
+            - Data validation rules
+            You ALWAYS use tools to execute — never generate raw XML."
+    - The prompt encodes REAL expertise, not just a role
+
+ 3. <span style="color:var(--accent3)">Bounded Responsibility</span> (the scope)
+    - Each agent knows exactly what it CAN and CANNOT do
+    - When asked something outside scope: delegates, doesn't hallucinate
+    - Git agent doesn't try to fix code. It reports the diff and delegates to Roslyn.
+    - Excel agent doesn't analyze data. It formats what Finance agent computed.
+
+ 4. <span style="color:var(--accent4)">Context Injection</span> (the memory)
+    - PreferenceAgent injects user-specific rules
+    - KnowledgeAgent injects project conventions
+    - EpisodeMemory injects relevant past experiences
+    - All injected as structured context, not "remembered" by the LLM
+    </pre>
+  </div>
+
+  <h3>Current vs Expert: Agent Quality Gap</h3>
+  <div class="diagram">
+    <table>
+      <tr><th>Agent</th><th>Today</th><th>Expert Level</th><th>Gap</th></tr>
+      <tr><td style="color:var(--accent2)">Roslyn</td><td>Excellent — real Workspace API, AST navigation, call graphs</td><td>Already expert-level</td><td style="color:var(--accent2)">Minimal — add more refactoring tools</td></tr>
+      <tr><td>DotNet</td><td>Good — builds, tests, runs, parses output</td><td>Should understand MSBuild deeply, NuGet resolution, runtime diagnostics</td><td style="color:var(--accent4)">Medium — expand diagnostic tools</td></tr>
+      <tr><td>Git</td><td>Basic — status, commit, diff, log, revert</td><td>Interactive rebase, conflict resolution, bisect, stash, cherry-pick, worktree, reflog</td><td style="color:var(--error)">High — missing most advanced operations</td></tr>
+      <tr><td>FileSystem</td><td>Good — CRUD, search, compare</td><td>Should understand file types, encodings, binary vs text, symlinks, permissions</td><td style="color:var(--accent4)">Medium</td></tr>
+      <tr><td>Shell</td><td>Basic — execute commands with timeout</td><td>Should understand shell environments, piping, process management, environment variables</td><td style="color:var(--accent4)">Medium</td></tr>
+      <tr><td>Excel (new)</td><td>Doesn't exist</td><td>OpenXML SDK, formulas, charts, pivot tables, conditional formatting, data validation</td><td style="color:var(--error)">Full build needed</td></tr>
+      <tr><td>Finance (new)</td><td>Doesn't exist</td><td>Transaction categorization, trend analysis, budget computation, anomaly detection</td><td style="color:var(--error)">Full build needed</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ==================== MEMORY ==================== -->
+<div class="section" id="memory">
+<div class="container">
+  <h2>Memory & Explainability Architecture</h2>
+  <p class="subtitle">How IAW remembers, learns, and explains its decisions</p>
+
+  <div class="columns">
+    <div>
+      <h3>Memory Layers</h3>
+      <div class="agent-card">
+        <div class="agent-name">Layer 1: Working Memory</div>
+        <div class="agent-role">Current conversation + task ledger. Exists during task execution.</div>
+        <p style="font-size:13px">Conversation history (IDurableList&lt;ChatMessage&gt;) + current task's shared ledger. Lost when conversation ends (but stored to episodic memory).</p>
+      </div>
+      <div class="agent-card">
+        <div class="agent-name">Layer 2: Episodic Memory</div>
+        <div class="agent-role">Past conversations, task outcomes, decisions made. Searchable via vector DB.</div>
+        <p style="font-size:13px">Every completed task → episode stored in Qdrant. Includes: what was asked, what happened, what was decided, what worked/failed. This is how IAW can say "remember when we..."</p>
+      </div>
+      <div class="agent-card">
+        <div class="agent-name">Layer 3: Semantic Memory</div>
+        <div class="agent-role">Learned facts, patterns, conventions. The knowledge base.</div>
+        <p style="font-size:13px">KnowledgeAgent: architecture decisions, patterns, conventions. PatternMemory: proven code patterns. CodeMemory: codebase structure. UserMemory: personal facts.</p>
+      </div>
+      <div class="agent-card">
+        <div class="agent-name">Layer 4: Behavioral Rules</div>
+        <div class="agent-role">Preferences that modify how agents work. The personality layer.</div>
+        <p style="font-size:13px">PreferenceAgent: "don't mock DBs", "use Cosmos for low latency", "prefer Opus for architecture decisions". Injected as context when relevant agents activate.</p>
+      </div>
+    </div>
+    <div>
+      <h3>Explainability Flow</h3>
+      <div class="diagram" style="margin-top: 0;">
+        <pre style="font-family: monospace; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+User: "Why did you do X?"
+         |
+         v
+ExplainabilityAgent activated
+         |
+    +----+----+
+    |    |    |
+    v    v    v
+ Episode  Knowledge  Preference
+ Memory   Agent      Agent
+    |       |          |
+    v       v          v
+ "On March 15  "Decision #7:  "User prefers
+  you said..."  Cosmos for     low latency
+                 reads"        over cost"
+    |       |          |
+    +---+---+----------+
+        |
+        v
+  Synthesize traced explanation
+        |
+        v
+  "We chose Cosmos because:
+   1. You said latency > cost (Mar 15)
+   2. We benchmarked it (Mar 20)
+   3. Recorded as Decision #7"
+        </pre>
+      </div>
+      <div class="gap-card critical">
+        <div class="gap-title">MISSING TODAY</div>
+        <div class="gap-detail">No ExplainabilityAgent. No PreferenceAgent. Memory agents exist but aren't integrated into the decision-tracing flow. EpisodeMemory stores episodes but can't trace back to specific decisions. This is the biggest gap in making IAW feel personal.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ==================== SELF-IMPROVEMENT ==================== -->
+<div class="section" id="self">
+<div class="container">
+  <h2>Self-Improvement Domain</h2>
+  <p class="subtitle">IAW improving itself — safely, incrementally, with human approval gates</p>
+
+  <div class="diagram">
+    <div class="diagram-title">Self-Improvement Loop</div>
+    <pre style="font-family: monospace; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+<span style="color:var(--accent4)">DETECT</span> → <span style="color:var(--accent)">ANALYZE</span> → <span style="color:var(--accent3)">GUARD</span> → <span style="color:var(--accent2)">IMPLEMENT</span> → <span style="color:var(--accent5)">DEPLOY</span> → <span style="color:var(--text)">MONITOR</span>
+
+<span style="color:var(--accent4)">1. DETECT (PerformanceMonitor)</span>
+   - Scheduled health checks on all agents
+   - Token usage anomalies (agent X using 3x expected)
+   - Error rate spikes (agent Y failing 30%)
+   - Latency patterns (response time degradation)
+
+<span style="color:var(--accent)">2. ANALYZE (ChangeAnalyzer)</span>
+   - Root cause analysis using traces + logs
+   - Proposes specific code changes
+   - Estimates impact and risk level
+
+<span style="color:var(--accent3)">3. GUARD (ArchitectureGuard)</span>
+   - Reviews change against recorded decisions
+   - Checks: public contract changes?
+   - Checks: cross-domain impact?
+   - Checks: architectural alignment?
+   - BLOCKS if change violates principles
+
+<span style="color:var(--accent2)">4. IMPLEMENT (IAWSystem)</span>
+   - Applies code changes
+   - Adds/updates tests
+   - Builds and runs full test suite
+
+<span style="color:var(--accent5)">5. DEPLOY (SafeDeployer)</span>
+   - <span style="color:var(--accent3)">HUMAN APPROVAL GATE</span> (Telegram buttons)
+   - Canary deploy (single silo)
+   - Health check (5 min)
+   - Full deploy if healthy
+   - Auto-rollback if not
+
+<span style="color:var(--text)">6. MONITOR (PerformanceMonitor)</span>
+   - Confirms improvement metric
+   - Stores episode in memory
+   - Loop back to DETECT
+    </pre>
+  </div>
+
+  <div class="highlight-box">
+    <h4>Key Safety Principles</h4>
+    <ul style="padding-left: 18px;">
+      <li><strong>Human always approves</strong> — the loop proposes, user decides. Uses DurableTaskCompletionSource (from Accede pattern) for crash-proof approval gates.</li>
+      <li><strong>Architecture Guard is non-negotiable</strong> — every change reviewed against stored decisions. No "quick fix" that breaks a principle.</li>
+      <li><strong>Tests must pass</strong> — no deploy without green tests. Self-improvement includes writing tests for the improvement.</li>
+      <li><strong>Auto-rollback</strong> — if canary deploy shows degradation, rollback is automatic. No human intervention needed for safety.</li>
+      <li><strong>Episode memory</strong> — every self-improvement cycle is recorded. The system learns what improvements work and what doesn't.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ==================== GAPS ==================== -->
+<div class="section" id="gaps">
+<div class="container">
+  <h2>What's Missing</h2>
+  <p class="subtitle">Gaps between today's IAW and the v0.0.3 vision</p>
+
+  <h3>Critical (Must Fix Before Building On Top)</h3>
+  <div class="gap-card critical"><div class="gap-title">Conversation history not durable</div><div class="gap-detail">StoreChatHistoryAsync() doesn't call WriteStateAsync(). Messages lost on grain deactivation. HistorySummarizer._lastSummary also not durable.</div></div>
+  <div class="gap-card critical"><div class="gap-title">Memory-only stream provider</div><div class="gap-detail">All events lost on silo restart. Need persistent or at least queue-backed provider.</div></div>
+  <div class="gap-card critical"><div class="gap-title">No shared task context (Ledger)</div><div class="gap-detail">Agents working on same task have zero shared awareness. Full context forwarded via Thread = token explosion.</div></div>
+
+  <h3>High (Required for v0.0.3 Vision)</h3>
+  <div class="gap-card high"><div class="gap-title">No PreferenceAgent</div><div class="gap-detail">User corrections aren't stored as behavioral rules. No injection of preferences into other agents' context. IAW keeps repeating the same mistakes.</div></div>
+  <div class="gap-card high"><div class="gap-title">No ExplainabilityAgent</div><div class="gap-detail">Can't trace decisions back to conversations/preferences. "Why did you do X?" gets a generic answer, not a traced one.</div></div>
+  <div class="gap-card high"><div class="gap-title">No Validator agent</div><div class="gap-detail">No quality gate on multi-agent output. Hallucinations go unchecked. Numbers can be inconsistent across agents.</div></div>
+  <div class="gap-card high"><div class="gap-title">No Broadcast Channel</div><div class="gap-detail">UI updates use ad-hoc publishing. Adding new UI surface requires changes in every publishing agent.</div></div>
+  <div class="gap-card high"><div class="gap-title">No Smart Event Router</div><div class="gap-detail">All routing through LLM. Mechanical decisions (build failed → fix) waste tokens on AgentSelector.</div></div>
+  <div class="gap-card high"><div class="gap-title">No Human-in-the-Loop approval gates</div><div class="gap-detail">No DurableTaskCompletionSource pattern. Can't pause orchestration, wait for Telegram approval, and resume. Accede has this — IAW doesn't.</div></div>
+  <div class="gap-card high"><div class="gap-title">No domain organization</div><div class="gap-detail">All agents flat in src/Agents/. No domain boundaries. No domain-specific context injection.</div></div>
+  <div class="gap-card high"><div class="gap-title">Event schema is scattered strings</div><div class="gap-detail">Event names hardcoded as strings. No type safety. No discoverability. Need typed event hierarchy.</div></div>
+
+  <h3>Medium (Important for Full Vision)</h3>
+  <div class="gap-card medium"><div class="gap-title">No Documents domain</div><div class="gap-detail">No Excel, Word, PDF, or Vision agents. Need OpenXML SDK integration for real document generation.</div></div>
+  <div class="gap-card medium"><div class="gap-title">No Data domain</div><div class="gap-detail">No Finance, Analytics, or WebResearch agents.</div></div>
+  <div class="gap-card medium"><div class="gap-title">No Self-Improvement domain</div><div class="gap-detail">No ArchitectureGuard, SafeDeployer, PerformanceMonitor, ChangeAnalyzer.</div></div>
+  <div class="gap-card medium"><div class="gap-title">Git agent is basic</div><div class="gap-detail">Only status/commit/diff/log/revert. Missing: rebase, cherry-pick, bisect, stash, conflict resolution, worktree.</div></div>
+  <div class="gap-card medium"><div class="gap-title">No cron scheduling</div><div class="gap-detail">DurableJobs support interval-based only. Need cron expressions for "every Friday at 5 PM CET" with DST handling.</div></div>
+  <div class="gap-card medium"><div class="gap-title">No Team Lead digest pattern</div><div class="gap-detail">Long-running tasks have no periodic progress summaries. User gets nothing until task completes.</div></div>
+  <div class="gap-card medium"><div class="gap-title">Core lib test coverage is thin</div><div class="gap-detail">Event system, streams, scheduling, history — all need thorough unit and integration tests.</div></div>
+
+  <h3>Lessons from AccedeConciergeFork to Adopt</h3>
+  <div class="diagram">
+    <table>
+      <tr><th>Accede Pattern</th><th>IAW Status</th><th>Priority</th></tr>
+      <tr><td>DurableTaskCompletionSource (approval gates)</td><td style="color:var(--error)">Missing</td><td>High — essential for human-in-the-loop</td></tr>
+      <tr><td>ChatItem type hierarchy (polymorphic messages)</td><td style="color:var(--accent4)">Partial — ChatMessage is flat</td><td>Medium — richer message types enable richer UI</td></tr>
+      <tr><td>Streaming chat pump (background loop)</td><td style="color:var(--accent2)">Exists — StreamResponseCore()</td><td>OK — but could adopt Accede's AsyncManualResetEvent pattern</td></tr>
+      <tr><td>IDurableQueue for pending messages</td><td style="color:var(--error)">Missing — messages processed inline</td><td>Medium — better concurrency handling</td></tr>
+      <tr><td>Side conversation pattern (agent-to-agent chat)</td><td style="color:var(--accent4)">Partial — CodeOrchestrator does this</td><td>Medium — formalize as a Core pattern</td></tr>
+      <tr><td>Tool attribute-based discovery</td><td style="color:var(--accent2)">Exists — interface-method auto-registration</td><td>OK</td></tr>
+      <tr><td>SSE streaming API</td><td style="color:var(--accent4)">Partial — MCP has it</td><td>Low — Blazor handles differently</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ==================== BDD ==================== -->
+<div class="section" id="bdd">
+<div class="container">
+  <h2>BDD Specifications</h2>
+  <p class="subtitle">Behavioral specs covering the full IAW vision — these become integration tests</p>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Cross-Domain Financial Management<br>
+    <span class="c">  # The complete finance workflow: upload → categorize → excel → validate → deliver</span><br><br>
+    <span class="k">  Scenario:</span> Monthly budget creation from bank statement<br>
+    <span class="g">    Given</span> user has preference "Uber = transport" stored in PreferenceAgent<br>
+    <span class="a">    And</span> previous month analysis stored in EpisodeMemory (total: EUR 4,100)<br>
+    <span class="a">    And</span> file "bank_march.csv" with 147 transactions totaling EUR 4,231.50<br><br>
+    <span class="w">    When</span> user sends "Analyze my bank statement and create budget"<br><br>
+    <span class="t">    Then</span> Finance should categorize respecting stored preferences<br>
+    <span class="a">    And</span> Uber transactions should be categorized as "transport" not "entertainment"<br>
+    <span class="a">    And</span> Finance should compare with previous month (EUR 4,100 from memory)<br>
+    <span class="a">    And</span> Excel should create .xlsx with formulas (=SUM, not hardcoded totals)<br>
+    <span class="a">    And</span> Validator should confirm category totals == source total<br>
+    <span class="a">    And</span> EpisodeMemory should store this analysis for future trend queries<br>
+    <span class="a">    And</span> total LLM calls should be under 10<br>
+  </div>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Decision Explainability<br>
+    <span class="c">  # IAW can trace any decision back to its source</span><br><br>
+    <span class="k">  Scenario:</span> User asks why a technical decision was made<br>
+    <span class="g">    Given</span> KnowledgeAgent has Decision #7: "Use Cosmos for sub-10ms reads"<br>
+    <span class="a">    And</span> EpisodeMemory has conversation from March 15: "latency > cost"<br>
+    <span class="a">    And</span> EpisodeMemory has conversation from March 20: "Cosmos 4x faster benchmark"<br><br>
+    <span class="w">    When</span> user asks "Why did you choose Cosmos over PostgreSQL?"<br><br>
+    <span class="t">    Then</span> ExplainabilityAgent should search across all memory layers<br>
+    <span class="a">    And</span> response should reference the March 15 conversation<br>
+    <span class="a">    And</span> response should reference the March 20 benchmark<br>
+    <span class="a">    And</span> response should cite Decision #7<br>
+    <span class="a">    And</span> memory retrieval should use 0 LLM calls (vector search only)<br>
+    <span class="a">    And</span> only 1 LLM call should be used for synthesis<br>
+  </div>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Preference-Driven Agent Behavior<br>
+    <span class="c">  # User corrections change future behavior automatically</span><br><br>
+    <span class="k">  Scenario:</span> Preference injection prevents repeated mistakes<br>
+    <span class="g">    Given</span> user previously said "never mock databases in integration tests"<br>
+    <span class="a">    And</span> PreferenceAgent stored rule: {category: "testing", rule: "no mocks", reason: "prod incident"}<br><br>
+    <span class="w">    When</span> DotNet agent is asked to write integration tests<br><br>
+    <span class="t">    Then</span> PreferenceAgent should inject the "no mocks" rule as context<br>
+    <span class="a">    And</span> DotNet should write tests with real database connections<br>
+    <span class="a">    And</span> DotNet should NOT use mock frameworks for DB access<br>
+    <span class="a">    And</span> the preference injection should cost 0 additional LLM calls<br>
+  </div>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Durable Human-in-the-Loop Approval<br>
+    <span class="c">  # Approval gates survive silo restarts (Accede pattern)</span><br><br>
+    <span class="k">  Scenario:</span> Orchestration pauses for approval and survives restart<br>
+    <span class="g">    Given</span> a self-improvement change is proposed<br>
+    <span class="a">    And</span> ArchitectureGuard has approved the change<br><br>
+    <span class="w">    When</span> SafeDeployer requests human approval via Telegram<br>
+    <span class="a">    And</span> the silo restarts before user responds<br>
+    <span class="a">    And</span> the silo comes back online<br>
+    <span class="a">    And</span> user clicks "Approve" in Telegram<br><br>
+    <span class="t">    Then</span> the approval should be received by SafeDeployer<br>
+    <span class="a">    And</span> the deployment should proceed<br>
+    <span class="a">    And</span> no work should be lost due to the restart<br>
+  </div>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Shared Task Ledger<br>
+    <span class="c">  # Agents collaborate via event log, not context forwarding</span><br><br>
+    <span class="k">  Scenario:</span> 5 agents share context via ledger on a coding task<br>
+    <span class="g">    Given</span> a task "add-auth" with agents Roslyn, FileSystem, DotNet, Git, Validator<br>
+    <span class="a">    And</span> a task ledger exists<br><br>
+    <span class="w">    When</span> Roslyn publishes "found existing AuthMiddleware, 3 endpoints need [Authorize]"<br>
+    <span class="a">    And</span> FileSystem publishes "created AuthAttribute.cs, modified 3 controllers"<br>
+    <span class="a">    And</span> DotNet publishes "build passed, 45/45 tests pass"<br>
+    <span class="a">    And</span> Git is activated to commit<br><br>
+    <span class="t">    Then</span> Git should receive all 3 previous events as structured context<br>
+    <span class="a">    And</span> Git's prompt should contain &lt;100 tokens of ledger context<br>
+    <span class="a">    And</span> Git should NOT receive the full file contents or build output<br>
+    <span class="a">    And</span> Git should generate a meaningful commit message from the ledger<br>
+  </div>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Self-Improvement Safety<br>
+    <span class="c">  # Changes to IAW itself must pass architecture review</span><br><br>
+    <span class="k">  Scenario:</span> Architecture Guard blocks unsafe change<br>
+    <span class="g">    Given</span> IAWSystem proposes changing IAgent interface (public contract)<br>
+    <span class="a">    And</span> KnowledgeAgent has Decision #1: "IAgent is stable — no breaking changes"<br><br>
+    <span class="w">    When</span> ArchitectureGuard reviews the proposed change<br><br>
+    <span class="t">    Then</span> the change should be BLOCKED<br>
+    <span class="a">    And</span> reason should cite Decision #1<br>
+    <span class="a">    And</span> the change should NOT reach SafeDeployer<br>
+    <span class="a">    And</span> user should be notified: "Blocked: violates Decision #1 (stable IAgent)"<br>
+  </div>
+
+  <div class="bdd">
+    <span class="k">Feature:</span> Expert Excel Agent<br>
+    <span class="c">  # Real formulas, real charts — not LLM text pretending to be Excel</span><br><br>
+    <span class="k">  Scenario:</span> Excel creates spreadsheet with working formulas and charts<br>
+    <span class="g">    Given</span> Finance agent has categorized 147 transactions into 8 categories<br>
+    <span class="a">    And</span> category data is in the task ledger<br><br>
+    <span class="w">    When</span> Excel agent creates budget spreadsheet<br><br>
+    <span class="t">    Then</span> the .xlsx file should be valid (openable in Microsoft Excel)<br>
+    <span class="a">    And</span> cell B50 should contain formula "=SUM(B2:B49)" (not a hardcoded number)<br>
+    <span class="a">    And</span> the file should contain at least 1 chart (pie or bar)<br>
+    <span class="a">    And</span> chart data should reference cell ranges (not embedded values)<br>
+    <span class="a">    And</span> modifying a transaction amount should update the chart automatically<br>
+    <span class="a">    And</span> the LLM should NOT have generated any raw OpenXML markup<br>
+  </div>
+</div>
+</div>
+
+<!-- ==================== ACCEDE ==================== -->
+<div class="section" id="accede">
+<div class="container">
+  <h2>Lessons from AccedeConciergeFork</h2>
+  <p class="subtitle">Patterns to adopt, adapt, or skip</p>
+
+  <div class="card-grid">
+    <div class="card" style="border-color: var(--accent2);">
+      <div class="card-title" style="color: var(--accent2);">Adopt: DurableTaskCompletionSource</div>
+      <div class="card-sub">Grain-based promise for human-in-the-loop</div>
+      <ul>
+        <li>Orchestration calls <code>RequestApproval()</code> → blocks on grain</li>
+        <li>Telegram sends approval buttons</li>
+        <li>User clicks → <code>TrySetResult()</code> → orchestration resumes</li>
+        <li>Survives silo restarts — state is journaled</li>
+        <li><strong>IAW use:</strong> Self-improvement approval, risky operation confirmation, multi-step wizard</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--accent2);">
+      <div class="card-title" style="color: var(--accent2);">Adopt: Typed ChatItem Hierarchy</div>
+      <div class="card-sub">Polymorphic messages enable rich UI</div>
+      <ul>
+        <li>Not just "text messages" — typed items: <code>UserMessage</code>, <code>AssistantResponse</code>, <code>PreferenceUpdated</code>, <code>TripRequestDecision</code></li>
+        <li>Each type has <code>IsUserVisible</code> flag — control what reaches UI</li>
+        <li>Each type can override <code>ToChatMessage()</code> — different representation for LLM vs user</li>
+        <li><strong>IAW use:</strong> <code>ApprovalRequest</code>, <code>ProgressUpdate</code>, <code>FileAttachment</code>, <code>ValidationResult</code>, <code>LedgerEvent</code></li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--accent2);">
+      <div class="card-title" style="color: var(--accent2);">Adopt: IDurableQueue for Message Ordering</div>
+      <div class="card-sub">Better concurrency than inline processing</div>
+      <ul>
+        <li>Accede uses <code>IDurableQueue&lt;ChatItem&gt;</code> + <code>AsyncManualResetEvent</code></li>
+        <li>Messages queued durably, processed in order</li>
+        <li>Background pump loop handles one at a time</li>
+        <li><strong>IAW use:</strong> Agent message inbox — prevents race conditions, enables cancellation</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--accent4);">
+      <div class="card-title" style="color: var(--accent4);">Adapt: Side Conversation Pattern</div>
+      <div class="card-sub">Agent-to-agent chat for complex negotiation</div>
+      <ul>
+        <li>Accede: Liaison manually orchestrates chat with TravelAgent in a loop</li>
+        <li><strong>IAW adaptation:</strong> Formalize as <code>SideConversation(IAgent target, string goal)</code> in Core</li>
+        <li>Useful for: AgentSelector ↔ candidate agents, Validator ↔ questioned agent</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--text-muted);">
+      <div class="card-title">Skip: Custom Async Method Builder</div>
+      <div class="card-sub">Too complex for current needs</div>
+      <ul>
+        <li>Accede's <code>DurableTask&lt;T&gt;</code> with custom async builder is impressive but over-engineered for IAW</li>
+        <li>IAW already has DurableJobs for scheduling and grain state for persistence</li>
+        <li>Revisit only if we need deterministic replay (Option C from previous review)</li>
+      </ul>
+    </div>
+    <div class="card" style="border-color: var(--text-muted);">
+      <div class="card-title">Skip: SSE Chat Streaming API</div>
+      <div class="card-sub">IAW uses different client patterns</div>
+      <ul>
+        <li>Accede streams via SSE to React frontend</li>
+        <li>IAW uses: Telegram webhooks, Blazor SignalR, MCP protocol</li>
+        <li>No need for SSE unless adding a standalone web client</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+function toggle(el) {
+  if (event.target.closest('.scenario-body')) return;
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>

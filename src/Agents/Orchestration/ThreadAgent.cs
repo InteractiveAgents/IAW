@@ -1,6 +1,8 @@
 using Core;
 using Core.Context;
 using Core.Contracts;
+using Core.Registry;
+using Core.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +21,8 @@ public class ThreadAgent(
     : Agent<IThread>(durableState, chatClient), IThread
 {
     private const string CallbackPrefix = "cb:";
+    private const string DigestJobPrefix = "digest:";
+    private readonly List<MediaPart> _pendingDeliveries = [];
 
     protected override int MaxHistoryMessages => 20;
 
@@ -33,10 +37,14 @@ public class ThreadAgent(
             new UserContextProvider(GrainFactory)
         };
 
-        var qdrant = ServiceProvider.GetService<QdrantClient>();
         var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
+
+        var qdrant = ServiceProvider.GetService<QdrantClient>();
         if (qdrant is not null && embeddings is not null)
             providers.Add(new RAGContextProvider(qdrant, embeddings));
+
+        if (embeddings is not null)
+            providers.Add(new AgentRoutingContextProvider(GrainFactory, embeddings));
 
         var memoryAgents = ServiceProvider.GetService<IReadOnlyList<IMemoryAgent>>();
         if (memoryAgents is not null && memoryAgents.Count > 0)
@@ -50,12 +58,13 @@ public class ThreadAgent(
     {
         return [
             AIFunctionFactory.Create(SendToAgentAsync, "SendToAgent",
-                "Send a task to a specific agent by name. The agent handles it autonomously " +
-                "with its own LLM and tools. Available agents: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem."),
+                "Delegate a task to a specialized agent from [Available agents for this request]. " +
+                "Use the agent's DisplayName. The agent has its own LLM and tools — never do these tasks yourself. " +
+                "Include FULL request with all paths and details."),
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
-                "For complex multi-step tasks requiring coordination across multiple agents. " +
-                "NOT needed for single build/run/read/git tasks — use SendToAgent instead.")
+                "For complex multi-step tasks requiring coordination across 3+ agents. " +
+                "NOT needed for single-agent tasks — use SendToAgent instead.")
         ];
     }
 
@@ -67,17 +76,33 @@ public class ThreadAgent(
         var interfaceType = AgentInterfaceResolver.ResolveByDisplayName(agentName)
                          ?? AgentInterfaceResolver.Resolve(agentName);
         if (interfaceType is null)
-            return $"Unknown agent: {agentName}. Available: Shell, DotNet, FileSystem, Git, Roslyn, GitHub, Aspire, IAWSystem.";
+        {
+            var registry = GrainFactory.GetGrain<IAgentRegistry>("global");
+            var all = await registry.GetAllAsync(ct);
+            var names = string.Join(", ", all.Select(r => r.DisplayName).Where(n => n.Length > 0).Order());
+            return $"Unknown agent: {agentName}. Available: {names}.";
+        }
 
         var threadId = this.GetPrimaryKeyString();
         var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
 
+        var workspace = GetWorkspacePath();
+        if (workspace is not null)
+            await agent.SetWorkspace(workspace, ct);
+
+        var enrichedRequest = workspace is not null
+            ? $"[Workspace: {workspace}]\n{request}"
+            : request;
+
         try
         {
-            var result = await agent.GetResponse(request, ct);
-            return result.Length > 4000
-                ? result[..4000] + "\n...(truncated)"
-                : result;
+            var response = await agent.GetRichResponse(enrichedRequest, ct);
+            var text = string.Join("\n", response.Parts.OfType<TextPart>().Select(p => p.Content));
+            _pendingDeliveries.AddRange(response.Parts.OfType<MediaPart>());
+
+            return text.Length > 4000
+                ? text[..4000] + "\n...(truncated)"
+                : text;
         }
         catch (OperationCanceledException)
         {
@@ -86,17 +111,7 @@ public class ThreadAgent(
         catch (Exception ex)
         {
             logger.LogError(ex, "SendToAgent: {Agent} failed", agentName);
-            var suggestion = agentName switch
-            {
-                "DotNet" => "Try Shell agent for raw dotnet CLI commands, or check the project path.",
-                "Shell" => "Check command syntax. For .NET operations, use DotNet agent instead.",
-                "FileSystem" => "Check file path exists. Use absolute paths.",
-                "Git" => "Check repository path. Ensure it's a valid git repo.",
-                "Aspire" => "Aspire MCP may not be connected. Try again after restart.",
-                "Roslyn" => "Check that the workspace is set and contains C# code.",
-                _ => "Try a different agent or rephrase the request."
-            };
-            return $"Agent {agentName} failed: {ex.Message}\nSuggestion: {suggestion}";
+            return $"Agent {agentName} failed: {ex.Message}\nTry a different agent or rephrase the request.";
         }
     }
 
@@ -123,6 +138,11 @@ public class ThreadAgent(
                 return $"Could not resolve agent: {agentInterfaceName}";
 
             var agent = (IAgent)GrainFactory.GetGrain(interfaceType, $"{threadId}/{interfaceType.Name}");
+
+            var workspace = GetWorkspacePath();
+            if (workspace is not null)
+                await agent.SetWorkspace(workspace, ct);
+
             return await agent.GetResponse(request, ct);
         }
 
@@ -150,6 +170,13 @@ public class ThreadAgent(
 
     protected override async Task OnScheduledJobDueAsync(ScheduledJobItem job, CancellationToken ct)
     {
+        if (job.Prompt.StartsWith(DigestJobPrefix))
+        {
+            var taskId = job.Prompt[DigestJobPrefix.Length..];
+            await ExecuteDigestAsync(taskId, ct);
+            return;
+        }
+
         if (!job.Prompt.StartsWith(IAWConstants.DelegationPrefix))
         {
             await base.OnScheduledJobDueAsync(job, ct);
@@ -274,6 +301,13 @@ public class ThreadAgent(
         return await targetAgent.HandleCallback(callbackId, value, ct);
     }
 
+    public Task<List<MediaPart>> GetPendingDeliveries(CancellationToken ct = default)
+    {
+        var deliveries = new List<MediaPart>(_pendingDeliveries);
+        _pendingDeliveries.Clear();
+        return Task.FromResult(deliveries);
+    }
+
     public async Task<string?> GetTitle(CancellationToken ct)
     {
         if (State.TryGetValue("title", out var entry))
@@ -300,6 +334,60 @@ public class ThreadAgent(
         State["title"] = new StateEntry("title", title);
         await WriteStateAsync(ct);
         return title;
+    }
+
+    public async Task StartTaskDigestAsync(string taskId, TimeSpan interval, CancellationToken ct = default)
+    {
+        var jobName = $"{DigestJobPrefix}{taskId}";
+        if (ScheduledJobs.ContainsKey(jobName))
+            return;
+
+        await ScheduleRecurringJob(jobName, interval, $"{DigestJobPrefix}{taskId}", ct);
+    }
+
+    public async Task StopTaskDigestAsync(string taskId, CancellationToken ct = default)
+    {
+        var jobName = $"{DigestJobPrefix}{taskId}";
+        if (ScheduledJobs.ContainsKey(jobName))
+            await CancelJob(jobName, ct);
+    }
+
+    private async Task ExecuteDigestAsync(string taskId, CancellationToken ct)
+    {
+        try
+        {
+            var ledger = GrainFactory.GetGrain<ITaskLedger>(taskId);
+            var contextBlock = await ledger.GetContextBlockAsync(maxEvents: 10, ct);
+
+            if (string.IsNullOrEmpty(contextBlock))
+                return;
+
+            var prompt = $"""
+                Summarize this task progress in 1-2 sentences for the user.
+                Be concise — this is a progress update, not a report.
+
+                {contextBlock}
+                """;
+
+            var response = await ChatClient.GetResponseAsync(
+                [new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, prompt)],
+                cancellationToken: ct);
+
+            var summary = response.Text ?? "Task in progress...";
+
+            logger.LogInformation("Digest for task {TaskId}: {Summary}", taskId, summary);
+
+            await PublishAsync(IAWConstants.Events.OrchestrationProgress, new Dictionary<string, string>
+            {
+                [IAWConstants.PayloadKeys.TaskId] = taskId,
+                [IAWConstants.PayloadKeys.Phase] = "digest",
+                [IAWConstants.PayloadKeys.Message] = summary
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Digest failed for task {TaskId}", taskId);
+        }
     }
 
 }

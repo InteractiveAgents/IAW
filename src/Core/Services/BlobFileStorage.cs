@@ -6,21 +6,23 @@ namespace Core.Services;
 public sealed class BlobFileStorage
 {
     private const string ContainerName = "files";
-    private readonly Lazy<Task<BlobContainerClient>> _container;
+    private readonly BlobServiceClient _blobServiceClient;
+    private BlobContainerClient? _container;
 
-    public BlobFileStorage(BlobServiceClient blobServiceClient)
+    public BlobFileStorage(BlobServiceClient blobServiceClient) => _blobServiceClient = blobServiceClient;
+
+    private async Task<BlobContainerClient> GetContainerAsync()
     {
-        _container = new Lazy<Task<BlobContainerClient>>(async () =>
-        {
-            var container = blobServiceClient.GetBlobContainerClient(ContainerName);
-            await container.CreateIfNotExistsAsync(PublicAccessType.None);
-            return container;
-        });
+        if (_container is not null) return _container;
+        var container = _blobServiceClient.GetBlobContainerClient(ContainerName);
+        await container.CreateIfNotExistsAsync(PublicAccessType.None);
+        _container = container;
+        return container;
     }
 
     public async Task<string> UploadAsync(Stream stream, string path, string contentType)
     {
-        var container = await _container.Value;
+        var container = await GetContainerAsync();
         var blobClient = container.GetBlobClient(path);
 
         var uploadOptions = new BlobUploadOptions
@@ -34,7 +36,7 @@ public sealed class BlobFileStorage
 
     public async Task<Stream> DownloadAsync(string blobUri)
     {
-        var container = await _container.Value;
+        var container = await GetContainerAsync();
         var blobName = new BlobUriBuilder(new Uri(blobUri)).BlobName;
         var blobClient = container.GetBlobClient(blobName);
         var response = await blobClient.DownloadStreamingAsync();

@@ -1,6 +1,7 @@
 using Core.Contracts;
 using Core.Services;
 using Microsoft.Agents.AI;
+using Microsoft.Extensions.Logging;
 using Orleans.Journaling;
 using AiChatMessage = Microsoft.Extensions.AI.ChatMessage;
 using AiChatRole = Microsoft.Extensions.AI.ChatRole;
@@ -10,9 +11,11 @@ namespace Core.Agents;
 internal sealed class DurableChatHistoryProvider(
     IDurableList<ChatMessage> history,
     int maxMessages,
+    Func<CancellationToken, Task> persistCallback,
     BlobFileStorage? blobStorage = null,
     ChatReducer? reducer = null,
-    HistorySummarizer? summarizer = null) : ChatHistoryProvider
+    HistorySummarizer? summarizer = null,
+    ILogger? logger = null) : ChatHistoryProvider
 {
     private ChatMessage? _lastSummary;
     public override IReadOnlyList<string> StateKeys => ["orleans-durable-history"];
@@ -91,8 +94,9 @@ internal sealed class DurableChatHistoryProvider(
 
                 return;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                logger?.LogWarning(ex, "Failed to download image from blob {BlobUri}", ic.BlobUri);
             }
         }
 
@@ -100,7 +104,7 @@ internal sealed class DurableChatHistoryProvider(
             $"[Image: {ic.Caption ?? ic.MimeType}]"));
     }
 
-    protected override ValueTask StoreChatHistoryAsync(
+    protected override async ValueTask StoreChatHistoryAsync(
         InvokedContext context, CancellationToken cancellationToken = default)
     {
         foreach (var message in context.RequestMessages)
@@ -125,6 +129,6 @@ internal sealed class DurableChatHistoryProvider(
             });
         }
 
-        return ValueTask.CompletedTask;
+        await persistCallback(cancellationToken);
     }
 }

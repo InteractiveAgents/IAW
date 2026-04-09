@@ -6,10 +6,10 @@ public static class ScriptGenerator
     {
         var clientProjectPath = FindClientProject();
         var agentsProjectPath = clientProjectPath.Replace(
-            Path.Combine("Aspire.IAW.Client", "Aspire.IAW.Client.csproj"),
+            Path.Combine("Aspire.Client", "Aspire.Client.csproj"),
             Path.Combine("Agents", "Agents.csproj"));
         var agentsCSharpPath = clientProjectPath.Replace(
-            Path.Combine("Aspire.IAW.Client", "Aspire.IAW.Client.csproj"),
+            Path.Combine("Aspire.Client", "Aspire.Client.csproj"),
             Path.Combine("Agents.CSharp", "Agents.CSharp.csproj"));
 
         var refs = $"""<ProjectReference Include="{clientProjectPath}" />""";
@@ -35,11 +35,13 @@ public static class ScriptGenerator
 
     static string FindClientProject()
     {
-        // Walk up from the workspace to find the IAW repo root
+        var projectRelativePath = Path.Combine("src", "Aspire.Client", "Aspire.Client.csproj");
+
+        // Walk up from the app base directory to find the IAW repo root
         var current = AppContext.BaseDirectory;
         for (var i = 0; i < 10; i++)
         {
-            var candidate = Path.Combine(current, "src", "Aspire.IAW.Client", "Aspire.IAW.Client.csproj");
+            var candidate = Path.Combine(current, projectRelativePath);
             if (File.Exists(candidate)) return candidate;
             var parent = Directory.GetParent(current);
             if (parent is null) break;
@@ -53,7 +55,7 @@ public static class ScriptGenerator
             current = workspace;
             for (var i = 0; i < 10; i++)
             {
-                var candidate = Path.Combine(current, "src", "Aspire.IAW.Client", "Aspire.IAW.Client.csproj");
+                var candidate = Path.Combine(current, projectRelativePath);
                 if (File.Exists(candidate)) return candidate;
                 var parent = Directory.GetParent(current);
                 if (parent is null) break;
@@ -61,16 +63,7 @@ public static class ScriptGenerator
             }
         }
 
-        // Last resort: search common locations
-        var known = new[]
-        {
-            @"E:\IAW\src\Aspire.IAW.Client\Aspire.IAW.Client.csproj",
-            @"C:\IAW\src\Aspire.IAW.Client\Aspire.IAW.Client.csproj",
-        };
-        foreach (var path in known)
-            if (File.Exists(path)) return path;
-
-        // Absolute fallback — hope the NuGet package exists
+        // Absolute fallback — use NuGet package reference
         return "Aspire.IAW.Client";
     }
 }

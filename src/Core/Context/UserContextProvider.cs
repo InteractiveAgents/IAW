@@ -1,8 +1,9 @@
 using Core.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Context;
 
-public class UserContextProvider(IGrainFactory grainFactory) : IAgentContextProvider
+public class UserContextProvider(IGrainFactory grainFactory, ILogger<UserContextProvider>? logger = null) : IAgentContextProvider
 {
     public string Name => "user-profile";
 
@@ -31,8 +32,9 @@ public class UserContextProvider(IGrainFactory grainFactory) : IAgentContextProv
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "User context provider failed for agent {AgentId}", agentId);
             return [];
         }
     }

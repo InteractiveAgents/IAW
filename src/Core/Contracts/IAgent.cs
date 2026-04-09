@@ -8,6 +8,7 @@ public interface IAgent : IGrainWithStringKey
     static virtual string AgentDescription => "";
     static virtual string[] AgentCapabilities => [];
     static virtual string AgentInstructions => "You are a helpful AI assistant. Answer questions clearly and concisely.";
+    static virtual string[] AgentRoutingExamples => [];
 
     // Conversation
     [ResponseTimeout("00:05:00")]

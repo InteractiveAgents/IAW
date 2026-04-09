@@ -1,24 +1,55 @@
+using Core.Contracts;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
+using Orleans.Journaling;
 using ChatMessage = Core.Contracts.ChatMessage;
 
 namespace Core.Agents;
 
-internal sealed class HistorySummarizer(IChatClient chatClient)
+internal sealed class HistorySummarizer(
+    IChatClient chatClient,
+    IDurableDictionary<string, StateEntry>? durableState = null,
+    ILogger? logger = null,
+    int summarizationThreshold = 40,
+    int recentWindow = 20)
 {
-    private const int SummarizationThreshold = 40;
-    private const int RecentWindow = 20;
+    private const string SummaryStateKey = "__history_summary";
+    private const string SummaryEndKey = "__history_summary_end";
 
     private int _lastSummarizedOldEnd;
+    private ChatMessage? _cachedSummary;
+    private bool _restoredFromState;
 
     public async Task<ChatMessage?> SummarizeIfNeededAsync(
         IReadOnlyList<ChatMessage> history,
         ChatMessage? existingSummary,
         CancellationToken ct = default)
     {
-        if (history.Count <= SummarizationThreshold)
+        // restore from durable state once after reactivation
+        if (!_restoredFromState && durableState is not null)
+        {
+            _restoredFromState = true;
+            if (durableState.TryGetValue(SummaryEndKey, out var endEntry)
+                && int.TryParse(endEntry.Value.ToString(), out var savedEnd))
+                _lastSummarizedOldEnd = savedEnd;
+
+            if (_cachedSummary is null && existingSummary is null
+                && durableState.TryGetValue(SummaryStateKey, out var entry))
+            {
+                _cachedSummary = new ChatMessage
+                {
+                    Role = "system",
+                    Content = entry.Value.ToString()!,
+                    Parts = [new Contracts.TextContent(entry.Value.ToString()!)]
+                };
+                existingSummary = _cachedSummary;
+            }
+        }
+
+        if (history.Count <= summarizationThreshold)
             return existingSummary;
 
-        var oldEnd = history.Count - RecentWindow;
+        var oldEnd = history.Count - recentWindow;
 
         // skip re-summarization if old window hasn't grown
         if (existingSummary is not null && oldEnd <= _lastSummarizedOldEnd)
@@ -54,19 +85,29 @@ internal sealed class HistorySummarizer(IChatClient chatClient)
             var summaryText = response.Text ?? "";
 
             _lastSummarizedOldEnd = oldEnd;
-            return new ChatMessage
+            var summary = new ChatMessage
             {
                 Role = "system",
                 Content = $"[Conversation summary] {summaryText}",
                 Parts = [new Contracts.TextContent($"[Conversation summary] {summaryText}")]
             };
+
+            if (durableState is not null)
+            {
+                durableState[SummaryStateKey] = new StateEntry(SummaryStateKey, summary.Content);
+                durableState[SummaryEndKey] = new StateEntry(SummaryEndKey, oldEnd);
+            }
+            _cachedSummary = summary;
+
+            return summary;
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "History summarization failed, returning existing summary");
             return existingSummary;
         }
     }

@@ -1,4 +1,3 @@
-using Core.AI;
 using Core.Communication;
 using Core.Communication.Messages;
 using Core.Contracts;
@@ -9,7 +8,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.Extensions.AI;
-using Orleans;
 using Orleans.Concurrency;
 using Orleans.Streams;
 using System.Text;

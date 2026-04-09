@@ -33,7 +33,11 @@ public sealed class AgentRecord
     [Id(6)]
     public string InterfaceName { get; set; } = "";
 
-    [VectorStoreVector(Dimensions: 1536, DistanceFunction = DistanceFunction.CosineSimilarity)]
+    [VectorStoreData]
     [Id(7)]
+    public string[] RoutingExamples { get; set; } = [];
+
+    [VectorStoreVector(Dimensions: 1536, DistanceFunction = DistanceFunction.CosineSimilarity)]
+    [Id(8)]
     public ReadOnlyMemory<float> DescriptionEmbedding { get; set; }
 }

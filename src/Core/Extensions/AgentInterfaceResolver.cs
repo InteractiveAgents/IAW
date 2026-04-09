@@ -1,5 +1,6 @@
 using Core.Contracts;
 using Core.Registry;
+using System.Diagnostics;
 
 namespace Core;
 
@@ -42,7 +43,7 @@ public static class AgentInterfaceResolver
         var interfaces = DiscoverAgentInterfaces();
         return interfaces.FirstOrDefault(t =>
         {
-            var (name, _, _) = AgentInterfaceMetadata.ReadFrom(t);
+            var (name, _, _, _) = AgentInterfaceMetadata.ReadFrom(t);
             return string.Equals(name, displayName, StringComparison.OrdinalIgnoreCase);
         });
     }
@@ -51,7 +52,15 @@ public static class AgentInterfaceResolver
 
     private static IReadOnlyList<Type> ScanInterfaces() =>
         _cachedInterfaces ??= AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => { try { return a.GetTypes(); } catch { return []; } })
+            .SelectMany(a =>
+            {
+                try { return a.GetTypes(); }
+                catch (Exception ex)
+                {
+                    Trace.TraceWarning("AgentInterfaceResolver: failed to scan assembly {0}: {1}", a.FullName, ex.Message);
+                    return [];
+                }
+            })
             .Where(t => t.IsInterface
                         && t != typeof(IAgent)
                         && typeof(IAgent).IsAssignableFrom(t)

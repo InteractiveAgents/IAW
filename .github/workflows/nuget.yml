@@ -1,24 +1,49 @@
 name: Publish NuGet
+
 on:
-  push:
-    tags: ['v*']
+  release:
+    types: [published]
 
 jobs:
   publish:
     runs-on: windows-latest
+    environment: nuget
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 11.0.x
           dotnet-quality: preview
-      - run: dotnet build IAW.slnx -c Release
-      - run: dotnet test IAW.slnx -c Release
-      - run: |
-          dotnet pack src/Core/Core.csproj -c Release -o ./nupkgs
-          dotnet pack src/Agents/Agents.csproj -c Release -o ./nupkgs
-          dotnet pack src/Agents.CSharp/Agents.CSharp.csproj -c Release -o ./nupkgs
-          dotnet pack src/IAW.Testing/IAW.Testing.csproj -c Release -o ./nupkgs
-          dotnet pack src/Aspire.Hosting.IAW/Aspire.Hosting.IAW.csproj -c Release -o ./nupkgs
-          dotnet pack src/Aspire.IAW.Client/Aspire.IAW.Client.csproj -c Release -o ./nupkgs
-      - run: dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
+
+      - name: Build
+        run: dotnet build IAW.slnx -c Release
+
+      - name: Test
+        run: dotnet test IAW.slnx -c Release --no-build --verbosity normal
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Pack
+        run: |
+          dotnet pack src/Core/Core.csproj -c Release -o ./nupkgs -p:Version=${{ steps.version.outputs.version }}
+          dotnet pack src/Agents/Agents.csproj -c Release -o ./nupkgs -p:Version=${{ steps.version.outputs.version }}
+          dotnet pack src/Agents.CSharp/Agents.CSharp.csproj -c Release -o ./nupkgs -p:Version=${{ steps.version.outputs.version }}
+          dotnet pack src/Testing/Testing.csproj -c Release -o ./nupkgs -p:Version=${{ steps.version.outputs.version }}
+          dotnet pack src/Aspire.Hosting/Aspire.Hosting.csproj -c Release -o ./nupkgs -p:Version=${{ steps.version.outputs.version }}
+          dotnet pack src/Aspire.Client/Aspire.Client.csproj -c Release -o ./nupkgs -p:Version=${{ steps.version.outputs.version }}
+
+      - name: Push to NuGet
+        run: |
+          dotnet nuget push ./nupkgs/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
+          dotnet nuget push ./nupkgs/*.snupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
+
+      - name: Upload packages to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./nupkgs/*

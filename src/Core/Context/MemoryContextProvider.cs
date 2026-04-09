@@ -1,8 +1,9 @@
 using Core.Contracts;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Context;
 
-public class MemoryContextProvider(IReadOnlyList<IMemoryAgent> memoryAgents) : IAgentContextProvider
+public class MemoryContextProvider(IReadOnlyList<IMemoryAgent> memoryAgents, ILogger<MemoryContextProvider>? logger = null) : IAgentContextProvider
 {
     public string Name => "Memory";
 
@@ -22,8 +23,9 @@ public class MemoryContextProvider(IReadOnlyList<IMemoryAgent> memoryAgents) : I
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                logger?.LogWarning(ex, "Memory context provider failed for agent {AgentId}", agentId);
             }
         }
 

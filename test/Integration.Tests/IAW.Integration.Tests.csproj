@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\IAW.Testing\IAW.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Testing\Testing.csproj" />
     <ProjectReference Include="..\..\src\Agents\Agents.csproj" />
     <ProjectReference Include="..\..\src\Agents.CSharp\Agents.CSharp.csproj" />
   </ItemGroup>

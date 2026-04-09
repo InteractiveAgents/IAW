@@ -81,8 +81,10 @@ public class CodeOrchestratorAgent(
           shell.RunDotnetAsync("new winforms -n MyApp -o /path --framework net11.0", "/workdir", default) → CommandResult
           shell.RunDotnetAsync("build", "/projectDir", default) → CommandResult
           shell.ExecuteAsync("npm install", "/dir", 300_000, default) → CommandResult
+          shell.ExecutePowerShellAsync("Get-ChildItem -Recurse", "/dir", 120_000, default) → CommandResult
           CommandResult has: ExitCode (int), Output (string), Error (string), Duration (TimeSpan)
           Use RunDotnetAsync for all dotnet CLI commands. Use ExecuteAsync for other shell commands.
+          Use ExecutePowerShellAsync for complex Windows tasks (file manipulation, registry, environment).
 
         IDotNet — build and test:
           dotnet.BuildAsync("/path/to/project.csproj", "Debug", default) → BuildRunResult
@@ -102,6 +104,14 @@ public class CodeOrchestratorAgent(
           await fs.WriteFileAsync("/path/to/file.cs", content, default) → Task (always await)
           fs.ListFilesAsync("/dir", "*.cs", default) → string[]
           fs.SearchCodeAsync("pattern", "/dir", "*.cs", default) → string[]
+          fs.CopyAsync("/source", "/dest", default) → string (confirmation)
+          fs.MoveAsync("/source", "/dest", default) → string (confirmation)
+          fs.DeleteAsync("/path/to/file", default) → string (confirmation, files only)
+          fs.GetInfoAsync("/path", default) → string (size, dates, attributes)
+          fs.ReadLinesAsync("/path", startLine, count, default) → string (line range)
+          fs.CreateArchiveAsync("/output.zip", "/sourceDir", default) → string (archive path)
+          fs.ExtractArchiveAsync("/archive.zip", "/destDir", default) → string (extraction summary)
+          fs.UploadFileAsync("/path/to/file", default) → string (blob URL for file delivery)
 
         IGit — version control:
           git.StatusAsync("/repoPath", default) → string

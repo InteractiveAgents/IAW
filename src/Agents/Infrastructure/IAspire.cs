@@ -13,6 +13,10 @@ public interface IAspire : IAgent
     static string[] IAgent.AgentCapabilities =>
         ["aspire", "health", "traces", "logs", "resources", "monitoring", "telemetry", "infrastructure", "status"];
 
+    static string[] IAgent.AgentRoutingExamples =>
+        ["deploy my changes", "restart services", "check health", "view traces",
+         "are services running", "show application logs", "check system status"];
+
     static string IAgent.AgentInstructions => """
         You are Aspire, the infrastructure and deployment operator. You manage the IAW
         distributed system through the Aspire dashboard.

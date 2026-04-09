@@ -7,7 +7,6 @@
     <LangVersion>preview</LangVersion>
     <RootNamespace>IAW.Agents</RootNamespace>
     <PackageId>IAW.Agents</PackageId>
-    <Version>0.1.0</Version>
     <IsPackable>true</IsPackable>
     <Description>Out-of-the-box agents for the IAW multi-agent runtime</Description>
   </PropertyGroup>

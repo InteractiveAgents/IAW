@@ -1,4 +1,3 @@
-using Core.Contracts;
 using System.Text;
 
 namespace Core.Registry;
@@ -71,12 +70,70 @@ public class AgentRegistryGrain : Grain, IAgentRegistry
         return Task.FromResult(sb.ToString());
     }
 
+    public Task<List<AgentCandidate>> HybridSearchAsync(string query, ReadOnlyMemory<float> queryEmbedding, string? namespaceFilter = null, int top = 5, CancellationToken ct = default)
+    {
+        var queryTerms = query
+            .Split([' ', ',', '.', '-', '_'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(t => t.ToLowerInvariant())
+            .ToHashSet();
+
+        // detect if query embedding is real (non-zero) vs NoOp zeros
+        var hasRealEmbedding = queryEmbedding.Length > 0 && !IsZeroVector(queryEmbedding.Span);
+
+        var candidates = _records.Values
+            .Where(r => namespaceFilter is null || r.Namespace.Equals(namespaceFilter, StringComparison.OrdinalIgnoreCase))
+            .Select(r =>
+            {
+                var keywordCandidate = ScoreRecord(r, queryTerms);
+                var keywordScore = keywordCandidate.Score;
+
+                var vectorScore = hasRealEmbedding && r.DescriptionEmbedding.Length > 0 && !IsZeroVector(r.DescriptionEmbedding.Span)
+                    ? CosineSimilarity(queryEmbedding.Span, r.DescriptionEmbedding.Span)
+                    : 0f;
+
+                var combined = hasRealEmbedding && vectorScore > 0f
+                    ? 0.6f * vectorScore + 0.4f * keywordScore
+                    : keywordScore;
+
+                return keywordCandidate with { Score = combined };
+            })
+            .Where(c => c.Score > 0)
+            .OrderByDescending(c => c.Score)
+            .Take(top)
+            .ToList();
+
+        return Task.FromResult(candidates);
+    }
+
+    static bool IsZeroVector(ReadOnlySpan<float> v)
+    {
+        for (var i = 0; i < v.Length; i++)
+            if (v[i] != 0f) return false;
+        return true;
+    }
+
+    static float CosineSimilarity(ReadOnlySpan<float> a, ReadOnlySpan<float> b)
+    {
+        if (a.Length != b.Length || a.Length == 0) return 0f;
+
+        float dot = 0f, normA = 0f, normB = 0f;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        var denom = MathF.Sqrt(normA) * MathF.Sqrt(normB);
+        return denom > 0f ? dot / denom : 0f;
+    }
+
     public Task<AgentRecord?> GetByAgentTypeAsync(string agentType, CancellationToken ct = default)
         => Task.FromResult(_records.TryGetValue(agentType, out var record) ? record : null);
 
     static AgentCandidate ScoreRecord(AgentRecord record, HashSet<string> queryTerms)
     {
-        var searchText = $"{record.Description} {string.Join(" ", record.Capabilities)} {record.DisplayName} {record.InterfaceName} {record.AgentType}"
+        var searchText = $"{record.Description} {string.Join(" ", record.Capabilities)} {string.Join(" ", record.RoutingExamples)} {record.DisplayName} {record.InterfaceName} {record.AgentType}"
             .ToLowerInvariant();
 
         var matchCount = queryTerms.Count(term => searchText.Contains(term, StringComparison.Ordinal));
@@ -88,6 +145,6 @@ public class AgentRegistryGrain : Grain, IAgentRegistry
             record.DisplayName,
             record.Description,
             record.InterfaceName,
-            score);
+            score) { Capabilities = record.Capabilities, RoutingExamples = record.RoutingExamples };
     }
 }

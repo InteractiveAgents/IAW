@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Aspire.IAW.Client\Aspire.IAW.Client.csproj" />
+    <ProjectReference Include="..\Aspire.Client\Aspire.Client.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\Agents\Agents.csproj" />
     <ProjectReference Include="..\Agents.CSharp\Agents.CSharp.csproj" />

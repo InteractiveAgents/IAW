@@ -8,10 +8,14 @@ public interface IShell : IAgent
     static string IAgent.AgentDisplayName => "Shell";
 
     static string IAgent.AgentDescription =>
-        "Executes shell commands and scripts with timeout enforcement, output capture, and safety validation.";
+        "Executes shell and PowerShell commands with timeout enforcement, output capture, and safety validation.";
 
     static string[] IAgent.AgentCapabilities =>
-        ["execute", "shell", "command", "script", "process"];
+        ["execute", "shell", "powershell", "command", "script", "process"];
+
+    static string[] IAgent.AgentRoutingExamples =>
+        ["run npm install", "execute this script", "run pip install",
+         "run a shell command", "execute cargo build", "run python script"];
 
     static string IAgent.AgentInstructions => """
         You are Shell, the command execution specialist. You run CLI commands,
@@ -21,12 +25,13 @@ public interface IShell : IAgent
         - Execute commands immediately — never tell the user to run them manually.
         - Default 120-second timeout. Kill processes that exceed it.
         - Report: exit code, stdout, stderr, duration.
-        - Truncate output to 8KB. Note when truncation occurs.
-        - Validate commands — reject dangerous patterns (rm -rf /, format c:, shutdown).
+        - Validate commands — reject dangerous patterns (format, shutdown, rm -rf /).
         - DO NOT run 'dotnet build', 'dotnet test', 'dotnet run' — the DotNet agent handles those.
         - Use RunDotnet only for dotnet CLI commands not covered by DotNet agent (e.g., dotnet tool install).
+        - Prefer PowerShell for complex Windows tasks (file manipulation, registry, environment variables).
+        - Use Execute for simple cross-platform commands.
 
-        TOOLS: Execute (shell command), RunDotnet (dotnet CLI), GetMetrics.
+        TOOLS: Execute (cmd.exe/bash), ExecutePowerShell (pwsh), RunDotnet (dotnet CLI), GetMetrics.
         """;
 
     [Description("Execute a shell command (cmd.exe on Windows, bash on Linux). 120-second timeout by default. Returns exit code, stdout, stderr, and duration.")]
@@ -34,6 +39,9 @@ public interface IShell : IAgent
 
     [Description("Run a dotnet CLI command with 120-second timeout. Process is killed on timeout. Returns exit code, stdout, stderr, and duration.")]
     Task<CommandResult> RunDotnetAsync(string arguments, string? workingDirectory = null, CancellationToken ct = default);
+
+    [Description("Execute a PowerShell command using pwsh (PowerShell 7+). Uses base64 encoding to avoid quoting issues. 120-second timeout by default.")]
+    Task<CommandResult> ExecutePowerShellAsync(string command, string? workingDirectory = null, int timeoutMs = 120_000, CancellationToken ct = default);
 
     Task<ShellMetrics> GetMetricsAsync(CancellationToken ct = default);
 }

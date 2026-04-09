@@ -4,6 +4,7 @@ using Core.Tools;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace IAW.Agents.System;
@@ -13,30 +14,76 @@ public class ShellAgent(
     [Llm<Fast>] IChatClient chatClient)
     : Agent<IShell>(durableState, chatClient), IShell
 {
-    private static readonly string[] BlockedPatterns =
+    static readonly HashSet<string> BlockedCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "format", "shutdown", "reboot", "mkfs", "dd", "fdisk", "diskpart"
+    };
+
+    static readonly string[] BlockedArgumentPatterns =
     [
         "rm -rf /",
-        "format c:",
-        "del /s /q",
-        "shutdown",
-        "reboot",
-        "> /dev/",
-        "dd if=",
-        "mkfs"
+        "del /s /q c:\\",
+        "> /dev/null 2>&1 &",
+        ":(){ :|:& };:"
     ];
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
-        var tools = new List<AITool>();
-        RegisterToolMethods(tools, new ShellTools(() => GetWorkspacePath() ?? Directory.GetCurrentDirectory()));
-        return tools;
+        // register wrappers that call typed interface methods (which publish events)
+        // instead of raw ShellTools (which bypass event publishing)
+        return
+        [
+            AIFunctionFactory.Create(RunShellToolAsync, "RunShell",
+                "Run a shell command (cmd.exe on Windows, bash on Linux). Returns output and exit code."),
+            AIFunctionFactory.Create(RunDotnetToolAsync, "RunDotnet",
+                "Run a dotnet CLI command. Returns output and exit code."),
+            AIFunctionFactory.Create(RunPowerShellToolAsync, "RunPowerShell",
+                "Run a PowerShell command (pwsh). Preferred for complex Windows tasks. Returns output and exit code.")
+        ];
     }
 
-    private static string? ValidateCommand(string command)
+    private async Task<string> RunShellToolAsync(string command, string? workingDirectory = null)
     {
-        foreach (var blocked in BlockedPatterns)
-            if (command.Contains(blocked, StringComparison.OrdinalIgnoreCase))
-                return $"Command blocked: contains prohibited pattern '{blocked}'";
+        var result = await ExecuteAsync(command, workingDirectory, 120_000, default);
+        return FormatResult(result);
+    }
+
+    private async Task<string> RunDotnetToolAsync(string arguments, string? workingDirectory = null)
+    {
+        var result = await RunDotnetAsync(arguments, workingDirectory, default);
+        return FormatResult(result);
+    }
+
+    private async Task<string> RunPowerShellToolAsync(string command, string? workingDirectory = null)
+    {
+        var result = await ExecutePowerShellAsync(command, workingDirectory, 120_000, default);
+        return FormatResult(result);
+    }
+
+    static string FormatResult(CommandResult result)
+    {
+        var sb = new StringBuilder();
+        if (result.Output.Length > 0) sb.AppendLine(result.Output.Trim());
+        if (result.Error.Length > 0) sb.AppendLine(result.Error.Trim());
+        sb.AppendLine($"Exit code: {result.ExitCode}");
+        var output = sb.ToString();
+        return TruncateOutput(output);
+    }
+
+    static string? ValidateCommand(string command)
+    {
+        var normalized = command.Trim();
+        var firstToken = normalized.Split([' ', '\t'], 2, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault() ?? "";
+        var commandName = Path.GetFileNameWithoutExtension(firstToken);
+
+        if (BlockedCommands.Contains(commandName))
+            return $"Command blocked: '{commandName}' is prohibited";
+
+        foreach (var pattern in BlockedArgumentPatterns)
+            if (normalized.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                return $"Command blocked: contains prohibited pattern";
+
         return null;
     }
 
@@ -50,10 +97,16 @@ public class ShellAgent(
         var effectiveDirectory = workingDirectory ?? GetWorkspacePath() ?? Directory.GetCurrentDirectory();
         var sw = Stopwatch.StartNew();
 
+        // cmd.exe /c treats everything after /c as the raw command — no extra quoting
+        // bash -c requires the command in quotes with inner quotes escaped
+        var (shell, shellArgs) = OperatingSystem.IsWindows()
+            ? ("cmd.exe", $"/c {command}")
+            : ("/bin/bash", $"-c \"{command.Replace("\"", "\\\"")}\"");
+
         var psi = new ProcessStartInfo
         {
-            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
-            Arguments = OperatingSystem.IsWindows() ? $"/c {command}" : $"-c \"{command.Replace("\"", "\\\"")}\"",
+            FileName = shell,
+            Arguments = shellArgs,
             WorkingDirectory = effectiveDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -140,6 +193,107 @@ public class ShellAgent(
             await RecordCommandExecution($"dotnet {arguments}", result, ct);
             return result;
         }
+    }
+
+    public async Task<CommandResult> ExecutePowerShellAsync(
+        string command, string? workingDirectory = null, int timeoutMs = 120_000, CancellationToken ct = default)
+    {
+        var validationError = ValidateCommand(command);
+        if (validationError is not null)
+            return new CommandResult(-1, "", validationError, TimeSpan.Zero);
+
+        var effectiveDirectory = workingDirectory ?? GetWorkspacePath() ?? Directory.GetCurrentDirectory();
+        var sw = Stopwatch.StartNew();
+
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(command));
+        var (shell, args) = ResolvePowerShell(encoded);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = shell,
+            Arguments = args,
+            WorkingDirectory = effectiveDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = Process.Start(psi);
+        if (process is null)
+        {
+            sw.Stop();
+            return new CommandResult(-1, "", "Failed to start PowerShell process", sw.Elapsed);
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeoutMs);
+
+        try
+        {
+            var output = await process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var error = await process.StandardError.ReadToEndAsync(timeoutCts.Token);
+            await process.WaitForExitAsync(timeoutCts.Token);
+            sw.Stop();
+
+            var result = new CommandResult(process.ExitCode, TruncateOutput(output), TruncateOutput(error), sw.Elapsed);
+            await RecordCommandExecution($"pwsh: {command}", result, ct);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            sw.Stop();
+
+            var result = new CommandResult(-1, "", "PowerShell command timed out", sw.Elapsed);
+            await RecordCommandExecution($"pwsh: {command}", result, ct);
+            return result;
+        }
+    }
+
+    static (string Shell, string Args) ResolvePowerShell(string encodedCommand)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // pwsh (PS 7+) is preferred; fall back to powershell.exe (PS 5.1)
+            var pwshPath = FindExecutable("pwsh");
+            if (pwshPath is not null)
+                return (pwshPath, $"-NoProfile -NonInteractive -EncodedCommand {encodedCommand}");
+            return ("powershell.exe", $"-NoProfile -NonInteractive -EncodedCommand {encodedCommand}");
+        }
+
+        var linuxPwsh = FindExecutable("pwsh");
+        return linuxPwsh is not null
+            ? (linuxPwsh, $"-NoProfile -NonInteractive -EncodedCommand {encodedCommand}")
+            : throw new InvalidOperationException("PowerShell (pwsh) is not installed on this system");
+    }
+
+    static string? FindExecutable(string name)
+    {
+        var pathVar = Environment.GetEnvironmentVariable("PATH") ?? "";
+        var separator = OperatingSystem.IsWindows() ? ';' : ':';
+        var extensions = OperatingSystem.IsWindows() ? new[] { ".exe", ".cmd", "" } : new[] { "" };
+
+        foreach (var dir in pathVar.Split(separator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var ext in extensions)
+            {
+                var fullPath = Path.Combine(dir, name + ext);
+                if (File.Exists(fullPath))
+                    return fullPath;
+            }
+        }
+        return null;
+    }
+
+    static string TruncateOutput(string output, int maxLength = 16_384)
+    {
+        if (output.Length <= maxLength) return output;
+
+        var headSize = maxLength * 2 / 3;
+        var tailSize = maxLength / 3;
+        return $"{output[..headSize]}\n\n... [{output.Length - maxLength} characters truncated] ...\n\n{output[^tailSize..]}";
     }
 
     public Task<ShellMetrics> GetMetricsAsync(CancellationToken ct = default)

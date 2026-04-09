@@ -1,11 +1,12 @@
-using Core;
 using Core.AI;
 using Core.Contracts;
+using Core.Services;
 using Core.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace IAW.Agents.Orchestration;
 
@@ -16,7 +17,12 @@ public class TelegramUIAgent(
     ILogger<TelegramUIAgent> logger)
     : Agent<ITelegramUI>(durableState, chatClient), ITelegramUI
 {
-    // no tools, no history — pure formatting agent
+    static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     protected override int MaxHistoryMessages => 0;
     protected override IReadOnlyList<AITool> DefineTools() => [];
     protected override IReadOnlyList<AITool> DefineAdditionalTools() => [];
@@ -28,9 +34,6 @@ public class TelegramUIAgent(
 
         try
         {
-            // bypass Agent pipeline (GetResponse) to avoid tool-calling loop:
-            // DiscoverInterfaceTools registers FormatResponse itself as an LLM tool,
-            // causing recursive calls and massive token waste
             var messages = new List<Microsoft.Extensions.AI.ChatMessage>
             {
                 new(ChatRole.System, Instructions),
@@ -42,7 +45,7 @@ public class TelegramUIAgent(
                 MaxOutputTokens = 2048
             }, ct);
 
-            return ParseRichOutput(response.Text ?? "", rawText);
+            return ParseResponse(response.Text ?? "", rawText);
         }
         catch (Exception ex)
         {
@@ -51,62 +54,72 @@ public class TelegramUIAgent(
         }
     }
 
-    static RichOutput ParseRichOutput(string llmResponse, string fallbackText)
+    static RichOutput ParseResponse(string llmResponse, string fallbackText)
     {
         try
         {
-            var jsonStart = llmResponse.IndexOf('{');
-            var jsonEnd = llmResponse.LastIndexOf('}');
-            if (jsonStart < 0 || jsonEnd < 0)
+            // strip markdown code fences if present
+            var json = llmResponse.Trim();
+            if (json.StartsWith("```"))
+            {
+                var firstNewline = json.IndexOf('\n');
+                if (firstNewline > 0) json = json[(firstNewline + 1)..];
+                if (json.EndsWith("```")) json = json[..^3];
+                json = json.Trim();
+            }
+
+            var dto = JsonSerializer.Deserialize<FormattedResponseDto>(json, JsonOpts);
+            if (dto is null)
                 return new RichOutput(fallbackText, []);
 
-            var json = llmResponse[jsonStart..(jsonEnd + 1)];
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            var formattedText = root.TryGetProperty("formattedText", out var ft)
-                ? ft.GetString() ?? fallbackText
-                : fallbackText;
-
+            var formattedText = dto.FormattedText ?? fallbackText;
             var parts = new List<UIPart>();
 
-            if (root.TryGetProperty("parts", out var partsEl) && partsEl.ValueKind == JsonValueKind.Array)
+            if (dto.Parts is not null)
             {
-                foreach (var part in partsEl.EnumerateArray())
+                foreach (var part in dto.Parts)
                 {
-                    if (!part.TryGetProperty("type", out var typeEl)) continue;
-                    var partType = typeEl.GetString();
-
-                    if (partType == "options" && part.TryGetProperty("items", out var optItems))
+                    switch (part.Type)
                     {
-                        var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
-                        var prompt = part.TryGetProperty("prompt", out var p) ? p.GetString() ?? "" : "";
-                        var options = new List<Option>();
-                        var idx = 1;
-                        foreach (var item in optItems.EnumerateArray())
+                        case "options" when part.Items is { Count: >= 2 }:
                         {
-                            var label = item.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
-                            if (label.Length > 0)
-                                options.Add(new Option(label, idx.ToString()));
-                            idx++;
+                            var callbackId = $"opt-{Guid.NewGuid().ToString("N")[..8]}";
+                            var options = new List<Option>();
+                            var idx = 1;
+                            foreach (var item in part.Items)
+                            {
+                                if (!string.IsNullOrEmpty(item.Label))
+                                    options.Add(new Option(item.Label, idx.ToString()));
+                                idx++;
+                                if (options.Count >= 8) break;
+                            }
+                            if (options.Count >= 2)
+                                parts.Add(new OptionsPart(part.Prompt ?? "", options, callbackId));
+                            break;
                         }
-                        if (options.Count >= 2)
-                            parts.Add(new OptionsPart(prompt, options, callbackId));
-                    }
 
-                    if (partType == "suggestions" && part.TryGetProperty("items", out var sugItems))
-                    {
-                        var callbackId = $"sug-{Guid.NewGuid().ToString("N")[..8]}";
-                        var actions = new List<SuggestedAction>();
-                        foreach (var item in sugItems.EnumerateArray())
+                        case "suggestions" when part.Items is { Count: > 0 }:
                         {
-                            var label = item.TryGetProperty("label", out var l) ? l.GetString() ?? "" : "";
-                            var actionText = item.TryGetProperty("actionText", out var a) ? a.GetString() ?? label : label;
-                            if (label.Length > 0)
-                                actions.Add(new SuggestedAction(label, actionText));
+                            var callbackId = $"sug-{Guid.NewGuid().ToString("N")[..8]}";
+                            var actions = new List<SuggestedAction>();
+                            foreach (var item in part.Items)
+                            {
+                                if (!string.IsNullOrEmpty(item.Label))
+                                    actions.Add(new SuggestedAction(item.Label, item.ActionText ?? item.Label));
+                                if (actions.Count >= 4) break;
+                            }
+                            if (actions.Count > 0)
+                                parts.Add(new SuggestionPart(callbackId, actions));
+                            break;
                         }
-                        if (actions.Count > 0)
-                            parts.Add(new SuggestionPart(callbackId, actions));
+
+                        case "media" when !string.IsNullOrEmpty(part.Url):
+                        {
+                            var fileName = part.FileName ?? Path.GetFileName(new Uri(part.Url).LocalPath);
+                            var mimeType = part.MimeType ?? MimeTypes.GetMimeType(fileName);
+                            parts.Add(new MediaPart(part.Url, fileName, mimeType, part.Caption));
+                            break;
+                        }
                     }
                 }
             }
@@ -117,5 +130,30 @@ public class TelegramUIAgent(
         {
             return new RichOutput(fallbackText, []);
         }
+    }
+
+    // strongly-typed DTOs for JSON deserialization
+    sealed record FormattedResponseDto
+    {
+        public string? FormattedText { get; init; }
+        public List<UiPartDto>? Parts { get; init; }
+    }
+
+    sealed record UiPartDto
+    {
+        public string? Type { get; init; }
+        public string? Prompt { get; init; }
+        public List<UiItemDto>? Items { get; init; }
+        public string? Url { get; init; }
+        public string? FileName { get; init; }
+        public string? MimeType { get; init; }
+        public string? Caption { get; init; }
+    }
+
+    sealed record UiItemDto
+    {
+        public string? Label { get; init; }
+        public string? Value { get; init; }
+        public string? ActionText { get; init; }
     }
 }

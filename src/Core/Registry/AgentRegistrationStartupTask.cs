@@ -1,15 +1,51 @@
 using Core.Contracts;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace Core.Registry;
 
-public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartupTask
+public class AgentRegistrationStartupTask(
+    IGrainFactory grainFactory,
+    IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
+    ILogger<AgentRegistrationStartupTask> logger) : IStartupTask
 {
     public async Task Execute(CancellationToken ct)
     {
         var registry = grainFactory.GetGrain<IAgentRegistry>("global");
+        var records = DiscoverAndBuildRecords().ToList();
 
-        foreach (var record in DiscoverAndBuildRecords())
+        await GenerateEmbeddingsAsync(records, ct);
+
+        foreach (var record in records)
             await registry.RegisterAsync(record, ct);
+
+        logger.LogInformation("Registered {Count} agents with embeddings", records.Count);
+    }
+
+    async Task GenerateEmbeddingsAsync(List<AgentRecord> records, CancellationToken ct)
+    {
+        try
+        {
+            var texts = records.Select(BuildEmbeddingText).ToList();
+            var embeddings = await embeddingGenerator.GenerateAsync(texts, cancellationToken: ct);
+
+            for (var i = 0; i < records.Count; i++)
+                records[i].DescriptionEmbedding = embeddings[i].Vector;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to generate agent embeddings — falling back to keyword-only search");
+        }
+    }
+
+    static string BuildEmbeddingText(AgentRecord r)
+    {
+        var parts = new List<string> { $"{r.DisplayName}: {r.Description}" };
+        if (r.Capabilities.Length > 0)
+            parts.Add(string.Join(" ", r.Capabilities));
+        if (r.RoutingExamples.Length > 0)
+            parts.Add(string.Join(". ", r.RoutingExamples));
+        return string.Join(" ", parts);
     }
 
     public static IEnumerable<AgentRecord> DiscoverAndBuildRecords() =>
@@ -44,6 +80,7 @@ public class AgentRegistrationStartupTask(IGrainFactory grainFactory) : IStartup
             DisplayName = displayName,
             Description = meta.Description,
             Capabilities = meta.Capabilities,
+            RoutingExamples = meta.RoutingExamples,
             InterfaceName = agentInterface.Name
         };
     }

@@ -4,6 +4,7 @@ public static class IAWConstants
 {
     public const string StreamProvider = "agents";
     public const string DelegationPrefix = "[DELEGATE]";
+    public const string UIBroadcastProvider = "ui-notifications";
 
     public static class Events
     {
@@ -21,6 +22,10 @@ public static class IAWConstants
         public const string UserProfile = "user-profile";
         public const string UISession = "ui-session";
         public const string AgentRegistry = "agent-registry";
+        public const string TaskLedger = "task-ledger";
+        public const string EventRouter = "event-router";
+        public const string ApprovalGate = "approval-gate";
+        public const string Preference = "preference";
     }
 
     public static class StateKeys

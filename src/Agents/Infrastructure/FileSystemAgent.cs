@@ -1,9 +1,15 @@
 using Core.AI;
 using Core.Contracts;
+using Core.Services;
 using Core.Tools;
+using Core.UI;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
+using UIAgentResponse = Core.UI.AgentResponse;
 
 namespace IAW.Agents.System;
 
@@ -12,13 +18,29 @@ public class FileSystemAgent(
     [Llm<Fast>] IChatClient chatClient)
     : Agent<IFileSystem>(durableState, chatClient), IFileSystem
 {
+    readonly List<MediaPart> _pendingDeliveries = [];
+
+    public override async Task<UIAgentResponse> GetRichResponse(string prompt, CancellationToken ct = default)
+    {
+        _pendingDeliveries.Clear();
+        var text = await GetResponse(prompt, ct);
+        var parts = new List<UIPart> { new TextPart(text) };
+        parts.AddRange(_pendingDeliveries);
+        _pendingDeliveries.Clear();
+        return new UIAgentResponse(parts);
+    }
 
     protected override IReadOnlyList<AITool> DefineTools()
     {
         Func<string> workspace = () => GetWorkspacePath() ?? Directory.GetCurrentDirectory();
         var tools = new List<AITool>();
         RegisterToolMethods(tools, new FileTools(workspace));
-        RegisterToolMethods(tools, new ShellTools(workspace));
+
+        tools.Add(AIFunctionFactory.Create(
+            (string path, CancellationToken ct) => UploadFileAsync(path, ct),
+            "UploadFile",
+            "Deliver a file to the user in their current chat. Call once per file. Use this whenever the user wants to receive, download, or get a file sent to them."));
+
         return tools;
     }
 
@@ -121,6 +143,254 @@ public class FileSystemAgent(
             : DateTimeOffset.MinValue;
 
         return Task.FromResult(new FileAccessMetrics(totalReads, totalWrites, fileAccessCounts, lastAccess));
+    }
+
+    public async Task<string> CopyAsync(string source, string destination, CancellationToken ct = default)
+    {
+        var resolvedSource = ResolvePathAgainstWorkspace(source);
+        var resolvedDest = ResolvePathAgainstWorkspace(destination);
+
+        if (File.Exists(resolvedSource))
+        {
+            var destDir = Path.GetDirectoryName(resolvedDest);
+            if (destDir is not null && !Directory.Exists(destDir))
+                Directory.CreateDirectory(destDir);
+
+            File.Copy(resolvedSource, resolvedDest, overwrite: true);
+        }
+        else if (Directory.Exists(resolvedSource))
+        {
+            CopyDirectoryRecursive(resolvedSource, resolvedDest);
+        }
+        else
+        {
+            return $"Source not found: {resolvedSource}";
+        }
+
+        IncrementCounter("total-writes");
+        await WriteStateAsync(ct);
+        await PublishAsync("file.copied", new Dictionary<string, string>
+        {
+            ["Source"] = resolvedSource,
+            ["Destination"] = resolvedDest
+        }, ct);
+
+        return $"Copied {resolvedSource} -> {resolvedDest}";
+    }
+
+    public async Task<string> MoveAsync(string source, string destination, CancellationToken ct = default)
+    {
+        var resolvedSource = ResolvePathAgainstWorkspace(source);
+        var resolvedDest = ResolvePathAgainstWorkspace(destination);
+
+        if (File.Exists(resolvedSource))
+        {
+            var destDir = Path.GetDirectoryName(resolvedDest);
+            if (destDir is not null && !Directory.Exists(destDir))
+                Directory.CreateDirectory(destDir);
+
+            File.Move(resolvedSource, resolvedDest, overwrite: true);
+        }
+        else if (Directory.Exists(resolvedSource))
+        {
+            Directory.Move(resolvedSource, resolvedDest);
+        }
+        else
+        {
+            return $"Source not found: {resolvedSource}";
+        }
+
+        IncrementCounter("total-writes");
+        await WriteStateAsync(ct);
+        await PublishAsync("file.moved", new Dictionary<string, string>
+        {
+            ["Source"] = resolvedSource,
+            ["Destination"] = resolvedDest
+        }, ct);
+
+        return $"Moved {resolvedSource} -> {resolvedDest}";
+    }
+
+    public async Task<string> DeleteAsync(string path, CancellationToken ct = default)
+    {
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
+
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var fileSize = new FileInfo(resolvedPath).Length;
+        File.Delete(resolvedPath);
+
+        IncrementCounter("total-writes");
+        await WriteStateAsync(ct);
+        await PublishAsync("file.deleted", new Dictionary<string, string>
+        {
+            ["Path"] = resolvedPath,
+            ["SizeBytes"] = fileSize.ToString()
+        }, ct);
+
+        return $"Deleted {resolvedPath} ({fileSize:N0} bytes)";
+    }
+
+    public Task<string> GetInfoAsync(string path, CancellationToken ct = default)
+    {
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
+
+        if (File.Exists(resolvedPath))
+        {
+            var info = new FileInfo(resolvedPath);
+            return Task.FromResult(
+                $"File: {info.FullName}\n" +
+                $"Size: {info.Length:N0} bytes\n" +
+                $"Created: {info.CreationTime:yyyy-MM-dd HH:mm:ss}\n" +
+                $"Modified: {info.LastWriteTime:yyyy-MM-dd HH:mm:ss}\n" +
+                $"Accessed: {info.LastAccessTime:yyyy-MM-dd HH:mm:ss}\n" +
+                $"ReadOnly: {info.IsReadOnly}\n" +
+                $"Extension: {info.Extension}");
+        }
+
+        if (Directory.Exists(resolvedPath))
+        {
+            var info = new DirectoryInfo(resolvedPath);
+            var fileCount = info.EnumerateFiles("*", SearchOption.TopDirectoryOnly).Count();
+            var dirCount = info.EnumerateDirectories("*", SearchOption.TopDirectoryOnly).Count();
+            return Task.FromResult(
+                $"Directory: {info.FullName}\n" +
+                $"Created: {info.CreationTime:yyyy-MM-dd HH:mm:ss}\n" +
+                $"Modified: {info.LastWriteTime:yyyy-MM-dd HH:mm:ss}\n" +
+                $"Files: {fileCount}\n" +
+                $"Subdirectories: {dirCount}");
+        }
+
+        return Task.FromResult($"Not found: {resolvedPath}");
+    }
+
+    public async Task<string> ReadLinesAsync(string path, int startLine, int count, CancellationToken ct = default)
+    {
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var sb = new StringBuilder();
+        var lineNumber = 0;
+        var linesRead = 0;
+
+        using var reader = new StreamReader(resolvedPath);
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            lineNumber++;
+            if (lineNumber < startLine) continue;
+            if (linesRead >= count) break;
+
+            sb.AppendLine($"{lineNumber}: {line}");
+            linesRead++;
+        }
+
+        IncrementCounter("total-reads");
+        await WriteStateAsync(ct);
+
+        if (linesRead == 0)
+            return $"No lines in range. File has {lineNumber} lines total.";
+
+        return sb.ToString();
+    }
+
+    public async Task<string> CreateArchiveAsync(string outputPath, string sourcePath, CancellationToken ct = default)
+    {
+        var resolvedOutput = ResolvePathAgainstWorkspace(outputPath);
+        var resolvedSource = ResolvePathAgainstWorkspace(sourcePath);
+
+        if (!Directory.Exists(resolvedSource))
+            return $"Source directory not found: {resolvedSource}";
+
+        var outputDir = Path.GetDirectoryName(resolvedOutput);
+        if (outputDir is not null && !Directory.Exists(outputDir))
+            Directory.CreateDirectory(outputDir);
+
+        if (File.Exists(resolvedOutput))
+            File.Delete(resolvedOutput);
+
+        ZipFile.CreateFromDirectory(resolvedSource, resolvedOutput);
+
+        var archiveSize = new FileInfo(resolvedOutput).Length;
+        IncrementCounter("total-writes");
+        await WriteStateAsync(ct);
+        await PublishAsync("archive.created", new Dictionary<string, string>
+        {
+            ["OutputPath"] = resolvedOutput,
+            ["SourcePath"] = resolvedSource,
+            ["SizeBytes"] = archiveSize.ToString()
+        }, ct);
+
+        return $"Archive created: {resolvedOutput} ({archiveSize:N0} bytes)";
+    }
+
+    public async Task<string> ExtractArchiveAsync(string archivePath, string destinationPath, CancellationToken ct = default)
+    {
+        var resolvedArchive = ResolvePathAgainstWorkspace(archivePath);
+        var resolvedDest = ResolvePathAgainstWorkspace(destinationPath);
+
+        if (!File.Exists(resolvedArchive))
+            return $"Archive not found: {resolvedArchive}";
+
+        if (!Directory.Exists(resolvedDest))
+            Directory.CreateDirectory(resolvedDest);
+
+        ZipFile.ExtractToDirectory(resolvedArchive, resolvedDest, overwriteFiles: true);
+
+        var extractedFiles = Directory.GetFiles(resolvedDest, "*", SearchOption.AllDirectories);
+        IncrementCounter("total-writes");
+        await WriteStateAsync(ct);
+        await PublishAsync("archive.extracted", new Dictionary<string, string>
+        {
+            ["ArchivePath"] = resolvedArchive,
+            ["DestinationPath"] = resolvedDest,
+            ["EntryCount"] = extractedFiles.Length.ToString()
+        }, ct);
+
+        return $"Extracted {extractedFiles.Length} files to {resolvedDest}";
+    }
+
+    public async Task<string> UploadFileAsync(string path, CancellationToken ct = default)
+    {
+        var resolvedPath = ResolvePathAgainstWorkspace(path);
+        if (!File.Exists(resolvedPath))
+            return $"File not found: {resolvedPath}";
+
+        var fileName = Path.GetFileName(resolvedPath);
+        var mimeType = MimeTypes.GetMimeType(fileName);
+        var fileUri = new Uri(resolvedPath).AbsoluteUri;
+
+        IncrementCounter("total-reads");
+        await WriteStateAsync(ct);
+        _pendingDeliveries.Add(new MediaPart(fileUri, fileName, mimeType));
+
+        await PublishAsync("file.uploaded", new Dictionary<string, string>
+        {
+            ["Path"] = resolvedPath,
+            ["FileName"] = fileName,
+            ["MimeType"] = mimeType,
+            ["SizeBytes"] = new FileInfo(resolvedPath).Length.ToString()
+        }, ct);
+
+        return $"Queued for delivery: {fileName}";
+    }
+
+    static void CopyDirectoryRecursive(string sourceDir, string destDir)
+    {
+        Directory.CreateDirectory(destDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(destDir, Path.GetFileName(file));
+            File.Copy(file, destFile, overwrite: true);
+        }
+
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            var destSubDir = Path.Combine(destDir, Path.GetFileName(subDir));
+            CopyDirectoryRecursive(subDir, destSubDir);
+        }
     }
 
     private void IncrementCounter(string counterKey)

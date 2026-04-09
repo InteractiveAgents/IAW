@@ -9,7 +9,8 @@ public class ScriptGeneratorTests
     public void GenerateCsproj_ContainsIAWClientReference()
     {
         var csproj = ScriptGenerator.GenerateCsproj();
-        Assert.Contains("Aspire.IAW.Client", csproj);
+        Assert.True(csproj.Contains("Aspire.Client") || csproj.Contains("Aspire.IAW.Client"),
+            "Should reference client project (local path or NuGet package)");
         Assert.Contains("net11.0", csproj);
         Assert.Contains("Exe", csproj);
     }

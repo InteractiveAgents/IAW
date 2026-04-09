@@ -6,10 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\IAW.Testing\IAW.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Testing\Testing.csproj" />
     <ProjectReference Include="..\..\src\Agents\Agents.csproj" />
     <ProjectReference Include="..\..\src\Agents.CSharp\Agents.CSharp.csproj" />
-    <ProjectReference Include="..\..\src\Aspire.IAW.Client\Aspire.IAW.Client.csproj" />
+    <ProjectReference Include="..\..\src\Aspire.Client\Aspire.Client.csproj" />
     <ProjectReference Include="..\..\src\Core\Core.csproj" />
   </ItemGroup>
 
