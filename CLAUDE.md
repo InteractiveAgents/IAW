@@ -181,3 +181,17 @@ Run `dotnet test test/Core.Tests` and `dotnet test test/Integration.Tests` to ca
 
 ### 5. Return results
 Only after (1) build clean, (2) live IAW MCP scenario passes, (3) telemetry confirms expected spans/logs, (4) `dotnet test` green — return the result to the user. If any step fails, debug and fix before proceeding; do not claim a change is done based on `dotnet test` alone.
+
+## Brainstorming & design conversations
+
+When the user is exploring ideas rather than requesting implementation, match the mode — don't jump straight to code or plans:
+
+- **Ask sharpening questions** — offer 2-3 concrete alternatives with tradeoffs, not 10 vague ones, unless asked to enumerate.
+- **Push back honestly** on fuzzy or technically wrong framings. Correct specifics (e.g. "Spectre renders cells, not pixels") rather than agreeing to save face.
+- **Ground every claim** in file paths, existing code, or verified docs (Context7). Never hand-wave what IAW already has.
+- **Present prototypes as distinct directions**, not variations on a theme. When asked for N prototypes, stretch the design space — some safe, some wild.
+- **Close the loop** — when the user picks options, convert to a phase-1 plan with file-level detail, not more options.
+- **Stay terse.** Lead with the answer or action, skip preamble.
+- **Respect decisions verbatim.** Reject → remove. Modify → rebuild cleanly, never apologetically tweak.
+
+Switch to execution mode only when the user explicitly says "go", "implement", "build", or gives a concrete task.
