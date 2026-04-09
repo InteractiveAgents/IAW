@@ -1,4 +1,5 @@
 using Core.Contracts;
+using Core.Contracts.Security;
 using Core.Contracts.UI;
 using IAW.Agents.Orchestration;
 using Telegram.BotAPI.AvailableTypes;
@@ -8,7 +9,8 @@ namespace TelegramClient.Services;
 public sealed class CallbackRouter(
     IClusterClient clusterClient,
     TelegramMessageSender messageSender,
-    CommandHandler commandHandler)
+    CommandHandler commandHandler,
+    NotificationService notificationService)
 {
     // set by TelegramBotService after construction to break circular dependency
     public Func<long, int, int?, IThread, Core.Contracts.ChatMessage, long, CancellationToken, string?, Task>? StreamResponse { get; set; }
@@ -18,6 +20,12 @@ public sealed class CallbackRouter(
         if (callbackQuery.Data?.StartsWith("cmd:") == true)
         {
             await HandleCommandCallbackAsync(callbackQuery, ct);
+            return;
+        }
+
+        if (callbackQuery.Data?.StartsWith("ap:") == true)
+        {
+            await HandleApprovalCallbackAsync(callbackQuery, ct);
             return;
         }
 
@@ -89,6 +97,33 @@ public sealed class CallbackRouter(
                 await StreamResponse(chatId, sent.MessageId, topicId, thread, selectionMessage, telegramId, ct, null);
             }
         }
+    }
+
+    async Task HandleApprovalCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)
+    {
+        var parts = callbackQuery.Data!.Split(':', 3);
+        if (parts.Length < 3)
+        {
+            await messageSender.AnswerCallbackAsync(callbackQuery.Id, "Invalid approval callback");
+            return;
+        }
+
+        var approvalId = parts[1];
+        var decisionKey = parts[2];
+        var clickingUserId = callbackQuery.From.Id;
+
+        // Only the user who owns the approval can resolve it — ignore taps from anyone else.
+        if (notificationService.TryGetApprovalOwner(approvalId, out var ownerUserId)
+            && ownerUserId != clickingUserId)
+        {
+            await messageSender.AnswerCallbackAsync(callbackQuery.Id, "Not your approval");
+            return;
+        }
+
+        await messageSender.AnswerCallbackAsync(callbackQuery.Id);
+
+        var approver = clusterClient.GetGrain<IApprover>(clickingUserId.ToString());
+        await approver.ResolveApproval(approvalId, decisionKey, ct);
     }
 
     async Task HandleCommandCallbackAsync(CallbackQuery callbackQuery, CancellationToken ct)

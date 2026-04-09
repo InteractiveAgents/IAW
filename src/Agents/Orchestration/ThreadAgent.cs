@@ -1,13 +1,17 @@
 using Core;
 using Core.Context;
 using Core.Contracts;
+using Core.Contracts.Security;
 using Core.Registry;
 using Core.UI;
+using IAW.Agents.Security;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Qdrant.Client;
+using System.ComponentModel;
+using System.Text;
 using System.Text.Json;
 using AgentResponse = global::Core.UI.AgentResponse;
 
@@ -64,8 +68,75 @@ public class ThreadAgent(
 
             AIFunctionFactory.Create(OrchestrateAsync, "Orchestrate",
                 "For complex multi-step tasks requiring coordination across 3+ agents. " +
-                "NOT needed for single-agent tasks — use SendToAgent instead.")
+                "NOT needed for single-agent tasks — use SendToAgent instead."),
+
+            CreateProposeOptionsTool(),
+
+            AIFunctionFactory.Create(AddApproverPolicyAsync, "AddApproverPolicy",
+                "Teach the Approver a new permission rule in natural language. Use when the user says things like " +
+                "'don't ask me about builds anymore' or 'always allow git status'. " +
+                "scope must be 'Thread' (only this conversation), 'User' (all conversations), or 'Once' (single use)."),
+
+            AIFunctionFactory.Create(RemoveApproverPolicyAsync, "RemoveApproverPolicy",
+                "Remove a previously-stored approval policy. Pass a natural-language description of which policy to remove; " +
+                "the Approver will semantically match it."),
+
+            AIFunctionFactory.Create(ListApproverPoliciesAsync, "ListApproverPolicies",
+                "List all stored approval policies the Approver has learned so far for this user.")
         ];
+    }
+
+    public Task<IReadOnlyList<UIPart>> GetPendingUIHints(CancellationToken ct = default)
+        => Task.FromResult(DrainPendingUIHints());
+
+    [Description("Store a natural-language approval policy")]
+    async Task<string> AddApproverPolicyAsync(
+        [Description("Scope: Once, Thread, or User")] string scope,
+        [Description("The policy rule in natural language")] string rule,
+        CancellationToken ct = default)
+    {
+        var userId = ExtractUserId();
+        if (userId is null) return "No user context available for policy storage.";
+
+        var approver = GrainFactory.GetGrain<IApprover>(userId);
+        return await approver.AddPolicy(scope, this.GetPrimaryKeyString(), rule, ct);
+    }
+
+    [Description("Remove a previously-stored approval policy matched by a natural-language query")]
+    async Task<string> RemoveApproverPolicyAsync(
+        [Description("Short description of which policy to remove")] string query,
+        CancellationToken ct = default)
+    {
+        var userId = ExtractUserId();
+        if (userId is null) return "No user context available.";
+
+        var approver = GrainFactory.GetGrain<IApprover>(userId);
+        return await approver.RemovePolicy(query, ct);
+    }
+
+    [Description("List all approval policies learned for the current user")]
+    async Task<string> ListApproverPoliciesAsync(CancellationToken ct = default)
+    {
+        var userId = ExtractUserId();
+        if (userId is null) return "No user context available.";
+
+        var approver = GrainFactory.GetGrain<IApprover>(userId);
+        var policies = await approver.ListPolicies(ct);
+        if (policies.Count == 0)
+            return "No policies stored yet.";
+
+        var sb = new StringBuilder();
+        foreach (var policy in policies)
+            sb.AppendLine($"- [{policy.Scope}] {policy.Rule}");
+        return sb.ToString().TrimEnd();
+    }
+
+    string? ExtractUserId()
+    {
+        var key = this.GetPrimaryKeyString();
+        var slashIndex = key.IndexOf('/');
+        if (slashIndex > 0) return key[..slashIndex];
+        return long.TryParse(key, out _) ? key : null;
     }
 
     private async Task<string> SendToAgentAsync(string agentName, string request, CancellationToken ct = default)

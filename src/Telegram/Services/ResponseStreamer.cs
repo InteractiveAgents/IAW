@@ -80,31 +80,28 @@ public sealed class ResponseStreamer(
 
         var finalText = buffer.ToString();
 
-        // short/simple responses — just send as HTML-formatted text
-        if (finalText.Length < 200 || !RichContentParser.NeedsRichFormatting(finalText))
+        // explicit UI hints from ProposeOptions and similar tools take priority
+        var explicitHints = await thread.GetPendingUIHints(ct);
+
+        try
         {
-            if (finalText.Length > 0)
+            var richOutput = await formatter.FormatAsync(finalText, ct);
+            var combinedParts = MergeHintsIntoParts(explicitHints, richOutput.Parts);
+
+            if (combinedParts.Count > 0)
+            {
+                var merged = richOutput with { Parts = combinedParts };
+                await RenderRichOutputAsync(chatId, currentMessageId, topicId, merged, telegramId, ct);
+            }
+            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
+            {
+                await messageSender.EditHtmlAsync(chatId, currentMessageId, richOutput.FormattedText);
+            }
+            else if (finalText.Length > 0)
             {
                 var html = HtmlFormatter.MarkdownToHtml(finalText);
                 await messageSender.EditHtmlAsync(chatId, currentMessageId, html);
             }
-            await fileService.DeliverPendingAsync(chatId, topicId, () => thread.GetPendingDeliveries(ct));
-            await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
-            await SetCompletionReactionAsync(chatId, hasError);
-            return;
-        }
-
-        // rich formatting pipeline: deterministic parser → LLM fallback
-        try
-        {
-            var richOutput = await formatter.FormatAsync(finalText, ct);
-
-            if (richOutput.Parts.Count > 0)
-                await RenderRichOutputAsync(chatId, currentMessageId, topicId, richOutput, telegramId, ct);
-            else if (!string.IsNullOrEmpty(richOutput.FormattedText))
-                await messageSender.EditHtmlAsync(chatId, currentMessageId, richOutput.FormattedText);
-            else if (finalText.Length > 0)
-                await messageSender.EditTextAsync(chatId, currentMessageId, finalText);
         }
         catch (Exception ex)
         {
@@ -116,6 +113,24 @@ public sealed class ResponseStreamer(
         await fileService.DeliverPendingAsync(chatId, topicId, () => thread.GetPendingDeliveries(ct));
         await TryAutoRenameTopicAsync(chatId, topicId, thread, slug, ct);
         await SetCompletionReactionAsync(chatId, hasError);
+    }
+
+    static List<Core.UI.UIPart> MergeHintsIntoParts(
+        IReadOnlyList<Core.UI.UIPart> explicitHints,
+        IReadOnlyList<Core.UI.UIPart> parsedParts)
+    {
+        if (explicitHints.Count == 0)
+            return parsedParts.ToList();
+
+        // explicit hints win: drop any parser-inferred OptionsPart when the agent provided one
+        var hasExplicitOptions = explicitHints.Any(p => p is Core.UI.OptionsPart);
+        var filteredParsed = hasExplicitOptions
+            ? parsedParts.Where(p => p is not Core.UI.OptionsPart).ToList()
+            : parsedParts.ToList();
+
+        var merged = new List<Core.UI.UIPart>(filteredParsed);
+        merged.AddRange(explicitHints);
+        return merged;
     }
 
     async Task SetCompletionReactionAsync(long chatId, bool hasError)

@@ -4,7 +4,6 @@ using Orleans.Journaling;
 namespace Core.Contracts;
 
 public sealed class UISessionDurableState(
-    IDurableDictionary<string, PendingApproval> pendingApprovals,
     IDurableDictionary<string, WizardState> wizards,
     IDurableDictionary<string, string> pendingFreeText,
     IDurableDictionary<string, PaginatorState> paginators,
@@ -12,7 +11,6 @@ public sealed class UISessionDurableState(
     IDurableDictionary<string, FormState> forms,
     IDurableDictionary<string, PendingOptionSet> pendingOptionSets)
 {
-    public IDurableDictionary<string, PendingApproval> PendingApprovals => pendingApprovals;
     public IDurableDictionary<string, WizardState> Wizards => wizards;
     public IDurableDictionary<string, string> PendingFreeText => pendingFreeText;
     public IDurableDictionary<string, PaginatorState> Paginators => paginators;

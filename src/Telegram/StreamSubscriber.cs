@@ -71,7 +71,23 @@ public sealed class StreamSubscriber(
                 }
             });
 
-            logger.LogInformation("Subscribed to notification, job completed, and orchestration progress streams");
+            var approvalRequestedStream = streamProvider.GetStream<AgentEvent>(
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.ApprovalRequested));
+            await approvalRequestedStream.SubscribeAsync(async (evt, token) =>
+            {
+                try { await notificationService.SendApprovalRequestedAsync(evt, ct); }
+                catch (Exception ex) { logger.LogError(ex, "Failed to deliver approval request to Telegram"); }
+            });
+
+            var approvalResolvedStream = streamProvider.GetStream<AgentEvent>(
+                StreamId.Create(IAWConstants.StreamProvider, IAWConstants.Events.ApprovalResolved));
+            await approvalResolvedStream.SubscribeAsync(async (evt, token) =>
+            {
+                try { await notificationService.SendApprovalResolvedAsync(evt, ct); }
+                catch (Exception ex) { logger.LogError(ex, "Failed to edit resolved approval in Telegram"); }
+            });
+
+            logger.LogInformation("Subscribed to notification, job completed, orchestration progress, and approval streams");
         }
         catch (Exception ex)
         {
