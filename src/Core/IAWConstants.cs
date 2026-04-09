@@ -9,9 +9,13 @@ public static class IAWConstants
     public static class Events
     {
         public const string ApprovalRequested = "approval.requested";
+        public const string ApprovalResolved = "approval.resolved";
         public const string DashboardChanged = "dashboard.changed";
         public const string JobCompleted = "job.completed";
         public const string OrchestrationProgress = "orchestration.progress";
+        public const string ToolAuthorizationRequested = "tool.authorization.requested";
+        public const string ToolAuthorized = "tool.authorized";
+        public const string ToolDenied = "tool.denied";
     }
 
     public static class GrainTypes
@@ -24,7 +28,7 @@ public static class IAWConstants
         public const string AgentRegistry = "agent-registry";
         public const string TaskLedger = "task-ledger";
         public const string EventRouter = "event-router";
-        public const string ApprovalGate = "approval-gate";
+        public const string Approver = "approver";
         public const string Preference = "preference";
     }
 
@@ -43,5 +47,13 @@ public static class IAWConstants
         public const string TaskId = "taskId";
         public const string Phase = "phase";
         public const string Message = "message";
+        public const string ApprovalId = "approvalId";
+        public const string UserId = "userId";
+        public const string Question = "question";
+        public const string OptionsJson = "optionsJson";
+        public const string DecisionKey = "decisionKey";
+        public const string AgentId = "agentId";
+        public const string ToolName = "toolName";
+        public const string Reason = "reason";
     }
 }

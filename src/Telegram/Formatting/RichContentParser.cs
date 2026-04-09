@@ -37,6 +37,9 @@ public static partial class RichContentParser
         // numbered list: "1." or "1)" at line start
         if (NumberedListDetect().IsMatch(text)) return true;
 
+        // lettered list: "A)" or "B." at line start — LLM fallback form
+        if (LetterListDetect().IsMatch(text)) return true;
+
         // 3+ bullet items
         if (BulletListDetect().Matches(text).Count >= 3) return true;
 
@@ -54,7 +57,11 @@ public static partial class RichContentParser
     static OptionsPart? ExtractNumberedOptions(string text)
     {
         var matches = NumberedOptionLine().Matches(text);
-        if (matches.Count < 2) return null;
+        if (matches.Count < 2)
+        {
+            matches = LetterOptionLine().Matches(text);
+            if (matches.Count < 2) return null;
+        }
 
         // only treat as options if items are relatively short (choices, not paragraphs)
         var items = new List<Option>();
@@ -124,11 +131,17 @@ public static partial class RichContentParser
     [GeneratedRegex(@"(?m)^\s*\d+[\.\)]\s")]
     private static partial Regex NumberedListDetect();
 
+    [GeneratedRegex(@"(?m)^\s*[A-Za-z][\.\)]\s")]
+    private static partial Regex LetterListDetect();
+
     [GeneratedRegex(@"(?m)^\s*[-*\u2022]\s")]
     private static partial Regex BulletListDetect();
 
     [GeneratedRegex(@"(?m)^\s*(\d+)[\.\)]\s+(.+)$")]
     private static partial Regex NumberedOptionLine();
+
+    [GeneratedRegex(@"(?m)^\s*([A-Za-z])[\.\)]\s+(.+)$")]
+    private static partial Regex LetterOptionLine();
 
     [GeneratedRegex(@"https://[^\s""<>]+blob\.core\.windows\.net[^\s""<>]+")]
     private static partial Regex BlobUrlPattern();

@@ -108,6 +108,7 @@ public abstract partial class Agent(
     {
         AgentTelemetry.MessagesSent.Add(1, new TagList { { "agent.type", GetType().Name } });
         _currentMessageParts = message.Parts;
+        ClearPendingUIHints();
         return StreamResponseCore(message.Text, cancellationToken);
     }
 

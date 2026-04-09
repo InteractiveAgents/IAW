@@ -1,9 +1,11 @@
 using Core;
 using Core.Contracts;
+using Core.Contracts.Security;
 using Core.Contracts.UI;
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using Telegram;
 using Telegram.BotAPI.AvailableTypes;
 using TelegramClient.Formatting;
@@ -18,6 +20,20 @@ public sealed class NotificationService(
     ILogger<NotificationService> logger)
 {
     readonly ConcurrentDictionary<string, (long ChatId, int MessageId, int? TopicId)> _progressMessages = new();
+    readonly ConcurrentDictionary<string, ApprovalDelivery> _approvalDeliveries = new();
+
+    public bool TryGetApprovalOwner(string approvalId, out long ownerUserId)
+    {
+        if (_approvalDeliveries.TryGetValue(approvalId, out var delivery))
+        {
+            ownerUserId = delivery.OwnerUserId;
+            return true;
+        }
+        ownerUserId = 0;
+        return false;
+    }
+
+    sealed record ApprovalDelivery(long ChatId, int MessageId, int? TopicId, string Question, long OwnerUserId);
 
     public async Task SendNotificationAsync(AgentEvent evt, CancellationToken ct)
     {
@@ -145,28 +161,93 @@ public sealed class NotificationService(
         }
     }
 
-    public async Task SendApprovalAsync(string approvalId, string question, string[] approvalOptions, string projectSlug, CancellationToken ct)
+    public async Task SendApprovalRequestedAsync(AgentEvent evt, CancellationToken ct)
     {
-        var userId = projectSlug.Contains('/') ? projectSlug.Split('/')[0] : "";
-        if (!long.TryParse(userId, out _)) return;
+        var approvalId = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.ApprovalId)?.ToString();
+        var userId = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.UserId)?.ToString();
+        var question = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.Question)?.ToString();
+        var optionsJson = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.OptionsJson)?.ToString();
+
+        if (string.IsNullOrEmpty(approvalId) || string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(question) || string.IsNullOrEmpty(optionsJson))
+        {
+            logger.LogWarning("SendApprovalRequested: payload incomplete for approval {ApprovalId}", approvalId);
+            return;
+        }
+
+        if (!long.TryParse(userId, out _))
+        {
+            logger.LogWarning("SendApprovalRequested: userId {UserId} is not a valid chat id", userId);
+            return;
+        }
+
+        var options = ParseApprovalOptions(optionsJson);
+        if (options.Count == 0)
+        {
+            logger.LogWarning("SendApprovalRequested: no options parsed for {ApprovalId}", approvalId);
+            return;
+        }
 
         var userProfile = clusterClient.GetGrain<IUserProfile>(userId);
         var prefs = await userProfile.GetPreferences(ct);
         if (!prefs.TryGetValue(IAWConstants.StateKeys.GroupChatId, out var chatIdStr) || !long.TryParse(chatIdStr, out var chatId))
+        {
+            logger.LogWarning("SendApprovalRequested: no GroupChatId preference for user {UserId}", userId);
+            return;
+        }
+
+        var topicId = await userProfile.GetTopicId("general", ct);
+        var keyboard = BuildApprovalKeyboard(approvalId, options);
+
+        var sent = await messageSender.SendTextAsync(chatId, $"\ud83d\udd14 {question}", topicId, keyboard);
+        _approvalDeliveries[approvalId] = new ApprovalDelivery(
+            chatId, sent.MessageId, topicId, question, long.Parse(userId));
+    }
+
+    public async Task SendApprovalResolvedAsync(AgentEvent evt, CancellationToken ct)
+    {
+        var approvalId = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.ApprovalId)?.ToString();
+        var decisionKey = evt.Payload.GetValueOrDefault(IAWConstants.PayloadKeys.DecisionKey)?.ToString();
+        if (string.IsNullOrEmpty(approvalId) || string.IsNullOrEmpty(decisionKey))
             return;
 
-        var slug = projectSlug.Contains('/') ? projectSlug.Split('/')[1] : "general";
-        var topicId = await userProfile.GetTopicId(slug, ct);
+        if (!_approvalDeliveries.TryRemove(approvalId, out var delivery))
+            return;
 
-        var buttons = approvalOptions.Select(opt =>
-            new InlineKeyboardButton(opt) { CallbackData = $"ap:{approvalId}:{opt}" }
-        ).ToArray();
-        var keyboard = new InlineKeyboardMarkup([buttons]);
+        var resolvedText = $"\u2705 {delivery.Question} \u2014 {decisionKey}";
+        try
+        {
+            await messageSender.EditTextAsync(delivery.ChatId, delivery.MessageId, resolvedText);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Failed to edit resolved approval {ApprovalId}", approvalId);
+        }
+        await Task.CompletedTask;
+    }
 
-        var session = clusterClient.GetGrain<IUISession>(userId);
-        await session.RegisterApproval(approvalId, question, approvalOptions, projectSlug, ct);
+    static IReadOnlyList<ApprovalOption> ParseApprovalOptions(string optionsJson)
+    {
+        try
+        {
+            var opts = JsonSerializer.Deserialize<List<ApprovalOption>>(optionsJson);
+            return opts ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
-        await messageSender.SendTextAsync(chatId, $"\ud83d\udd14 {question}", topicId, keyboard);
+    static InlineKeyboardMarkup BuildApprovalKeyboard(string approvalId, IReadOnlyList<ApprovalOption> options)
+    {
+        var rows = new List<InlineKeyboardButton[]>();
+        foreach (var opt in options)
+        {
+            rows.Add([
+                new InlineKeyboardButton(opt.Label) { CallbackData = $"ap:{approvalId}:{opt.Key}" }
+            ]);
+        }
+        return new InlineKeyboardMarkup([.. rows]);
     }
 
     // helpers
