@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.2.1" />
+    <PackageVersion Include="Aspire.Hosting.Orleans" Version="13.2.2" />
     <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.2" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ngrok" Version="13.1.2-beta.518" />
     <PackageVersion Include="CommunityToolkit.Aspire.Hosting.Ollama" Version="13.1.2-beta.518" />
@@ -47,11 +47,11 @@
     <PackageVersion Include="OpenAI" Version="2.10.0" />
     <PackageVersion Include="OllamaSharp" Version="5.4.25" />
     <PackageVersion Include="Microsoft.AI.Foundry.Local" Version="0.9.0" />
-    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.2.1" />
+    <PackageVersion Include="Aspire.Hosting.JavaScript" Version="13.2.2" />
     <PackageVersion Include="Octokit" Version="14.0.0" />
     <PackageVersion Include="Telegram.BotAPI" Version="9.6.0" />
-    <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.2.1" />
-    <PackageVersion Include="Aspire.Qdrant.Client" Version="13.2.1" />
+    <PackageVersion Include="Aspire.Hosting.Qdrant" Version="13.2.2" />
+    <PackageVersion Include="Aspire.Qdrant.Client" Version="13.2.2" />
     <PackageVersion Include="Concentus" Version="2.2.2" />
     <PackageVersion Include="Concentus.Oggfile" Version="1.0.7" />
     <PackageVersion Include="NAudio" Version="2.3.0" />
@@ -67,10 +67,10 @@
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.28.0-beta.1" />
     <PackageVersion Include="PdfPig" Version="0.1.14" />
     <PackageVersion Include="Qdrant.Client" Version="1.17.0" />
-    <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.2.1" />
-    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.2.1" />
+    <PackageVersion Include="Aspire.Azure.Storage.Blobs" Version="13.2.2" />
+    <PackageVersion Include="Aspire.Hosting.Azure.CosmosDB" Version="13.2.2" />
     <PackageVersion Include="Aspire.Hosting.Azure.AIFoundry" Version="13.1.3-preview.1.26166.8" />
-    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.2.1" />
+    <PackageVersion Include="Aspire.Hosting.Azure.Storage" Version="13.2.2" />
     <PackageVersion Include="Aspire.Microsoft.Azure.Cosmos" Version="13.1.2" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.102" />
   </ItemGroup>

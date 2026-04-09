@@ -133,7 +133,7 @@ public class AgentRegistryGrain : Grain, IAgentRegistry
 
     static AgentCandidate ScoreRecord(AgentRecord record, HashSet<string> queryTerms)
     {
-        var searchText = $"{record.Description} {string.Join(" ", record.Capabilities)} {record.DisplayName} {record.InterfaceName} {record.AgentType}"
+        var searchText = $"{record.Description} {string.Join(" ", record.Capabilities)} {string.Join(" ", record.RoutingExamples)} {record.DisplayName} {record.InterfaceName} {record.AgentType}"
             .ToLowerInvariant();
 
         var matchCount = queryTerms.Count(term => searchText.Contains(term, StringComparison.Ordinal));
@@ -145,6 +145,6 @@ public class AgentRegistryGrain : Grain, IAgentRegistry
             record.DisplayName,
             record.Description,
             record.InterfaceName,
-            score);
+            score) { Capabilities = record.Capabilities, RoutingExamples = record.RoutingExamples };
     }
 }

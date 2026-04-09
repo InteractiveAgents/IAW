@@ -15,6 +15,10 @@ public static partial class HtmlFormatter
         if (string.IsNullOrWhiteSpace(markdown))
             return "";
 
+        // if the LLM already produced Telegram HTML, preserve it
+        if (TelegramHtmlTag().IsMatch(markdown))
+            return SanitizeExistingHtml(markdown);
+
         var lines = markdown.Split('\n');
         var sb = new StringBuilder(markdown.Length + 256);
         var inCodeBlock = false;
@@ -179,6 +183,23 @@ public static partial class HtmlFormatter
 
         return sb.ToString();
     }
+
+    // strips HTML tags not supported by Telegram, keeps supported ones
+    static string SanitizeExistingHtml(string html)
+    {
+        // remove tags Telegram doesn't support, keep: b, i, u, s, code, pre, a, blockquote, tg-spoiler
+        return UnsupportedHtmlTag().Replace(html, m => EscapeHtml(m.Value));
+    }
+
+    public static bool ContainsHtmlTags(string text) => TelegramHtmlTag().IsMatch(text);
+
+    // detects Telegram-supported HTML tags in text
+    [GeneratedRegex(@"</?(?:b|i|u|s|code|pre|a|blockquote|tg-spoiler)[\s>/]", RegexOptions.IgnoreCase)]
+    private static partial Regex TelegramHtmlTag();
+
+    // matches HTML tags NOT in the Telegram-supported set
+    [GeneratedRegex(@"</?(?!/?(?:b|i|u|s|code|pre|a|blockquote|tg-spoiler)[\s>/])[a-zA-Z][^>]*>", RegexOptions.IgnoreCase)]
+    private static partial Regex UnsupportedHtmlTag();
 
     // regex patterns compiled once
 

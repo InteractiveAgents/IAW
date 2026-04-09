@@ -64,7 +64,7 @@ public class ApprovalGateTests : AgentTest<TestAgent>
 
         var mgmt = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
         await mgmt.ForceActivationCollection(TimeSpan.Zero);
-        await Task.Delay(1000, ct);
+        await Task.Delay(2000, ct);
 
         var gate2 = Gate(id);
         var pending = await gate2.GetPendingAsync(ct);

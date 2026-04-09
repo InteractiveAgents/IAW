@@ -35,6 +35,12 @@ public class FileSystemAgent(
         Func<string> workspace = () => GetWorkspacePath() ?? Directory.GetCurrentDirectory();
         var tools = new List<AITool>();
         RegisterToolMethods(tools, new FileTools(workspace));
+
+        tools.Add(AIFunctionFactory.Create(
+            (string path, CancellationToken ct) => UploadFileAsync(path, ct),
+            "UploadFile",
+            "Deliver a file to the user in their current chat. Call once per file. Use this whenever the user wants to receive, download, or get a file sent to them."));
+
         return tools;
     }
 
@@ -351,28 +357,23 @@ public class FileSystemAgent(
         if (!File.Exists(resolvedPath))
             return $"File not found: {resolvedPath}";
 
-        var blobStorage = ServiceProvider.GetRequiredService<BlobFileStorage>();
         var fileName = Path.GetFileName(resolvedPath);
         var mimeType = MimeTypes.GetMimeType(fileName);
-        var blobPath = $"deliveries/{Guid.NewGuid():N}/{fileName}";
-
-        await using var stream = File.OpenRead(resolvedPath);
-        var blobUrl = await blobStorage.UploadAsync(stream, blobPath, mimeType);
+        var fileUri = new Uri(resolvedPath).AbsoluteUri;
 
         IncrementCounter("total-reads");
         await WriteStateAsync(ct);
-        _pendingDeliveries.Add(new MediaPart(blobUrl, fileName, mimeType, fileName));
+        _pendingDeliveries.Add(new MediaPart(fileUri, fileName, mimeType));
 
         await PublishAsync("file.uploaded", new Dictionary<string, string>
         {
             ["Path"] = resolvedPath,
-            ["BlobUrl"] = blobUrl,
             ["FileName"] = fileName,
             ["MimeType"] = mimeType,
             ["SizeBytes"] = new FileInfo(resolvedPath).Length.ToString()
         }, ct);
 
-        return blobUrl;
+        return $"Queued for delivery: {fileName}";
     }
 
     static void CopyDirectoryRecursive(string sourceDir, string destDir)

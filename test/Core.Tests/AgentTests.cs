@@ -358,10 +358,15 @@ public class AgentStreamTests : AgentTest<StreamTestAgent>
         var stream = streamProvider.GetStream<CodeChangedEvent>(streamId);
         await stream.OnNextAsync(evt);
 
-        // give stream delivery time (generous for CI)
-        await Task.Delay(2000, ct);
+        // poll for stream delivery — fixed delays are flaky under full suite load
+        AgentState state = null!;
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            await Task.Delay(500, ct);
+            state = await agent.GetState(ct);
+            if (state.Entries.Count > 0) break;
+        }
 
-        var state = await agent.GetState(ct);
         Assert.True(state.Entries.Count > 0, "Agent should have handled stream event via OnStreamEventAsync");
     }
 

@@ -45,7 +45,7 @@ public class AgentRoutingContextProvider(
                 var allAgents = await registry.GetAllAsync(ct);
                 filtered = allAgents
                     .Where(r => !OrchestrationAgents.Contains(r.InterfaceName) && r.DisplayName.Length > 0)
-                    .Select(r => new AgentCandidate(r.AgentType, r.Namespace, r.DisplayName, r.Description, r.InterfaceName, 0f))
+                    .Select(r => new AgentCandidate(r.AgentType, r.Namespace, r.DisplayName, r.Description, r.InterfaceName, 0f) { Capabilities = r.Capabilities, RoutingExamples = r.RoutingExamples })
                     .ToList();
             }
 
@@ -58,7 +58,14 @@ public class AgentRoutingContextProvider(
             };
 
             foreach (var c in filtered)
-                lines.Add($"- {c.DisplayName}: {c.Description}");
+            {
+                var line = $"- {c.DisplayName}: {c.Description}";
+                if (c.Capabilities.Length > 0)
+                    line += $" [{string.Join(", ", c.Capabilities)}]";
+                if (c.RoutingExamples.Length > 0)
+                    line += $" Examples: \"{string.Join("\", \"", c.RoutingExamples)}\"";
+                lines.Add(line);
+            }
 
             return lines;
         }

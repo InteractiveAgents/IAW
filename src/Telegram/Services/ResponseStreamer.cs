@@ -50,7 +50,7 @@ public sealed class ResponseStreamer(
 
                 if (buffer.Length > MaxCharsPerMessage)
                 {
-                    await messageSender.EditTextAsync(chatId, currentMessageId, buffer.ToString());
+                    await StreamingEditAsync(chatId, currentMessageId, buffer.ToString());
                     var continuation = await messageSender.SendTextAsync(chatId, "...", topicId);
                     currentMessageId = continuation.MessageId;
                     buffer.Clear();
@@ -60,7 +60,7 @@ public sealed class ResponseStreamer(
 
                 if ((DateTimeOffset.UtcNow - lastEditAt).TotalMilliseconds > StreamingEditIntervalMs)
                 {
-                    await messageSender.EditTextAsync(chatId, currentMessageId, buffer.ToString());
+                    await StreamingEditAsync(chatId, currentMessageId, buffer.ToString());
                     lastEditAt = DateTimeOffset.UtcNow;
                 }
             }
@@ -159,6 +159,20 @@ public sealed class ResponseStreamer(
 
         foreach (var part in richOutput.Parts.OfType<MediaPart>())
             await fileService.DeliverMediaAsync(chatId, topicId, [part]);
+    }
+
+    async Task StreamingEditAsync(long chatId, int messageId, string text)
+    {
+        // if the LLM is outputting HTML, render it properly during streaming
+        if (HtmlFormatter.ContainsHtmlTags(text))
+        {
+            var balanced = HtmlFormatter.TruncateBalanced(text);
+            await messageSender.EditHtmlAsync(chatId, messageId, balanced);
+        }
+        else
+        {
+            await messageSender.EditTextAsync(chatId, messageId, text);
+        }
     }
 
     async Task TryAutoRenameTopicAsync(long chatId, int? topicId, IAW.Agents.Orchestration.IThread thread, string? slug, CancellationToken ct)

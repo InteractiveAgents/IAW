@@ -84,7 +84,7 @@ public sealed class TelegramFileService(
         {
             try
             {
-                await using var stream = await blobFileStorage.DownloadAsync(part.Url);
+                await using var stream = await OpenMediaStreamAsync(part);
                 var inputFile = new InputFile(stream, part.FileName);
 
                 if (part.MimeType.StartsWith("image/"))
@@ -105,7 +105,7 @@ public sealed class TelegramFileService(
 
         foreach (var part in mediaParts)
         {
-            await using var stream = await blobFileStorage.DownloadAsync(part.Url);
+            await using var stream = await OpenMediaStreamAsync(part);
             var memStream = new MemoryStream();
             await stream.CopyToAsync(memStream);
             memStream.Position = 0;
@@ -118,6 +118,17 @@ public sealed class TelegramFileService(
         }
 
         await messageSender.SendMediaGroupAsync(chatId, inputMedia, topicId);
+    }
+
+    Task<Stream> OpenMediaStreamAsync(MediaPart part)
+    {
+        if (part.Url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+        {
+            var localPath = new Uri(part.Url).LocalPath;
+            return Task.FromResult<Stream>(System.IO.File.OpenRead(localPath));
+        }
+
+        return blobFileStorage.DownloadAsync(part.Url);
     }
 
     public async Task DeliverPendingAsync(long chatId, int? topicId, Func<Task<List<MediaPart>>> getPendingDeliveries)

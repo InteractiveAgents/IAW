@@ -28,7 +28,7 @@ public interface IFileSystem : IAgent
         - No path restrictions — you have full access to the entire filesystem.
         - When writing, auto-create parent directories.
         - For large files, use ReadLines to read specific ranges instead of reading the entire file.
-        - Use UploadFile when the user wants to receive/download a file (sends it via blob storage).
+        - Use UploadFile when the user wants to receive a file — it delivers directly to their chat.
         - DO NOT analyze code — use Roslyn for that. DO NOT build — use DotNet.
 
         TOOLS: ReadFile, WriteFile, ListFiles, SearchCode, CompareDirectories, Copy, Move, Delete, GetInfo, ReadLines, CreateArchive, ExtractArchive, UploadFile.
@@ -70,7 +70,7 @@ public interface IFileSystem : IAgent
     [Description("Extract a zip archive to a destination directory. Returns extraction summary.")]
     Task<string> ExtractArchiveAsync(string archivePath, string destinationPath, CancellationToken ct = default);
 
-    [Description("Upload a file to cloud storage for delivery to the user. Returns the download URL.")]
+    [Description("Deliver a file to the user in their current chat. Call once per file. Returns confirmation.")]
     Task<string> UploadFileAsync(string path, CancellationToken ct = default);
 }
 

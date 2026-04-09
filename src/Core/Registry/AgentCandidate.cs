@@ -7,4 +7,8 @@ public record AgentCandidate(
     [property: Id(2)] string DisplayName,
     [property: Id(3)] string Description,
     [property: Id(4)] string InterfaceName,
-    [property: Id(5)] float Score);
+    [property: Id(5)] float Score)
+{
+    [Id(6)] public string[] Capabilities { get; init; } = [];
+    [Id(7)] public string[] RoutingExamples { get; init; } = [];
+}
