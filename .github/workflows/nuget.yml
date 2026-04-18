@@ -44,6 +44,6 @@ jobs:
           dotnet nuget push ./nupkgs/*.snupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
 
       - name: Upload packages to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ./nupkgs/*
