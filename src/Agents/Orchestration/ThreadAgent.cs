@@ -2,10 +2,12 @@ using Core;
 using Core.Context;
 using Core.Contracts;
 using Core.Contracts.Security;
+using Core.Memory;
 using Core.Registry;
 using Core.UI;
 using IAW.Agents.Security;
 using IAW.Core;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,32 +32,22 @@ public class ThreadAgent(
 
     protected override int MaxHistoryMessages => 20;
 
-    private IReadOnlyList<IAgentContextProvider>? _contextProviders;
-
-    protected override IReadOnlyList<IAgentContextProvider> GetContextProviders()
+    protected override IReadOnlyList<AIContextProvider> GetAdditionalAIContextProviders()
     {
-        if (_contextProviders is not null) return _contextProviders;
-
-        var providers = new List<IAgentContextProvider>
-        {
-            new UserContextProvider(GrainFactory)
-        };
+        var providers = new List<AIContextProvider>();
 
         var embeddings = ServiceProvider.GetService<IEmbeddingGenerator<string, Embedding<float>>>();
 
         var qdrant = ServiceProvider.GetService<QdrantClient>();
         if (qdrant is not null && embeddings is not null)
-            providers.Add(new RAGContextProvider(qdrant, embeddings));
+            providers.Add(new RAGContextProvider(qdrant, embeddings,
+                ServiceProvider.GetService<ILogger<RAGContextProvider>>()));
 
         if (embeddings is not null)
-            providers.Add(new AgentRoutingContextProvider(GrainFactory, embeddings));
+            providers.Add(new AgentRoutingContextProvider(GrainFactory, embeddings,
+                ServiceProvider.GetService<ILogger<AgentRoutingContextProvider>>()));
 
-        var memoryAgents = ServiceProvider.GetService<IReadOnlyList<IMemoryAgent>>();
-        if (memoryAgents is not null && memoryAgents.Count > 0)
-            providers.Add(new MemoryContextProvider(memoryAgents));
-
-        _contextProviders = providers;
-        return _contextProviders;
+        return providers;
     }
 
     protected override IReadOnlyList<AITool> DefineAdditionalTools()
@@ -82,8 +74,32 @@ public class ThreadAgent(
                 "the Approver will semantically match it."),
 
             AIFunctionFactory.Create(ListApproverPoliciesAsync, "ListApproverPolicies",
-                "List all stored approval policies the Approver has learned so far for this user.")
+                "List all stored approval policies the Approver has learned so far for this user."),
+
+            AIFunctionFactory.Create(ExplainAsync, "Explain",
+                "Look up why the assistant said or did something by recalling the original user message from long-term memory. " +
+                "Returns the stored text + date and asks Telegram to forward the original message when available.")
         ];
+    }
+
+    [Description("Search long-term memory for the origin of a remembered fact and surface the original message.")]
+    async Task<string> ExplainAsync(
+        [Description("The user's 'why did you...' question or topic to look up")] string question,
+        CancellationToken ct = default)
+    {
+        var userId = ExtractUserId();
+        if (userId is null) return "No user context available.";
+
+        var lookup = ServiceProvider.GetService<IMemoryLookup>();
+        if (lookup is null) return "Memory lookup is not configured.";
+
+        var hit = await lookup.LookupOriginAsync(userId, question, ct);
+        if (hit is null) return "I don't have any memory of this topic.";
+
+        if (!string.IsNullOrEmpty(hit.SourceTelegramMsgId))
+            AddPendingUIHint(new ForwardMessageHint(hit.SourceTelegramMsgId, hit.CreatedAt));
+
+        return $"On {hit.CreatedAt:yyyy-MM-dd} you said: \"{hit.Content}\"";
     }
 
     public Task<IReadOnlyList<UIPart>> GetPendingUIHints(CancellationToken ct = default)

@@ -7,7 +7,6 @@ public static class CodeValidator
         "IAW.Agents.System",
         "IAW.Agents.Coding",
         "IAW.Agents.Infrastructure",
-        "IAW.Agents.Memory",
         "IAW.Agents.Orchestration",
         "IAW.Agents.Models",
         "IAW.Agents.Messages",
@@ -107,10 +106,9 @@ public static class CodeValidator
           IAW.Agents.System        → IShell, IFileSystem
           IAW.Agents.Coding        → IGit, IRoslyn, IDotNet, INuGet, IGitHub
           IAW.Agents.Infrastructure → IAspire
-          IAW.Agents.Memory        → ICodeMemory, IUserMemory, IProjectMemory, IEpisodeMemory, IPatternMemory, IKnowledge
           IAW.Agents.Orchestration → IThread
           IAW.Agents.Models        → (NO interfaces — LLM agents have no public interfaces, do NOT use them)
-          Core.Contracts           → IAgent, ICodeOrchestrator, IMemoryAgent
+          Core.Contracts           → IAgent, ICodeOrchestrator
 
         INVALID (do NOT use): IAW.Agents.LLM, IAW.Agents.AI, IAW.Agents.Tools, Models.IXxx qualifiers
         Always use interface names directly after importing the namespace: iaw.Get<IShell>(taskId), NOT iaw.Get<System.IShell>(taskId)

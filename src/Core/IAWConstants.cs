@@ -13,8 +13,6 @@ public static class IAWConstants
         public const string DashboardChanged = "dashboard.changed";
         public const string JobCompleted = "job.completed";
         public const string OrchestrationProgress = "orchestration.progress";
-        public const string ToolAuthorizationRequested = "tool.authorization.requested";
-        public const string ToolAuthorized = "tool.authorized";
         public const string ToolDenied = "tool.denied";
     }
 
@@ -29,7 +27,6 @@ public static class IAWConstants
         public const string TaskLedger = "task-ledger";
         public const string EventRouter = "event-router";
         public const string Approver = "approver";
-        public const string Preference = "preference";
     }
 
     public static class StateKeys

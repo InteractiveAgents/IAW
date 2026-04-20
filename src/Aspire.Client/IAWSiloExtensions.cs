@@ -1,5 +1,6 @@
 using Azure.Storage.Blobs;
 using Core;
+using Core.Memory;
 using Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -52,6 +53,9 @@ public static class IAWSiloExtensions
         builder.AddAzureBlobServiceClient("file-storage");
         builder.AddQdrantClient("qdrant");
         builder.Services.AddSingleton<BlobFileStorage>();
+
+        builder.Services.AddSingleton<IawMemoryProvider>();
+        builder.Services.AddSingleton<IMemoryLookup>(sp => sp.GetRequiredService<IawMemoryProvider>());
 
         return builder;
     }

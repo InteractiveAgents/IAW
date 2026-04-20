@@ -37,8 +37,6 @@ public static class AgentEventType
     public const string HealthCritical = "health.critical";
     public const string ApprovalRequested = "approval.requested";
     public const string ApprovalResolved = "approval.resolved";
-    public const string ToolAuthorizationRequested = "tool.authorization.requested";
-    public const string ToolAuthorized = "tool.authorized";
     public const string ToolDenied = "tool.denied";
 
     // knowledge

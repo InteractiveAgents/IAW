@@ -2,17 +2,18 @@ using Core;
 using Core.AI;
 using Core.Contracts;
 using Core.Contracts.Security;
+using Core.Observability;
 using IAW.Core;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
 namespace IAW.Agents.Security;
-
-// ApproverAgent implements IApprover from Core.Contracts.Security.
 
 [Reentrant]
 [GrainType(IAWConstants.GrainTypes.Approver)]
@@ -24,6 +25,7 @@ public class ApproverAgent(
 {
     const string PolicyKeyPrefix = "policy:";
     const string PendingKeyPrefix = "pending:";
+    const string MemoKeyPrefix = "memo:";
 
     static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -33,17 +35,37 @@ public class ApproverAgent(
     readonly ConcurrentDictionary<string, TaskCompletionSource<AuthorizationDecision>> _waiters = new();
 
     protected override int MaxHistoryMessages => 0;
-    protected override bool BypassToolAuthorization => true;
     protected override bool DiscoverInterfaceToolsEnabled => false;
     protected override IReadOnlyList<AITool> DefineTools() => [];
     protected override IReadOnlyList<AITool> DefineAdditionalTools() => [];
 
+    // Never run the Approver's own LLM calls through the Approver middleware — that would
+    // recurse into an infinite authorization loop.
+    protected override string? ResolveApproverGrainKey() => null;
+
     public async Task<AuthorizationDecision> Authorize(ToolAuthorizationRequest request, CancellationToken ct = default)
     {
+        var threadId = ExtractThreadIdFromAgentId(request.AgentId);
+        var memoKey = MemoKeyPrefix + Fingerprint(request.ToolName, request.ArgumentsJson);
+
+        if (State.TryGetValue(memoKey, out var cached) && cached.Value is MemoEntry memo)
+        {
+            AgentTelemetry.ApproverMemoHits.Add(1, new TagList
+            {
+                { "tool.name", request.ToolName }
+            });
+            return new AuthorizationDecision(AuthorizationOutcome.Allow, memo.Reason, memo.Scope);
+        }
+
         var policies = LoadPolicies()
             .Where(p => p.Scope == AuthorizationScope.User
-                        || (p.Scope == AuthorizationScope.Thread && p.ThreadId == request.ThreadId))
+                        || (p.Scope == AuthorizationScope.Thread && threadId is not null && p.ThreadId == threadId))
             .ToList();
+
+        AgentTelemetry.ApproverLlmJudgments.Add(1, new TagList
+        {
+            { "tool.name", request.ToolName }
+        });
 
         var judgment = await JudgeAsync(request, policies, ct);
 
@@ -57,24 +79,28 @@ public class ApproverAgent(
                 [IAWConstants.PayloadKeys.AgentId] = request.AgentId,
                 [IAWConstants.PayloadKeys.ToolName] = request.ToolName,
                 [IAWConstants.PayloadKeys.Reason] = judgment.Reason,
-                [IAWConstants.PayloadKeys.UserId] = request.UserId
+                [IAWConstants.PayloadKeys.UserId] = this.GetPrimaryKeyString()
             }, ct);
 
             return new AuthorizationDecision(AuthorizationOutcome.Deny, judgment.Reason);
         }
 
         var approvalId = $"ap-{Guid.NewGuid().ToString("N")[..12]}";
+        var userId = this.GetPrimaryKeyString();
+        var options = (judgment.Options is { Count: > 0 } supplied
+            ? supplied.ToList()
+            : DefaultOptions().ToList());
         var prompt = new ApprovalPrompt(
             approvalId,
-            request.UserId,
-            request.ThreadId,
+            userId,
+            threadId ?? "",
             judgment.Question ?? $"Allow {request.AgentDisplayName} to run {request.ToolName}?",
-            judgment.Options ?? DefaultOptions(),
+            options,
             DateTimeOffset.UtcNow);
 
         State[PendingKeyPrefix + approvalId] = new StateEntry(
             PendingKeyPrefix + approvalId,
-            new PendingAuthorizationEntry(prompt, request));
+            new PendingAuthorizationEntry(prompt, request, userId, threadId));
         await WriteStateAsync(ct);
 
         // Register the waiter BEFORE publishing so a fast reply can't race past it.
@@ -86,12 +112,15 @@ public class ApproverAgent(
         await PublishAsync(IAWConstants.Events.ApprovalRequested, new Dictionary<string, string>
         {
             [IAWConstants.PayloadKeys.ApprovalId] = approvalId,
-            [IAWConstants.PayloadKeys.UserId] = request.UserId,
+            [IAWConstants.PayloadKeys.UserId] = userId,
             [IAWConstants.PayloadKeys.Question] = prompt.Question,
             [IAWConstants.PayloadKeys.OptionsJson] = optionsJson,
             [IAWConstants.PayloadKeys.AgentId] = request.AgentId,
             [IAWConstants.PayloadKeys.ToolName] = request.ToolName
         }, ct);
+
+        // Hold the grain alive while the human takes time to tap a button.
+        DelayDeactivation(TimeSpan.FromMinutes(5));
 
         using (ct.Register(() =>
         {
@@ -120,6 +149,15 @@ public class ApproverAgent(
             return;
         }
 
+        var grainUserId = this.GetPrimaryKeyString();
+        if (pending.UserId != grainUserId)
+        {
+            logger.LogWarning(
+                "ResolveApproval: pending entry {ApprovalId} belongs to user {Owner}, not {Actual} — refusing",
+                approvalId, pending.UserId, grainUserId);
+            return;
+        }
+
         State.Remove(stateKey);
 
         var allowed = ApprovalDecisionKeys.IsAllowKey(decisionKey);
@@ -131,9 +169,14 @@ public class ApproverAgent(
             var policyId = $"pol-{Guid.NewGuid().ToString("N")[..12]}";
             var policy = new ApproverPolicy(
                 policyId, scope,
-                scope == AuthorizationScope.Thread ? pending.Request.ThreadId : null,
+                scope == AuthorizationScope.Thread ? pending.ThreadId : null,
                 rule, DateTimeOffset.UtcNow);
             State[PolicyKeyPrefix + policyId] = new StateEntry(PolicyKeyPrefix + policyId, policy);
+
+            var memoReason = $"User approved ({scope})";
+            var memoKey = MemoKeyPrefix + Fingerprint(pending.Request.ToolName, pending.Request.ArgumentsJson);
+            State[memoKey] = new StateEntry(memoKey,
+                new MemoEntry(pending.Request.ToolName, scope, memoReason, DateTimeOffset.UtcNow));
         }
 
         await WriteStateAsync(ct);
@@ -146,7 +189,7 @@ public class ApproverAgent(
         {
             [IAWConstants.PayloadKeys.ApprovalId] = approvalId,
             [IAWConstants.PayloadKeys.DecisionKey] = decisionKey,
-            [IAWConstants.PayloadKeys.UserId] = pending.Request.UserId,
+            [IAWConstants.PayloadKeys.UserId] = pending.UserId,
             [IAWConstants.PayloadKeys.AgentId] = pending.Request.AgentId,
             [IAWConstants.PayloadKeys.ToolName] = pending.Request.ToolName
         }, ct);
@@ -213,6 +256,30 @@ public class ApproverAgent(
         return result;
     }
 
+    static string? ExtractThreadIdFromAgentId(string agentId)
+    {
+        var firstSlash = agentId.IndexOf('/');
+        if (firstSlash <= 0 || !long.TryParse(agentId[..firstSlash], out _))
+            return null;
+
+        var lastSlash = agentId.LastIndexOf('/');
+        if (lastSlash == firstSlash)
+            return agentId;
+
+        var trailing = agentId[(lastSlash + 1)..];
+        if (trailing.Length > 1 && trailing[0] == 'I' && trailing.Skip(1).All(char.IsLetterOrDigit))
+            return agentId[..lastSlash];
+
+        return agentId;
+    }
+
+    static string Fingerprint(string toolName, string argumentsJson)
+    {
+        var composite = toolName + "|" + argumentsJson;
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(composite));
+        return Convert.ToHexString(bytes, 0, 8); // 16 hex chars
+    }
+
     static IReadOnlyList<ApprovalOption> DefaultOptions() =>
     [
         new(ApprovalDecisionKeys.AllowOnce, "Yes, once"),
@@ -228,7 +295,7 @@ public class ApproverAgent(
         promptBuilder.AppendLine("TOOL REQUEST:");
         promptBuilder.AppendLine($"  agent: {request.AgentDisplayName} ({request.AgentId})");
         promptBuilder.AppendLine($"  tool:  {request.ToolName}");
-        promptBuilder.AppendLine($"  args:  {request.ArgumentsPreview}");
+        promptBuilder.AppendLine($"  args:  {request.ArgumentsJson}");
         promptBuilder.AppendLine();
 
         if (policies.Count > 0)
@@ -239,10 +306,10 @@ public class ApproverAgent(
             promptBuilder.AppendLine();
         }
 
-        if (request.RecentTurnSnippets.Count > 0)
+        if (request.RecentMessages.Count > 0)
         {
             promptBuilder.AppendLine("RECENT CONVERSATION (for language detection and context):");
-            foreach (var snippet in request.RecentTurnSnippets)
+            foreach (var snippet in request.RecentMessages)
                 promptBuilder.AppendLine($"  > {snippet}");
             promptBuilder.AppendLine();
         }
@@ -255,24 +322,13 @@ public class ApproverAgent(
             new(ChatRole.User, promptBuilder.ToString())
         };
 
-        try
+        var response = await ChatClient.GetResponseAsync(messages, new ChatOptions
         {
-            var response = await ChatClient.GetResponseAsync(messages, new ChatOptions
-            {
-                MaxOutputTokens = 512
-            }, ct);
+            MaxOutputTokens = 512
+        }, ct);
 
-            var text = response.Text ?? "";
-            return ParseJudgment(text);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Approver LLM judgment failed for {Tool} — defaulting to ask", request.ToolName);
-            return new ApproverJudgment("ask",
-                "Unable to evaluate automatically; asking for confirmation.",
-                $"Allow {request.AgentDisplayName} to run {request.ToolName}?",
-                DefaultOptions());
-        }
+        var text = response.Text ?? "";
+        return ParseJudgment(text);
     }
 
     static ApproverJudgment ParseJudgment(string llmText)
@@ -339,7 +395,7 @@ public class ApproverAgent(
 
             Agent: {request.AgentDisplayName}
             Tool:  {request.ToolName}
-            Args:  {request.ArgumentsPreview}
+            Args:  {request.ArgumentsJson}
 
             Respond with ONE sentence, no quotes, no preamble.
             """;
@@ -400,7 +456,16 @@ public class ApproverAgent(
     [GenerateSerializer]
     public sealed record PendingAuthorizationEntry(
         [property: Id(0)] ApprovalPrompt Prompt,
-        [property: Id(1)] ToolAuthorizationRequest Request);
+        [property: Id(1)] ToolAuthorizationRequest Request,
+        [property: Id(2)] string UserId,
+        [property: Id(3)] string? ThreadId);
+
+    [GenerateSerializer]
+    public sealed record MemoEntry(
+        [property: Id(0)] string ToolName,
+        [property: Id(1)] AuthorizationScope Scope,
+        [property: Id(2)] string Reason,
+        [property: Id(3)] DateTimeOffset CreatedAt);
 
     sealed record ApproverJudgment(
         string Decision,

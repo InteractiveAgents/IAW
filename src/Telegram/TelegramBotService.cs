@@ -122,7 +122,7 @@ public sealed class TelegramBotService
         }
 
         var (thread, slug) = await ThreadResolver.ResolveAsync(_clusterClient, telegramId, topicId, ct);
-        var chatMessage = ChatMessageBuilder.FromText(text);
+        var chatMessage = ChatMessageBuilder.FromText(text, message.MessageId);
 
         _logger.LogInformation("Processing message from user {TelegramId} in topic {TopicId}: {Text}",
             telegramId, topicId, text);
@@ -150,7 +150,8 @@ public sealed class TelegramBotService
             var chatMessage = new ChatMessage
             {
                 Role = "user",
-                Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)]
+                Parts = [new ImageContent(blobUri, "image/jpeg", message.Caption)],
+                SourceTelegramMsgId = message.MessageId
             };
 
             await _responseStreamer.StreamAsync(chatId, sent.MessageId, topicId, thread, chatMessage, telegramId, ct);
@@ -184,7 +185,8 @@ public sealed class TelegramBotService
             var chatMessage = new ChatMessage
             {
                 Role = "user",
-                Parts = [new FileContent(blobUri, safeFileName, mimeType, document.FileSize ?? 0, Ingested: false)]
+                Parts = [new FileContent(blobUri, safeFileName, mimeType, document.FileSize ?? 0, Ingested: false)],
+                SourceTelegramMsgId = message.MessageId
             };
 
             if (!string.IsNullOrEmpty(message.Caption))

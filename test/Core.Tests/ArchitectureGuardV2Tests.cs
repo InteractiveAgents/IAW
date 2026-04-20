@@ -2,7 +2,6 @@ using Core;
 using Core.Contracts;
 using Core.Messages;
 using Core.Messages.Events;
-using Core.Models;
 using IAW.Agents.Orchestration;
 using System.Reflection;
 using Xunit;
@@ -33,34 +32,6 @@ public class ArchitectureGuardV2Tests
             .Where(t => t.BaseType is { IsGenericType: true } bt && bt.GetGenericTypeDefinition() == typeof(LlmAgentBase<>) && !t.IsAbstract);
 
         Assert.NotEmpty(llmAgents);
-    }
-
-    [Fact]
-    public void Memory_agents_extend_Memory_base()
-    {
-        var memoryAgents = AgentsAssembly.GetTypes()
-            .Where(t => !t.IsAbstract && IsSubclassOfOpenGeneric(t, typeof(MemoryAgentBase<>)));
-
-        Assert.NotEmpty(memoryAgents);
-    }
-
-    private static bool IsSubclassOfOpenGeneric(Type type, Type openGeneric)
-    {
-        var current = type.BaseType;
-        while (current is not null)
-        {
-            if (current.IsGenericType && current.GetGenericTypeDefinition() == openGeneric)
-                return true;
-            current = current.BaseType;
-        }
-        return false;
-    }
-
-    [Fact]
-    public void Memory_entries_have_provenance_source_field()
-    {
-        var props = typeof(MemoryEntry).GetProperties();
-        Assert.Contains(props, p => p.Name == "Source" && p.PropertyType == typeof(MemoryProvenance));
     }
 
     [Fact]

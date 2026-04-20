@@ -51,25 +51,6 @@ public class UserProfile(
         return Task.FromResult<string?>(null);
     }
 
-    public async Task RememberFact(string fact, CancellationToken ct)
-    {
-        // store facts as preferences with a "fact:" prefix key
-        var factKey = $"fact:{Guid.NewGuid():N}";
-        state.Preferences[factKey] = fact;
-        await WriteStateAsync(ct);
-    }
-
-    public Task<IReadOnlyList<string>> RecallFacts(string query, CancellationToken ct)
-    {
-        ct.ThrowIfCancellationRequested();
-        IReadOnlyList<string> facts = state.Preferences
-            .Where(kvp => kvp.Key.StartsWith("fact:"))
-            .Select(kvp => kvp.Value)
-            .Where(v => v.Contains(query, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        return Task.FromResult(facts);
-    }
-
     public Task<int?> GetTopicId(string slug, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();

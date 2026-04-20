@@ -1,7 +1,9 @@
 using Core.Contracts;
-using IAW.Agents.Memory;
+using Core.Contracts.Security;
+using Core.Memory;
 using IAW.Core;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace IAW.Agents.Personal;
 
@@ -16,13 +18,30 @@ public class ExplainabilityAgent(
     {
         var traces = new List<MemoryTrace>();
 
-        await SearchMemoryLayer<IEpisodeMemory>("episode-memory", "EpisodeMemory", query, topK, traces, ct);
-        await SearchMemoryLayer<IProjectMemory>("project-memory", "ProjectMemory", query, topK, traces, ct);
-        await SearchMemoryLayer<IUserMemory>("user-memory", "UserMemory", query, topK, traces, ct);
-        await SearchPreferencesAsync(query, traces, ct);
-        await SearchKnowledgeAsync(query, traces, ct);
-
+        await SearchApproverPoliciesAsync(query, traces, ct);
+        await SearchMemoryLookupAsync(query, traces, ct);
         return traces;
+    }
+
+    private async Task SearchMemoryLookupAsync(string query, List<MemoryTrace> traces, CancellationToken ct)
+    {
+        var userId = ExtractUserId();
+        if (userId is null) return;
+
+        var lookup = ServiceProvider.GetService<IMemoryLookup>();
+        if (lookup is null) return;
+
+        try
+        {
+            var hit = await lookup.LookupOriginAsync(userId, query, ct);
+            if (hit is not null)
+                traces.Add(new MemoryTrace(
+                    "Memory",
+                    $"[{hit.CreatedAt:yyyy-MM-dd}] {hit.Role}: {hit.Content}",
+                    hit.SourceTelegramMsgId is not null ? $"telegram:{hit.SourceTelegramMsgId}" : "memory"));
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* memory provider may not be configured or qdrant unreachable */ }
     }
 
     public async Task<ExplanationResult> ExplainAsync(string question, CancellationToken ct = default)
@@ -32,7 +51,7 @@ public class ExplainabilityAgent(
         if (traces.Count == 0)
         {
             return new ExplanationResult(question,
-                "I couldn't find any relevant memories, preferences, or decisions related to this question.",
+                "I couldn't find any relevant policies, memories, or decisions related to this question.",
                 traces);
         }
 
@@ -42,7 +61,7 @@ public class ExplainabilityAgent(
         var prompt = $"""
             The user asked: "{question}"
 
-            Here are relevant memories, preferences, and decisions I found:
+            Here are relevant policies, memories, and decisions I found:
             {traceContext}
 
             Synthesize a clear explanation that:
@@ -59,88 +78,33 @@ public class ExplainabilityAgent(
         return new ExplanationResult(question, response.Text ?? "Unable to generate explanation.", traces);
     }
 
-    private async Task SearchMemoryLayer<TMemory>(
-        string agentId, string layerName, string query, int topK, List<MemoryTrace> traces, CancellationToken ct)
-        where TMemory : IMemoryAgent
+    private async Task SearchApproverPoliciesAsync(string query, List<MemoryTrace> traces, CancellationToken ct)
     {
+        var userId = ExtractUserId();
+        if (userId is null) return;
+
         try
         {
-            var memoryAgent = GrainFactory.GetGrain<TMemory>(agentId);
-            var results = await memoryAgent.SearchAsync(query, topK, ct);
-            foreach (var entry in results)
-                traces.Add(new MemoryTrace(layerName, entry.Content, $"{layerName.ToLowerInvariant()}:{entry.Source.Source}"));
+            var approver = GrainFactory.GetGrain<IApprover>(userId);
+            var policies = await approver.ListPolicies(ct);
+            foreach (var policy in policies)
+            {
+                if (policy.Rule.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    traces.Add(new MemoryTrace(
+                        "Policy",
+                        $"[{policy.Scope}] {policy.Rule}",
+                        $"approver:{policy.Id}"));
+            }
         }
         catch (OperationCanceledException) { throw; }
-        catch { /* memory agent may not have data or embedder not available */ }
+        catch { /* approver may not be active for this user yet */ }
     }
 
-    private async Task SearchPreferencesAsync(string query, List<MemoryTrace> traces, CancellationToken ct)
+    private string? ExtractUserId()
     {
-        try
-        {
-            var prefAgent = GrainFactory.GetGrain<IPreference>("preferences");
-            var rules = await prefAgent.GetAllRulesAsync(ct);
-            foreach (var rule in rules)
-            {
-                if (rule.Rule.Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || (rule.Reason?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
-                {
-                    traces.Add(new MemoryTrace(
-                        "Preference",
-                        $"[{rule.Category}] {rule.Rule} (reason: {rule.Reason})",
-                        $"preference:{rule.Category}"));
-                }
-            }
-        }
-        catch (OperationCanceledException) { throw; }
-        catch { /* preference agent may not be active */ }
-    }
-
-    private async Task SearchKnowledgeAsync(string query, List<MemoryTrace> traces, CancellationToken ct)
-    {
-        try
-        {
-            var knowledge = GrainFactory.GetGrain<IKnowledge>("knowledge");
-            var decisions = await knowledge.GetDecisions();
-            foreach (var d in decisions)
-            {
-                if (d.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || d.Rationale.Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || d.Outcome.Contains(query, StringComparison.OrdinalIgnoreCase))
-                {
-                    traces.Add(new MemoryTrace(
-                        "Decision",
-                        $"[{d.Timestamp:yyyy-MM-dd}] {d.Title}: {d.Rationale} -> {d.Outcome}",
-                        $"knowledge:decision:{d.Title}"));
-                }
-            }
-
-            var patterns = await knowledge.GetPatterns();
-            foreach (var p in patterns)
-            {
-                if (p.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                    || p.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
-                {
-                    traces.Add(new MemoryTrace(
-                        "Pattern",
-                        $"{p.Name}: {p.Description}",
-                        $"knowledge:pattern:{p.Name}"));
-                }
-            }
-
-            var conventions = await knowledge.GetConventions();
-            foreach (var c in conventions)
-            {
-                if (c.Contains(query, StringComparison.OrdinalIgnoreCase))
-                {
-                    traces.Add(new MemoryTrace(
-                        "Convention",
-                        c,
-                        "knowledge:convention"));
-                }
-            }
-        }
-        catch (OperationCanceledException) { throw; }
-        catch { /* knowledge agent may not be active */ }
+        var key = this.GetPrimaryKeyString();
+        var slash = key.IndexOf('/');
+        var head = slash > 0 ? key[..slash] : key;
+        return long.TryParse(head, out _) ? head : null;
     }
 }

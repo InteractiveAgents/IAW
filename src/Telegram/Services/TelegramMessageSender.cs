@@ -69,6 +69,19 @@ public sealed class TelegramMessageSender(
         await botClient.SendPhotoAsync(chatId, file, messageThreadId: topicId, caption: caption);
     }
 
+    public async Task ForwardMessageAsync(long chatId, int messageId, long fromChatId, int? topicId = null)
+    {
+        try
+        {
+            await rateLimiter.AcquireAsync(chatId);
+            await botClient.ForwardMessageAsync(chatId, fromChatId, messageId, messageThreadId: topicId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to forward message {SourceMessageId} to {ChatId}", messageId, chatId);
+        }
+    }
+
     public async Task SendMediaGroupAsync(long chatId, IEnumerable<InputMedia> media, int? topicId = null)
     {
         await rateLimiter.AcquireAsync(chatId);

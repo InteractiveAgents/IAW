@@ -36,4 +36,14 @@ public static class AgentTelemetry
         "agents.tokens.input", "{token}", "Cumulative input tokens across all agents");
     public static readonly Counter<long> TotalOutputTokens = Meter.CreateCounter<long>(
         "agents.tokens.output", "{token}", "Cumulative output tokens across all agents");
+
+    // Approver (tool authorization) pipeline
+    public static readonly Counter<long> ApproverFailures = Meter.CreateCounter<long>(
+        "agents.approver.failures", "{failure}", "Approver errors treated as fail-closed deny");
+    public static readonly Counter<long> ApproverDenies = Meter.CreateCounter<long>(
+        "agents.approver.denies", "{deny}", "Tool calls denied by the Approver");
+    public static readonly Counter<long> ApproverMemoHits = Meter.CreateCounter<long>(
+        "agents.approver.memo_hits", "{hit}", "Approver decisions served from the memo table");
+    public static readonly Counter<long> ApproverLlmJudgments = Meter.CreateCounter<long>(
+        "agents.approver.llm_judgments", "{judgment}", "Approver judgments that invoked the LLM");
 }

@@ -16,6 +16,26 @@ dotnet run --project src/Aspire/Aspire.csproj              # run via Aspire orch
 
 CI runs on `windows-latest` with .NET 11.0 preview SDK. The `global.json` pins SDK version `11.0.100-preview.1.26104.118`.
 
+### Testing strategy — prefer behavioral tests over unit tests
+
+`dotnet test` handles unit and integration regressions, but it uses `MockChatClient` returning `"mock-response"` and cannot exercise end-to-end agent reasoning, memory recall, approval gating, or orchestration. For any change that touches agent behavior, LLM prompts, tools, context providers, approval flows, or memory, **you MUST drive the live system via the `iaw` MCP server instead of relying on `dotnet test` alone**. The `iaw` MCP server exposes:
+
+- `assistant_chat` — send a message to a user's Thread agent and observe the full response, tool calls, and streamed output. This is the primary way to verify agent behavior end-to-end.
+- `agent_send_message` — talk to a specific agent by grain id; useful for driving a sub-agent directly without routing through Thread.
+- `agent_list_all` — enumerate active agents and their capabilities to confirm registration/removal.
+- `agent_get_status` — inspect a grain's current state, last response, usage metrics.
+- `agent_get_events` — read the durable event log for an agent; use this to verify events like `ToolDenied`, `ApprovalRequested`, `MemoryStored` fired when expected.
+
+Behavioral verification loop for any non-trivial change:
+
+1. `dotnet build IAW.slnx` — clean compile.
+2. Start Aspire via the aspire MCP and confirm every resource is Healthy.
+3. Drive the scenario through the `iaw` MCP — e.g. `assistant_chat` a prompt that triggers the new code path. Read back the response, observe which tools were called, observe the event log via `agent_get_events`.
+4. Cross-check with Aspire traces (`mcp__aspire__list_traces`, `list_structured_logs`) to confirm the expected spans and log lines appear.
+5. Only after the behavior is verified live, run `dotnet test` for regression safety.
+
+If you find yourself reaching for `dotnet test` first for a feature change, stop and start with the `iaw` MCP instead. Unit tests with mocks catch regressions; they do not prove the feature works.
+
 ## Architecture
 
 ### Orleans Agent Framework
@@ -131,26 +151,47 @@ This prevents stale training-data assumptions from producing incorrect code.
 
 ## Verification Flow (Post-Implementation)
 
-After making any changes, follow this full verification flow before returning results:
+After making any changes, follow this full verification flow before returning results. **Agent behavior is verified by talking to the running system through the `iaw` MCP, not by `dotnet test`.**
 
 ### 1. Build & Start
 ```bash
 dotnet build IAW.slnx
 ```
-Then use Aspire MCP to start the application and confirm all resources are running:
-- `mcp__aspire__list_resources` — verify all services are in a Running state.
+Then use the aspire MCP to start the application and confirm every resource is Healthy:
+- `mcp__aspire__select_apphost` → `mcp__aspire__list_resources` — every service in a Running state.
 
-### 2. Simulate User Activity (Playwright MCP)
-Use the Playwright MCP server to simulate real user interactions:
-- Navigate to the website/DevUI URL (get it from Aspire resource endpoints).
-- Perform user actions (e.g. interact with agents, test chat, visit pages).
-- Take screenshots to confirm pages render correctly.
+### 2. Drive the scenario via the `iaw` MCP
+This is the primary behavioral gate. For the feature or fix you just implemented:
+- `mcp__iaw__assistant_chat` — send a realistic user prompt that exercises the changed path and observe the full response, tool calls, and streaming.
+- `mcp__iaw__agent_send_message` — if you want to bypass routing and hit a specific sub-agent directly, call it by grain id.
+- `mcp__iaw__agent_get_events` — read the durable event log of the involved agents; confirm the events you expected (`ToolDenied`, `ApprovalRequested`, `MemoryStored`, `JobCompleted`, etc.) actually fired and contain the right payload keys.
+- `mcp__iaw__agent_get_status` — sanity-check the agent's state, last response, and usage metrics.
+- `mcp__iaw__agent_list_all` — confirm the registry reflects any agent additions or removals.
 
-### 3. Verify Telemetry (Aspire MCP)
-After simulating activity, use Aspire MCP tools to confirm telemetry is flowing:
-- **Traces**: `mcp__aspire__list_traces` — verify spans are being collected.
-- **Logs**: `mcp__aspire__list_structured_logs` — check for expected log entries.
-- **Trace details**: `mcp__aspire__list_trace_structured_logs` — drill into specific traces.
+If the change affects UI rendering or the end-user Telegram/DevUI experience, follow up with the playwright MCP for the visible-surface checks. Playwright is UX verification; `iaw` MCP is behavioral verification — both are needed when the change spans both layers.
 
-### 4. Return Results
-Only after the full flow (build → start → simulate → verify telemetry) is confirmed working should you return results to the user. If any step fails, debug and fix before proceeding.
+### 3. Cross-check telemetry (Aspire MCP)
+After driving the scenario, confirm the telemetry matches your mental model:
+- **Traces**: `mcp__aspire__list_traces` — verify `gen_ai.*` spans appear with the expected agent ids, token counts, tool names.
+- **Structured logs**: `mcp__aspire__list_structured_logs` — check for log lines you expected (approval judgments, memory store/recall, tool errors).
+- **Trace drill-down**: `mcp__aspire__list_trace_structured_logs` — inspect specific traces end to end when a behavior looks off.
+
+### 4. Regression safety via `dotnet test`
+Run `dotnet test test/Core.Tests` and `dotnet test test/Integration.Tests` to catch regressions in pure-logic paths that don't require the live system. Treat these as a safety net, not as proof that the feature works.
+
+### 5. Return results
+Only after (1) build clean, (2) live IAW MCP scenario passes, (3) telemetry confirms expected spans/logs, (4) `dotnet test` green — return the result to the user. If any step fails, debug and fix before proceeding; do not claim a change is done based on `dotnet test` alone.
+
+## Brainstorming & design conversations
+
+When the user is exploring ideas rather than requesting implementation, match the mode — don't jump straight to code or plans:
+
+- **Ask sharpening questions** — offer 2-3 concrete alternatives with tradeoffs, not 10 vague ones, unless asked to enumerate.
+- **Push back honestly** on fuzzy or technically wrong framings. Correct specifics (e.g. "Spectre renders cells, not pixels") rather than agreeing to save face.
+- **Ground every claim** in file paths, existing code, or verified docs (Context7). Never hand-wave what IAW already has.
+- **Present prototypes as distinct directions**, not variations on a theme. When asked for N prototypes, stretch the design space — some safe, some wild.
+- **Close the loop** — when the user picks options, convert to a phase-1 plan with file-level detail, not more options.
+- **Stay terse.** Lead with the answer or action, skip preamble.
+- **Respect decisions verbatim.** Reject → remove. Modify → rebuild cleanly, never apologetically tweak.
+
+Switch to execution mode only when the user explicitly says "go", "implement", "build", or gives a concrete task.

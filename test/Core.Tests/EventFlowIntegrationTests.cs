@@ -1,4 +1,3 @@
-using Core.Context;
 using Core.Contracts;
 using Core.Contracts.Events;
 using IAW.Testing;
@@ -27,11 +26,9 @@ public class EventFlowIntegrationTests : AgentTest<TestAgent>
             "DotNet", AgentEventType.BuildSucceeded,
             "build passed, 0 warnings", null, DateTimeOffset.UtcNow), ct);
 
-        var provider = new TaskLedgerContextProvider(Cluster.GrainFactory, taskId);
-        var context = await provider.GetContextAsync("git-agent", "commit the changes", ct);
+        var block = await ledger.GetContextBlockAsync(maxEvents: 15, ct);
 
-        Assert.NotEmpty(context);
-        var block = context[0];
+        Assert.False(string.IsNullOrEmpty(block));
 
         Assert.Contains("Roslyn", block);
         Assert.Contains("FileSystem", block);
